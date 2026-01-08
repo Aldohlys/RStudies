@@ -1,0 +1,20 @@
+{
+  "contracts": [],
+  "intraday_frequency": "5 mins",
+  "historical_frequency": "2 hours",
+  "intraday_duration": "1 D",
+  "historical_duration": "1 Y",
+  "market_data_type": 3,
+  "use_rth": true,
+  "incremental_timeout": 10,
+  "full_historical_timeout": 120,
+  "intraday_what_to_show": [
+    "TRADES",
+    "BID_ASK"
+  ],
+  "historical_what_to_show": [
+    "TRADES",
+    "MIDPOINT",
+    "BID_ASK"
+  ]
+}

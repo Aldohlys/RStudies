@@ -10,6 +10,22 @@ library(htmlwidgets)
 # Optional but recommended for spinners
 library(shinycssloaders)
 
+# Initialize logging
+library(logger)
+library(Tlogger)
+
+setup_namespace_logging(
+  "RStudies",
+  console_level = "DEBUG",
+  file_level = "INFO"
+)
+
+log_info("Logging initialized for RStudies applications", namespace="RStudies")
+
+# Initialize Tdata with proper configuration
+# The environment variables should handle the paths automatically
+library(Tdata)
+
 # Import the price changes module
 box::use(studies/view/priceChangesUI)
 
@@ -61,7 +77,7 @@ server <- function(input, output, session) {
 
   # Global error handler for session
   session$onSessionEnded(function() {
-    tstudy_log_info("[SERVER] Session ended")
+    log_info("Session ended", namespace="RStudies")
     stopApp()
   })
 }
