@@ -32,34 +32,10 @@ box::use(studies/view/priceChangesUI)
 # UI definition
 ui <- fluidPage(
   # Application title
-  titlePanel("Stock Price Significant Changes Analyzer"),
+  titlePanel("Stock Price Analysis Tools"),
 
-  # Sidebar with basic description
-  sidebarLayout(
-    sidebarPanel(
-      width = 3,
-      h4("About this tool"),
-      p("This app allows you to analyze significant price changes in stock data."),
-      p("Enter stock symbols, set detection parameters, and run the analysis."),
-      hr(),
-      h4("Features:"),
-      tags$ul(
-        tags$li("Multiple detection methods"),
-        tags$li("Advanced filtering options"),
-        tags$li("Customizable thresholds"),
-        tags$li("Interactive result tables")
-      ),
-      hr(),
-      p("Module based on Tdata price change detection functions."),
-      p("All parameters from the enhanced_significant_price_changes function are exposed in the UI.")
-    ),
-
-    # Main panel containing the module
-    mainPanel(
-      width = 9,
-      priceChangesUI$ui("price_changes")
-    )
-  )
+  # Module contains its own sidebar layout
+  priceChangesUI$ui("price_changes")
 )
 
 # Server logic
