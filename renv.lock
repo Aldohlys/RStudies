@@ -565,7 +565,7 @@
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.8.30",
+      "Version": "5.8.31",
       "Source": "unknown",
       "Title": "Provide basic utilities for trading IBKR account",
       "Authors@R": "person(\"Alexis\", \"Martin\", , \"aldohlys@gmail.com\", role = c(\"aut\",\"cre\"), comment = c(ORCID = \"\"))",
