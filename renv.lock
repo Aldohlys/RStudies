@@ -527,8 +527,8 @@
     },
     "Tbasics": {
       "Package": "Tbasics",
-      "Version": "1.5.1",
-      "Source": "Local",
+      "Version": "1.6.2",
+      "Source": "unknown",
       "Type": "Package",
       "Title": "Basic trading utilities and computation",
       "Description": "This package will be used by all RTrading programs. It includes any utilities that do not relate to 1/IBKR API 2/Persistent DB such as option computation or chart and journal modules.",
@@ -561,14 +561,12 @@
       ],
       "NeedsCompilation": "no",
       "Author": "Alexis Martin [aut, cre]",
-      "Maintainer": "Alexis Martin <aldohlys@gmail.com>",
-      "RemoteType": "local",
-      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tbasics_1.5.1.tar.gz"
+      "Maintainer": "Alexis Martin <aldohlys@gmail.com>"
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.7.52",
-      "Source": "Local",
+      "Version": "5.8.30",
+      "Source": "unknown",
       "Title": "Provide basic utilities for trading IBKR account",
       "Authors@R": "person(\"Alexis\", \"Martin\", , \"aldohlys@gmail.com\", role = c(\"aut\",\"cre\"), comment = c(ORCID = \"\"))",
       "Description": "This package contains various R and Python functions that are to be used in cunjunction with an IBKR and other account. More specifically, it is interfaced with ib_insync Python package to get all TWS functions through the TWS API.",
@@ -597,6 +595,7 @@
         "Tbasics (>= 1.5.1)",
         "tibble",
         "tidyr",
+        "TTR",
         "vctrs",
         "utils",
         "xts",
@@ -612,9 +611,7 @@
       "Config/testthat/edition": "3",
       "NeedsCompilation": "no",
       "Author": "Alexis Martin [aut, cre]",
-      "Maintainer": "Alexis Martin <aldohlys@gmail.com>",
-      "RemoteType": "local",
-      "RemoteUrl": "../Tdata_5.7.52.tar.gz"
+      "Maintainer": "Alexis Martin <aldohlys@gmail.com>"
     },
     "Tlogger": {
       "Package": "Tlogger",
