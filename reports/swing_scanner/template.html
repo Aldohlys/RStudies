@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Swing Scanner {{RUN_DATE}}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#fff;color:#333;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;padding:20px}
+
+h1{font-size:18px;font-weight:600;margin-bottom:4px}
+.run-date{float:right;color:#337ab7;font-weight:600;font-size:14px}
+
+.macro-bar{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;
+  padding:10px 16px;margin:12px 0;display:flex;align-items:center;gap:12px}
+.macro-label{font-size:12px;color:#666;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.macro-badge{font-size:13px;font-weight:700;padding:4px 12px;border-radius:3px;color:#fff}
+.badge-green{background:#28a745}
+.badge-orange{background:#d97706}
+.badge-red{background:#dc3545}
+
+.summary-bar{background:#f5f5f5;border:1px solid #ddd;border-radius:4px;
+  padding:10px 16px;margin-bottom:20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.summary-label{font-size:12px;color:#666;font-weight:600}
+.sig-badge{font-size:12px;font-weight:700;padding:3px 10px;border-radius:3px}
+.sig-trade-long{background:lightgreen;color:black}
+.sig-trade-short{background:red;color:white}
+.sig-watch{background:#fff3cd;color:#856404;border:1px solid #ffc107}
+.sig-skip{background:#f5f5f5;color:#999;border:1px solid #ddd}
+.summary-info{margin-left:auto;font-size:12px;color:#666}
+
+.section{border:1px solid #ddd;border-radius:4px;overflow:hidden;margin-bottom:20px}
+.stitle{background:#DAB;color:#000;
+  padding:8px 12px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.snum{color:#337ab7;margin-right:8px}
+
+table{width:100%;border-collapse:collapse}
+th{background:#DAB;color:#000;
+  padding:8px 10px;font-size:12px;font-weight:600;text-align:left;
+  border-bottom:2px solid #ddd;white-space:nowrap;cursor:help;position:relative}
+th[title]:hover::after{content:attr(title);position:absolute;left:0;top:100%;
+  background:#333;color:#fff;padding:8px 12px;border-radius:4px;font-size:12px;
+  font-weight:400;white-space:normal;width:280px;z-index:10;
+  box-shadow:0 2px 8px rgba(0,0,0,.2)}
+td{padding:7px 10px;font-size:13px;border-bottom:1px solid #ddd;white-space:nowrap}
+tr:nth-child(even){background:#f9f9f9}
+
+/* Sector gate rows */
+.gate-long{background:lightgreen}
+.gate-short{background:#ffcccc}
+.gate-both{background:lightyellow}
+.gate-blocked{background:#f5f5f5}
+
+/* Signal row highlighting — like RReporting P&L coloring */
+tr.row-long-trade{background:lightgreen}
+tr.row-long-trade td{color:black}
+tr.row-short-trade{background:red}
+tr.row-short-trade td{color:white}
+tr.row-long-watch{background:#fff3cd}
+tr.row-long-watch td{color:#333}
+tr.row-short-watch{background:#ffe0e0}
+tr.row-short-watch td{color:#333}
+
+/* Signal cell text */
+td.sig-long-trade{font-weight:700}
+td.sig-short-trade{font-weight:700}
+td.sig-long-watch{font-weight:600;color:#856404 !important}
+td.sig-short-watch{font-weight:600;color:#a94442 !important}
+td.sig-skip{color:#999}
+
+.footer{margin-top:16px;padding:10px 0;border-top:1px solid #ddd;
+  font-size:12px;color:#666;display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<div>
+  <span class="run-date">{{RUN_DATE}}</span>
+  <h1>Top-Down Swing Scanner v3</h1>
+</div>
+
+<div class="macro-bar">
+  <span class="macro-label">Macro Context</span>
+  <span class="macro-badge {{MACRO_CSS}}">{{MACRO_BANNER}}</span>
+</div>
+
+<div class="summary-bar">
+  <span class="summary-label">Signals</span>
+  {{SUMMARY}}
+  <span class="summary-info">{{N_SCORED}} stocks scored | Price cap: ${{PRICE_MAX}} (long only)</span>
+</div>
+
+<div class="section">
+  <div class="stitle"><span class="snum">01</span>Sector Gate</div>
+  <table>
+  <tr><th>Sector</th><th>ETF</th><th>Long</th><th>Short</th><th>RS vs SPY</th><th>Macro</th></tr>
+  {{SECTOR_ROWS}}
+  </table>
+</div>
+
+<div class="section">
+  <div class="stitle"><span class="snum">02</span>Stock Signals</div>
+  <div style="overflow-x:auto">
+  <table>
+  <tr>{{TH_CELLS}}</tr>
+  {{TBODY}}
+  </table>
+  </div>
+</div>
+
+<div class="footer">
+  <span>swing_scanner v3 &mdash; macro-aware</span>
+  <span>CSV: {{CSV_FILE}}</span>
+</div>
+
+</body></html>

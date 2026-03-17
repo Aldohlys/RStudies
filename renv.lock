@@ -527,7 +527,7 @@
     },
     "Tbasics": {
       "Package": "Tbasics",
-      "Version": "1.6.2",
+      "Version": "1.6.3",
       "Source": "unknown",
       "Type": "Package",
       "Title": "Basic trading utilities and computation",
@@ -565,8 +565,8 @@
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.8.31",
-      "Source": "unknown",
+      "Version": "5.9.4",
+      "Source": "Local",
       "Title": "Provide basic utilities for trading IBKR account",
       "Authors@R": "person(\"Alexis\", \"Martin\", , \"aldohlys@gmail.com\", role = c(\"aut\",\"cre\"), comment = c(ORCID = \"\"))",
       "Description": "This package contains various R and Python functions that are to be used in cunjunction with an IBKR and other account. More specifically, it is interfaced with ib_insync Python package to get all TWS functions through the TWS API.",
@@ -611,7 +611,9 @@
       "Config/testthat/edition": "3",
       "NeedsCompilation": "no",
       "Author": "Alexis Martin [aut, cre]",
-      "Maintainer": "Alexis Martin <aldohlys@gmail.com>"
+      "Maintainer": "Alexis Martin <aldohlys@gmail.com>",
+      "RemoteType": "local",
+      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.9.4.tar.gz"
     },
     "Tlogger": {
       "Package": "Tlogger",

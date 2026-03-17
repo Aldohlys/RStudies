@@ -1,0 +1,38 @@
+default:
+  account:
+  - U1804173
+  - DU5221795
+  - Gonet
+  - Live
+  DB: C:/Users/aldoh/Documents/RApplication/data/mydb.db
+  chains_dir: C:/Users/aldoh/Documents/NewTrading/chains
+  strikes_dir: C:/Users/aldoh/Documents/NewTrading/strikes
+  historical_config: C:/Users/aldoh/Documents/NewTrading/historical_config.json
+  logging:
+    level: INFO
+    log_dir: C:/Users/aldoh/Documents/RApplication/logs
+    python:
+      level: ERROR
+    package_specific:
+      Tbasics:
+        file_level: INFO
+        console_level: INFO
+      Tdata:
+        file_level: INFO
+        console_level: INFO
+  email:
+    host: "smtp.gmail.com"
+    port: 465
+    user: "aldohlys@gmail.com"
+    from: "aldohlys@gmail.com"
+    to: "aldohlys@gmail.com"
+  ibkr:
+    flex_query_timezone: America/New_York
+    display:
+      timezone: Europe/Zurich
+production:
+  DB: ~/data/mydb.db
+  cloud:
+    zone: us-east1-b
+    bucket: rtrading-basic-bucket
+    instance: rtrading-instance
