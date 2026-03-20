@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -19,13 +19,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 h1{font-size:18px;font-weight:600;margin-bottom:4px}
 .subtitle{font-size:12px;color:var(--dim);margin-bottom:16px}
-.run-date{float:right;color:var(--accent);font-weight:600;font-size:14px}
+.run-date{color:var(--accent);font-weight:600;font-size:14px}
 
 .bias-bar{background:var(--bg2);border:1px solid var(--border);border-radius:4px;
   padding:10px 16px;margin-bottom:20px;display:flex;align-items:center;gap:14px}
 .bias-label{font-size:12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
 .bias-badge{font-size:14px;font-weight:700;padding:4px 16px;border-radius:3px}
 .bias-score{font-size:13px;color:var(--dim);margin-left:auto}
+.bias-explain{font-size:14px;color:var(--dim)}
 
 .badge-green{background:var(--green-bg);color:#fff}
 .badge-orange{background:var(--orange-bg);color:#fff}
@@ -60,6 +61,8 @@ tr:last-child td{border-bottom:none}
 .zone-darkred{background:var(--dred-light) !important}
 
 .sub-row td{opacity:.85}
+tr[title]{cursor:help}
+tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 
 .mm-header td{padding:10px 12px;font-weight:600}
 .mm-type{font-size:11px;font-weight:700;letter-spacing:.08em;
@@ -76,6 +79,12 @@ tr:last-child td{border-bottom:none}
 .mm-signal{font-weight:600;color:var(--accent);font-size:13px}
 
 .synth-list{list-style:none;padding:10px 12px}
+
+.stress-banner{background:var(--dred-bg);color:#fff;padding:12px 20px;border-radius:4px;
+  margin-bottom:20px;font-weight:700;font-size:15px;text-align:center;letter-spacing:.04em;
+  border:2px solid #8B1A3A;animation:pulse-border 2s ease-in-out infinite}
+@keyframes pulse-border{0%,100%{border-color:#8B1A3A}50%{border-color:#fff}}
+.stress-banner .stress-sub{font-weight:400;font-size:12px;display:block;margin-top:4px;opacity:.85}
 .synth-list li{padding:6px 12px;margin:4px 0;border-radius:3px;font-size:13px;font-weight:500}
 .synth-list li.zone-green{background:var(--green-light);color:#1a6b3c}
 .synth-list li.zone-orange{background:var(--orange-light);color:#92400e}
@@ -87,9 +96,37 @@ tr:last-child td{border-bottom:none}
 .ev-event{font-weight:600}
 .ev-action{color:var(--dim);font-size:12px}
 .ev-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;color:#fff;display:inline-block}
-.ev-critique{background:var(--dred-bg)}
-.ev-eleve{background:var(--red-bg)}
-.ev-modere{background:var(--orange-bg)}
+.ev-critical{background:var(--dred-bg)}
+.ev-high{background:var(--red-bg)}
+.ev-moderate{background:var(--orange-bg)}
+
+.sc-container{padding:10px 12px;display:flex;gap:10px;flex-wrap:wrap}
+.sc-card{border:1px solid var(--border);border-radius:6px;padding:10px 14px;min-width:180px;flex:1}
+.sc-active{border-color:var(--accent);border-width:2px;background:rgba(51,122,183,.06)}
+.sc-header{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.sc-name{font-weight:600;font-size:14px}
+.sc-prob{font-size:13px;font-weight:700;padding:2px 8px;border-radius:3px;margin-left:auto}
+.sc-high{background:var(--green-bg);color:#fff}
+.sc-mid{background:var(--orange-bg);color:#fff}
+.sc-low{background:var(--bg2);color:var(--dim)}
+.sc-dominant{font-size:10px;font-weight:700;background:var(--accent);color:#fff;
+  padding:2px 6px;border-radius:3px;letter-spacing:.05em}
+.sc-details{font-size:11px;color:var(--dim)}
+.sc-catalyst{font-size:14px;cursor:help}
+
+.sig-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:10px 12px}
+.sig-gauge{display:flex;align-items:center;gap:6px;font-size:11px}
+.sig-label{font-weight:600;color:var(--dim);min-width:90px;text-align:right}
+.sig-track{flex:1;height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;min-width:60px}
+.sig-fill{height:100%;border-radius:4px;transition:width .3s}
+.sig-bar-high{background:var(--green-bg)}
+.sig-bar-mid{background:var(--orange-bg)}
+.sig-bar-low{background:var(--red-bg)}
+.sig-val{font-weight:600;min-width:30px}
+
+.pos-bar{padding:8px 12px;font-size:12px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--border)}
+.pos-label{font-weight:600;color:var(--dim);cursor:help}
+.pos-detail{color:var(--dim);font-size:11px}
 
 .footer{margin-top:16px;padding:10px 0;border-top:1px solid var(--border);
   font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
@@ -99,15 +136,17 @@ tr:last-child td{border-bottom:none}
 
 <div>
   <span class="run-date">{{RUN_DATE}}</span>
-  <h1>Macro Context &mdash; Step 1 Dashboard</h1>
-  <div class="subtitle">VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthese</div>
+  <h1>Macro Context</h1>
+  <div class="subtitle">VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis</div>
 </div>
 
 <div class="bias-bar">
-  <span class="bias-label">Biais du jour</span>
+  <span class="bias-label">Daily Bias</span>
   <span class="bias-badge {{BIAS_CSS}}">{{BIAS}}</span>
-  <span class="bias-score">Long: {{SL}} pts &nbsp;|&nbsp; Short: {{SS}} pts</span>
+  <span class="bias-explain">{{BIAS_EXPLAIN}}</span>
 </div>
+
+{{STRESS_BANNER}}
 
 <div class="grid">
 
@@ -127,22 +166,27 @@ tr:last-child td{border-bottom:none}
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">04</span>Dollar + Commodites</div>
+  <div class="stitle"><span class="snum">04</span>Dollar + Commodities</div>
   <table>{{SEC4}}</table>
 </div>
 
 <div class="section grid-full">
-  <div class="stitle"><span class="snum">05</span>Mismatches &mdash; Secteur vs Macro</div>
+  <div class="stitle"><span class="snum">05</span>Mismatches &mdash; Sector vs Macro</div>
   <table>{{SEC5}}</table>
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">06</span>Synthese</div>
+  <div class="stitle"><span class="snum">06</span>Synthesis</div>
   <ul class="synth-list">{{SEC6}}</ul>
 </div>
 
+<div class="section grid-full">
+  <div class="stitle"><span class="snum">08</span>Market Scenarios</div>
+  <div class="sc-container">{{SEC8}}</div>
+</div>
+
 <div class="section">
-  <div class="stitle"><span class="snum">07</span>Evenements &mdash; <span style="color:var(--orange-bg)">Editer chaque lundi</span></div>
+  <div class="stitle"><span class="snum">07</span>Events &mdash; <span style="color:var(--orange-bg)">Edit every Monday</span></div>
   <table>{{SEC7}}</table>
 </div>
 

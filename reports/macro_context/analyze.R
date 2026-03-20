@@ -40,34 +40,35 @@ analyze_vix <- function(raw) {
 
   vix_zone  <- zone(vix, c(15,20,25,30,40), c("GREEN","GREEN","ORANGE","ORANGE","RED","DARKRED"))
   vix_label <- zone(vix, c(15,20,25,30,40),
-    c("Complaisance (<15)","Normal (15-20)","Transition (20-25)",
-      "Stress (25-30)","Peur active (30-40)","Capitulation (>40)"))
+    c("Complacency (<15)","Normal (15-20)","Transition (20-25)",
+      "Stress (25-30)","Active fear (30-40)","Capitulation (>40)"))
 
   vvix_zone  <- if (!is.na(vvix)) zone(vvix, c(80,100,120), c("GREEN","ORANGE","RED","DARKRED")) else "ORANGE"
   vvix_label <- if (!is.na(vvix)) zone(vvix, c(80,100,120),
-    c("Stable (<80)","Attention (80-100)","Spike probable (100-120)","Crise (>120)")) else "n/a"
+    c("Stable (<80)","Caution (80-100)","Spike likely (100-120)","Crisis (>120)")) else "n/a"
 
   ts_zone <- "ORANGE"; ts_r <- "n/a"; ts_n <- ""
   ratio <- NA_real_; r_zone <- "ORANGE"; r_note <- ""
 
   if (!is.na(vix9d) && !is.na(vix) && !is.na(vix3m)) {
     if (vix9d < vix && vix < vix3m) {
-      ts_r <- "CONTANGO NORMAL"; ts_zone <- "GREEN"; ts_n <- "Calme \u2014 favorable aux longs"
+      ts_r <- "CONTANGO NORMAL"; ts_zone <- "GREEN"; ts_n <- "Calm — favorable for longs"
     } else if (abs(vix - vix9d) < 1 && abs(vix3m - vix) < 1) {
-      ts_r <- "FLAT"; ts_zone <- "ORANGE"; ts_n <- "Tension montante \u2014 surveiller"
+      ts_r <- "FLAT"; ts_zone <- "ORANGE"; ts_n <- "Rising tension — monitor"
     } else if (vix9d - vix3m > 5) {
-      ts_r <- "BACKWARDATION EXT"; ts_zone <- "DARKRED"; ts_n <- "Panic hedging \u2014 NE PAS ouvrir"
+      ts_r <- "BACKWARDATION EXT"; ts_zone <- "DARKRED"; ts_n <- "Panic hedging — DO NOT open"
     } else {
-      ts_r <- "BACKWARDATION"; ts_zone <- "RED"; ts_n <- "Peur court terme \u2014 stops serres"
+      ts_r <- "BACKWARDATION"; ts_zone <- "RED"; ts_n <- "Short-term fear — tight stops"
     }
     ratio  <- vix / vix3m
     r_zone <- ifelse(ratio < 0.85, "RED", ifelse(ratio > 1.10, "GREEN", "ORANGE"))
-    r_note <- ifelse(ratio < 0.85, "Backwardation legere", ifelse(ratio > 1.10, "Contango sain", "Zone neutre"))
+    r_note <- ifelse(ratio < 0.85, "Mild backwardation", ifelse(ratio > 1.10, "Healthy contango", "Neutral zone"))
   }
 
   vix_s    <- get_series(raw, "^VIX", 30)
   vix_20d  <- if (nrow(vix_s) >= 20) vix_s$Close[max(1, nrow(vix_s) - 19)] else NA
-  vix_tend <- if (!is.na(vix_20d)) ifelse(vix > vix_20d, "hausse (bears)", "baisse (bulls)") else "n/a"
+  vix_delta <- if (!is.na(vix_20d)) vix - vix_20d else NA
+  vix_tend <- if (!is.na(vix_20d)) sprintf("%+.1fpts %s", vix_delta, ifelse(vix > vix_20d, "rising (bearish)", "falling (bullish)")) else "n/a"
 
   vix_prev <- prev_close(raw, "^VIX")
 
@@ -89,22 +90,22 @@ analyze_rates <- function(raw) {
 
   y10_zone  <- zone(y10, c(3.5,4.5,5.0), c("GREEN","GREEN","ORANGE","RED"))
   y10_label <- zone(y10, c(3.5,4.5,5.0),
-    c("Favorable croissance (<3.5%)","Zone neutre (3.5-4.5%)",
-      "Pression valorisations (4.5-5%)","Stress systemique (>5%)"))
+    c("Growth-friendly (<3.5%)","Neutral zone (3.5-4.5%)",
+      "Valuation pressure (4.5-5%)","Systemic stress (>5%)"))
   y30_zone <- zone(y30, c(3.5,4.5,5.0), c("GREEN","GREEN","ORANGE","RED"))
 
   sp       <- if (!is.na(y2) && !is.na(y10)) y10 - y2 else NA
   sp_zone  <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0), c("DARKRED","RED","ORANGE","GREEN","GREEN")) else "ORANGE"
   sp_label <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0),
-    c("Inversion profonde \u2014 recession probable","Inversion legere \u2014 ralentissement",
-      "Flat \u2014 transition","Pentification normale \u2014 reprise","Pentification forte \u2014 reflation")) else "n/a"
+    c("Deep inversion — recession likely","Mild inversion — slowdown",
+      "Flat — transition","Normal steepening — recovery","Strong steepening — reflation")) else "n/a"
 
   tlt_s <- get_series(raw, "TLT", 30); tlt_pct <- NA; tlt_zone <- "ORANGE"; tlt_n <- ""
   if (nrow(tlt_s) >= 20) {
     tlt_pct  <- (tail(tlt_s$Close, 1) / tlt_s$Close[max(1, nrow(tlt_s) - 19)] - 1) * 100
     tlt_zone <- ifelse(tlt_pct > 1, "GREEN", ifelse(tlt_pct < -1, "RED", "ORANGE"))
-    tlt_n    <- ifelse(tlt_pct > 1, "TLT hausse: taux longs baissent",
-                 ifelse(tlt_pct < -1, "TLT baisse: taux longs montent", "TLT stable"))
+    tlt_n    <- ifelse(tlt_pct > 1, "TLT rising: long rates falling",
+                 ifelse(tlt_pct < -1, "TLT falling: long rates rising", "TLT stable"))
   }
 
   tips_s <- get_series(raw, "TIP", 30); tips_pct <- NA; tips_zone <- "ORANGE"; tips_n <- ""
@@ -113,8 +114,8 @@ analyze_rates <- function(raw) {
     if (!is.na(tp) && abs(tp) <= 15) {
       tips_pct  <- tp
       tips_zone <- ifelse(tp < -0.5, "RED", ifelse(tp > 0.5, "GREEN", "ORANGE"))
-      tips_n    <- ifelse(tp < -0.5, "Real yield hausse \u2014 headwind or/tech",
-                    ifelse(tp > 0.5, "Real yield baisse \u2014 tailwind or/tech", "Real yield stable"))
+      tips_n    <- ifelse(tp < -0.5, "Real yield rising — headwind gold/tech",
+                    ifelse(tp > 0.5, "Real yield falling — tailwind gold/tech", "Real yield stable"))
     }
   }
 
@@ -140,7 +141,7 @@ analyze_commodities <- function(raw) {
     note <- sprintf("MA20:%s | 5d:%+.1f%% | 20d:%+.1f%%", ifelse(above, "above", "below"), r5, r20)
     if (tk == "DX-Y.NYB") {
       dxy_ret20 <- r20
-      note <- paste0(note, ifelse(r20 > 3, " <- hausse: headwind", ifelse(r20 < -2, " <- baisse: tailwind", "")))
+      note <- paste0(note, ifelse(r20 > 3, " <- strong: headwind", ifelse(r20 < -2, " <- weak: tailwind", "")))
     }
     if (tk == "USO") uso_ret20 <- r20
     if (tk == "GLD") gld_ret20 <- r20
@@ -159,7 +160,7 @@ analyze_spy <- function(raw) {
     spy_z <- ifelse(spy_c > spy_m20 && spy_c > spy_m50, "GREEN",
                ifelse(spy_c < spy_m20 && spy_c < spy_m50, "RED", "ORANGE"))
     spy_n <- ifelse(spy_c > spy_m20 && spy_c > spy_m50, ">MA20+MA50 uptrend",
-               ifelse(spy_c < spy_m20 && spy_c < spy_m50, "<MA20+MA50 downtrend", "entre MA20/MA50"))
+               ifelse(spy_c < spy_m20 && spy_c < spy_m50, "<MA20+MA50 downtrend", "between MA20/MA50"))
   }
   list(spy_c = spy_c, spy_m20 = spy_m20, spy_m50 = spy_m50, spy_z = spy_z, spy_n = spy_n)
 }
@@ -206,25 +207,25 @@ analyze_mismatches <- function(raw, macro_env) {
     tw_names <- rules$tw[tw_active]; hw_names <- rules$hw[hw_active]
     type <- NULL; note <- NULL; signal <- NULL
     if (prof$trend == "UP" && n_hw >= 2 && n_tw == 0) {
-      type <- "FORCE INSOLITE"
-      note <- sprintf("%s hausse sans tailwind, %d headwinds (%s)", etf, n_hw, paste(hw_names, collapse = "+"))
-      signal <- "LONG haute conviction | SHORT si RSI>75"
+      type <- "UNUSUAL STRENGTH"
+      note <- sprintf("%s rising with no tailwinds, %d headwinds (%s)", etf, n_hw, paste(hw_names, collapse = "+"))
+      signal <- "LONG high conviction | SHORT if RSI>75"
     } else if (prof$trend == "UP" && n_hw >= 2 && n_tw >= 1) {
-      type <- "HAUSSE FRAGILE"
-      note <- sprintf("%s hausse (%s) mais %d headwinds (%s)", etf, paste(tw_names, collapse = "+"), n_hw, paste(hw_names, collapse = "+"))
-      signal <- "LONG avec stop serre"
+      type <- "FRAGILE RALLY"
+      note <- sprintf("%s rising (%s) but %d headwinds (%s)", etf, paste(tw_names, collapse = "+"), n_hw, paste(hw_names, collapse = "+"))
+      signal <- "LONG with tight stop"
     } else if (prof$trend == "DOWN" && n_tw >= 2 && n_hw == 0) {
-      type <- "FAIBLESSE INSOLITE"
-      note <- sprintf("%s baisse malgre %d tailwinds (%s)", etf, n_tw, paste(tw_names, collapse = "+"))
-      signal <- "SHORT fort \u2014 faiblesse structurelle"
+      type <- "UNUSUAL WEAKNESS"
+      note <- sprintf("%s falling despite %d tailwinds (%s)", etf, n_tw, paste(tw_names, collapse = "+"))
+      signal <- "SHORT strong — structural weakness"
     } else if (prof$trend == "FLAT" && n_tw >= 2 && n_hw == 0 && !is.na(prof$rs) && prof$rs < -3) {
-      type <- "RETARD vs MACRO"
-      note <- sprintf("%s plat RS:%+.1f%% malgre %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
-      signal <- "LONG a venir \u2014 attendre gate MA20"
+      type <- "LAGGING vs MACRO"
+      note <- sprintf("%s flat RS:%+.1f%% despite %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
+      signal <- "LONG upcoming — wait for MA20 gate"
     } else if (prof$trend == "DOWN" && n_hw >= 2 && !is.na(prof$rs) && prof$rs < -4) {
-      type <- "SHORT CONFIRME"
+      type <- "CONFIRMED SHORT"
       note <- sprintf("%s downtrend + %d headwinds (%s) RS:%+.1f%%", etf, n_hw, paste(hw_names, collapse = "+"), prof$rs)
-      signal <- "SHORT haute conviction"
+      signal <- "SHORT high conviction"
     }
     if (!is.null(type))
       mismatches[[sec]] <- list(sector = sec, etf = etf, trend = prof$trend, r20 = prof$r20, rs = prof$rs,
@@ -243,38 +244,65 @@ synthesize <- function(vix_res, rates_res, breadth, commodities_res, mismatches)
   y10 <- rates_res$y10; S5FI_VALUE <- breadth$pct
 
   if (!is.na(vix)) {
-    if (vix < 20) { sl <- sl + 2; add_note("VIX<20 \u2014 longs favorises", "GREEN") }
-    else if (vix < 30) { add_note("VIX 20-30 \u2014 neutre", "ORANGE") }
-    else { ss <- ss + 1; add_note("VIX>30 \u2014 peur active", "RED") }
+    if (vix < 20) { sl <- sl + 2; add_note(sprintf("VIX %.1f <20 — longs favored", vix), "GREEN") }
+    else if (vix < 30) { add_note(sprintf("VIX %.1f 20-30 — neutral", vix), "ORANGE") }
+    else { ss <- ss + 1; add_note(sprintf("VIX %.1f >30 — active fear", vix), "RED") }
   }
   if (!is.na(vix9d) && !is.na(vix3m)) {
-    if (vix9d > vix3m) { ss <- ss + 2; add_note("Backwardation \u2014 risque eleve", "RED") }
-    else { sl <- sl + 1; add_note("Contango \u2014 structure normale", "GREEN") }
+    if (vix9d > vix3m) { ss <- ss + 2; add_note(sprintf("Backwardation (9d:%.1f > 3m:%.1f) — high risk", vix9d, vix3m), "RED") }
+    else { sl <- sl + 1; add_note(sprintf("Contango (9d:%.1f < 3m:%.1f) — normal structure", vix9d, vix3m), "GREEN") }
   }
   if (!is.na(y10)) {
-    if (y10 < 4.5) { sl <- sl + 1; add_note(sprintf("10Y %.2f%% <4.5 \u2014 supportable", y10), "GREEN") }
-    else if (y10 < 5) { add_note(sprintf("10Y %.2f%% \u2014 pression valorisations", y10), "ORANGE") }
-    else { ss <- ss + 2; add_note(sprintf("10Y %.2f%% >5 \u2014 stress systemique", y10), "RED") }
+    if (y10 < 4.5) { sl <- sl + 1; add_note(sprintf("10Y %.2f%% <4.5 — manageable", y10), "GREEN") }
+    else if (y10 < 5) { add_note(sprintf("10Y %.2f%% — valuation pressure", y10), "ORANGE") }
+    else { ss <- ss + 2; add_note(sprintf("10Y %.2f%% >5 — systemic stress", y10), "RED") }
   }
   if (!is.na(S5FI_VALUE)) {
-    if (S5FI_VALUE > 50) { sl <- sl + 2; add_note(sprintf("S5FI %.1f%% \u2014 breadth bullish", S5FI_VALUE), "GREEN") }
-    else if (S5FI_VALUE > 35) { add_note(sprintf("S5FI %.1f%% \u2014 transition", S5FI_VALUE), "ORANGE") }
-    else if (S5FI_VALUE > 20) { ss <- ss + 1; add_note(sprintf("S5FI %.1f%% \u2014 oversold", S5FI_VALUE), "ORANGE") }
-    else { ss <- ss + 2; add_note(sprintf("S5FI %.1f%% \u2014 capitulation", S5FI_VALUE), "DARKRED") }
+    if (S5FI_VALUE > 50) { sl <- sl + 2; add_note(sprintf("S5FI %.1f%% >50 — breadth bullish", S5FI_VALUE), "GREEN") }
+    else if (S5FI_VALUE > 35) { add_note(sprintf("S5FI %.1f%% 35-50 — transition", S5FI_VALUE), "ORANGE") }
+    else if (S5FI_VALUE > 20) { ss <- ss + 1; add_note(sprintf("S5FI %.1f%% 20-35 — oversold", S5FI_VALUE), "ORANGE") }
+    else { ss <- ss + 2; add_note(sprintf("S5FI %.1f%% <20 — capitulation", S5FI_VALUE), "DARKRED") }
   }
 
   n_short_mm <- if (length(mismatches) == 0) 0L else sum(vapply(mismatches, function(m)
-    m$type %in% c("FAIBLESSE INSOLITE", "SHORT CONFIRME"), logical(1)))
+    m$type %in% c("UNUSUAL WEAKNESS", "CONFIRMED SHORT"), logical(1)))
   n_long_mm  <- if (length(mismatches) == 0) 0L else sum(vapply(mismatches, function(m)
-    m$type == "RETARD vs MACRO", logical(1)))
+    m$type == "LAGGING vs MACRO", logical(1)))
 
   if (n_short_mm > 0) { ss <- ss + n_short_mm; add_note(sprintf("Mismatch SHORT x%d", n_short_mm), "RED") }
   if (n_long_mm  > 0) { sl <- sl + n_long_mm;  add_note(sprintf("Mismatch LONG x%d",  n_long_mm),  "GREEN") }
 
-  bias      <- ifelse(sl > ss + 1, "LONG BIAS", ifelse(ss > sl + 1, "SHORT BIAS", "NEUTRE"))
+  bias      <- ifelse(sl > ss + 1, "LONG BIAS", ifelse(ss > sl + 1, "SHORT BIAS", "NEUTRAL"))
   bias_zone <- ifelse(bias == "LONG BIAS", "GREEN", ifelse(bias == "SHORT BIAS", "RED", "ORANGE"))
 
-  list(sl = sl, ss = ss, bias = bias, bias_zone = bias_zone, synth_notes = synth_notes)
+  # Build brief explanation of what drives the bias
+  long_drivers <- c()
+  short_drivers <- c()
+  if (!is.na(vix)) {
+    if (vix < 20) long_drivers <- c(long_drivers, sprintf("VIX %.0f", vix))
+    else if (vix >= 30) short_drivers <- c(short_drivers, sprintf("VIX %.0f", vix))
+  }
+  if (!is.na(vix9d) && !is.na(vix3m)) {
+    if (vix9d > vix3m) short_drivers <- c(short_drivers, "backwardation")
+    else long_drivers <- c(long_drivers, "contango")
+  }
+  if (!is.na(y10)) {
+    if (y10 < 4.5) long_drivers <- c(long_drivers, sprintf("10Y %.1f%%", y10))
+    else if (y10 >= 5) short_drivers <- c(short_drivers, sprintf("10Y %.1f%%", y10))
+  }
+  if (!is.na(S5FI_VALUE)) {
+    if (S5FI_VALUE > 50) long_drivers <- c(long_drivers, sprintf("breadth %.0f%%", S5FI_VALUE))
+    else if (S5FI_VALUE <= 35) short_drivers <- c(short_drivers, sprintf("breadth %.0f%%", S5FI_VALUE))
+  }
+  if (n_short_mm > 0) short_drivers <- c(short_drivers, sprintf("%d short mismatch", n_short_mm))
+  if (n_long_mm > 0)  long_drivers  <- c(long_drivers, sprintf("%d long mismatch", n_long_mm))
+
+  explain_parts <- c()
+  if (length(long_drivers) > 0) explain_parts <- c(explain_parts, paste0("Long: ", paste(long_drivers, collapse = ", ")))
+  if (length(short_drivers) > 0) explain_parts <- c(explain_parts, paste0("Short: ", paste(short_drivers, collapse = ", ")))
+  bias_explain <- paste(explain_parts, collapse = " | ")
+
+  list(sl = sl, ss = ss, bias = bias, bias_zone = bias_zone, bias_explain = bias_explain, synth_notes = synth_notes)
 }
 
 # ── Build macro environment flags ───────────────────────────────────────────

@@ -61,3 +61,23 @@ naf <- function(x, digits = 2) {
   if (is.na(x)) "n/a"
   else sprintf(paste0("%.", digits, "f"), x)
 }
+
+#' Build a macro data row with tooltip
+#' @param label Row label
+#' @param value Numeric value
+#' @param z Zone label
+#' @param note Note text
+#' @param tip Tooltip text (data source, meaning, thresholds)
+html_row_tip <- function(label, value, z, note, tip = "") {
+  vs <- if (is.na(value)) "n/a" else sprintf("%.2f", value)
+  title_attr <- if (nzchar(tip)) sprintf(' title="%s"', tip) else ""
+  sprintf('<tr class="data-row %s"%s><td class="label">%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+    zone_class(z), title_attr, label, vs, note)
+}
+
+#' Build a macro sub-row with tooltip
+html_sub_tip <- function(label, val_str, z, note, tip = "") {
+  title_attr <- if (nzchar(tip)) sprintf(' title="%s"', tip) else ""
+  sprintf('<tr class="sub-row %s"%s><td class="label indent">%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+    zone_class(z), title_attr, label, val_str, note)
+}

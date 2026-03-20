@@ -1,6 +1,6 @@
 # main.R — Swing Scanner Entry Point
 #
-# Orchestrates: universe → fetch → indicators → sector gate → score → render
+# Orchestrates: universe → fetch → indicators → sector gate → score → gate3 → history → filter → render
 # Run: Rscript RStudies/reports/swing_scanner/main.R
 
 library(Tdata)
@@ -25,12 +25,18 @@ source(file.path(SCRIPT_DIR, "fetch.R"))
 source(file.path(SCRIPT_DIR, "indicators.R"))
 source(file.path(SCRIPT_DIR, "scoring.R"))
 source(file.path(SCRIPT_DIR, "sector_gate.R"))
+source(file.path(SCRIPT_DIR, "vol_profile.R"))
+source(file.path(SCRIPT_DIR, "history.R"))
+source(file.path(SCRIPT_DIR, "final_filter.R"))
 source(file.path(SCRIPT_DIR, "render_html.R"))
 
-message("=== TOP-DOWN SWING SCANNER v3 (macro-aware) ===")
+# Source scenarios.R from macro_context for get_scenario_sector_map()
+source(file.path(SCRIPT_DIR, "..", "macro_context", "scenarios.R"))
+
+message("=== TOP-DOWN SWING SCANNER v4 (macro + vol + scenarios) ===")
 message("Run date: ", format(Sys.Date()))
 
-PRICE_MAX <- 300
+PRICE_MAX <- 500
 .today <- as.character(Sys.Date())
 
 # ── Load macro context from DB ──────────────────────────────────────────────
@@ -43,12 +49,25 @@ mm_sectors <- tryCatch(
   dbGetQuery(conn, "SELECT * FROM macro_context_mismatches WHERE cache_date = ?",
              params = list(.today)),
   error = function(e) NULL)
+
+# Load regime scores from DB
+scenario_scores <- tryCatch(
+  dbGetQuery(conn, "SELECT * FROM macro_regimes WHERE cache_date = ?",
+             params = list(.today)),
+  error = function(e) NULL)
+
+# Load previous scanner results for transitions/persistence
+prev_results <- load_previous_results(conn)
+
+# Load active alerts
+active_alerts <- load_active_alerts(conn)
+
 dbDisconnect(conn)
 
 if (is.null(macro) || nrow(macro) == 0) {
-  message("WARNING: No macro context for today \u2014 run macro_context first!")
+  message("WARNING: No macro context for today — run macro_context first!")
   message("Proceeding without macro overlay.")
-  macro <- data.frame(bias = "NEUTRE", bias_zone = "ORANGE", vix = NA, s5fi = NA,
+  macro <- data.frame(bias = "NEUTRAL", bias_zone = "ORANGE", vix = NA, s5fi = NA,
     vix_stress = FALSE, backwardation = FALSE, rates_high = FALSE,
     s5fi_bear = FALSE, s5fi_bull = FALSE, stringsAsFactors = FALSE)
   mm_sectors <- data.frame(sector = character(0), type = character(0), stringsAsFactors = FALSE)
@@ -81,7 +100,7 @@ computed <- compute_all_indicators(raw, all_tix)
 spy_ret <- { l <- get_last(computed, SPY); if (!is.null(l)) l$ret20 else 0 }
 
 sector_ok <- evaluate_sector_gates(sectors, sector_etfs, computed, spy_ret,
-                                    mm_sectors, macro_bias, get_last)
+                                    mm_sectors, macro_bias, get_last, macro)
 
 long_approved  <- names(Filter(function(x) x$long,  sector_ok))
 short_approved <- names(Filter(function(x) x$short, sector_ok))
@@ -167,14 +186,47 @@ out <- bind_rows(results) |>
 message("Stocks scored: ", nrow(out))
 message("Signals: ", paste(names(table(out$Best_Signal)), table(out$Best_Signal), sep = ":", collapse = " | "))
 
-# ── CSV output ──────────────────────────────────────────────────────────────
-out_dir  <- file.path(SCRIPT_DIR, "output")
+# ── Gate 3: Vol Profile enrichment ────────────────────────────────────────
+message("Loading vol profiles (Optionality gate)...")
+conn <- safe_db_connect()
+vol_data <- load_vol_profiles(out$Ticker, conn)
+gate3 <- evaluate_gate3(vol_data, out$Ticker)
+check_tws <- flag_missing(gate3)
+
+# Merge optionality columns into output
+out <- merge(out, gate3[, c("Ticker", "IV30", "RV30", "IVP", "VRP", "Optionality", "TermStr", "Vol_Date")],
+             by = "Ticker", all.x = TRUE)
+
+# ── History: save results, compute transitions + persistence ──────────────
+message("Processing scanner history...")
+save_scanner_results(out, conn)
+transitions <- compute_transitions(out, prev_results)
+persistence <- compute_persistence(out, prev_results)
+dbDisconnect(conn)
+
+if (!is.null(transitions)) {
+  n_trans <- table(transitions$transition_type)
+  message("Transitions: ", paste(names(n_trans), n_trans, sep = ":", collapse = " | "))
+}
+
+# ── Final Filter: composite ranking, top picks, watch cap ────────────────
+message("Applying final filter...")
+out <- final_rank(out, macro, scenario_scores, persistence, max_trades = 3, max_watch = 10)
+
+n_top   <- sum(out$Rank == "TOP PICK", na.rm = TRUE)
+n_watch <- sum(out$Best_Signal %in% c("LONG WATCH", "SHORT WATCH") |
+               out$Best_Signal %in% c("LONG TRADE", "SHORT TRADE"), na.rm = TRUE)
+message(sprintf("Final: %d TOP PICK, %d WATCH/TRADE displayed", n_top, n_watch))
+
+# ── CSV output (full including SKIP for audit) ─────────────────────────────
+out_dir  <- file.path("C:/Users/aldoh/Documents/NewTrading/reports")
 dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 csv_file <- file.path(out_dir, sprintf("swing_scanner_%s.csv", format(Sys.Date(), "%Y%m%d")))
 write.csv2(out, csv_file, row.names = FALSE)
 message(sprintf("CSV written: %s", csv_file))
 
-# ── HTML output ─────────────────────────────────────────────────────────────
-html_file <- render_scanner_html(out, sector_ok, macro_bias, macro, csv_file, out_dir, PRICE_MAX)
+# ── HTML output (filtered: no SKIP) ────────────────────────────────────────
+html_file <- render_scanner_html(out, sector_ok, macro_bias, macro, csv_file, out_dir,
+                                  PRICE_MAX, transitions, active_alerts)
 message(sprintf("HTML written: %s", html_file))
 if (interactive()) utils::browseURL(html_file)

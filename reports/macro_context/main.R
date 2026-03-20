@@ -29,6 +29,9 @@ source(file.path(SCRIPT_DIR, "breadth.R"))
 source(file.path(SCRIPT_DIR, "analyze.R"))
 source(file.path(SCRIPT_DIR, "events.R"))
 source(file.path(SCRIPT_DIR, "render_html.R"))
+source(file.path(SCRIPT_DIR, "positioning.R"))
+source(file.path(SCRIPT_DIR, "macro_outcomes.R"))
+source(file.path(SCRIPT_DIR, "scenarios.R"))
 
 message("=== MACRO CONTEXT REPORT ===")
 message("Run date: ", format(Sys.Date(), "%d %B %Y"))
@@ -61,9 +64,14 @@ synthesis  <- synthesize(vix_res, rates_res, breadth, comm_res, mismatches)
 
 message("Bias: ", synthesis$bias, " (L:", synthesis$sl, " S:", synthesis$ss, ")")
 
-# 5. Render HTML
-out_dir  <- file.path(SCRIPT_DIR, "output")
-sections <- build_sections(vix_res, rates_res, breadth, spy_res, comm_res, mismatches, synthesis, EVENTS)
+# 5. Evaluate regimes (continuous signals, not binary flags)
+conn <- safe_db_connect()
+scenario_scores <- run_scenarios(raw, vix_res, rates_res, breadth, comm_res, EVENTS, conn)
+dbDisconnect(conn)
+
+# 6. Render HTML
+out_dir  <- file.path("C:/Users/aldoh/Documents/NewTrading/reports")
+sections <- build_sections(vix_res, rates_res, breadth, spy_res, comm_res, mismatches, synthesis, EVENTS, scenario_scores)
 out_file <- render_macro_html(sections, synthesis, breadth, out_dir)
 if (interactive()) utils::browseURL(out_file)
 
