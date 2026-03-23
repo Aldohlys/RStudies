@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-03-23] - Scanner universe expansion, RVP column, sector cleanup
+
+### Added
+- **vol_profile.R**: Added RVP (30d realized vol percentile) column to Gate 3 results — was computed by getVolMetrics but dropped before output
+- **render_html.R**: RVP column in HTML signal tables with tooltip
+
+### Changed
+- **ScannerUniverse DB**: Added 47 tickers from Tickers table (all IV=YES, price ≤$500) — total 208 active symbols
+- **ScannerUniverse DB**: 2 new sectors: Communications (XLC + 5 stocks), Consumer cyclical (XLY + 3 stocks)
+- **ScannerUniverse DB**: Sector names aligned with Tickers table (singular form): Agricultural, Basic Materials, Consumer non cyclical, Financial, Industrial, Precious Metals
+- **Tickers DB**: Fixed "Consumer non-cyclical" → "Consumer non cyclical" (hyphen removed)
+- **macro_context/breadth.R**: Cap parallel cores at 6
+- **macro_context/events.R**: Updated to week of Mar-24
+
 ## [2026-03-20] - Regime backtest, scanner simplification, UI overhaul
 
 ### Added

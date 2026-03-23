@@ -82,6 +82,7 @@ evaluate_gate3 <- function(vol_data, tickers) {
     IV30      = NA_real_,
     RV30      = NA_real_,
     IVP       = NA_real_,
+    RVP       = NA_real_,
     VRP       = NA_real_,
     Optionality     = "NO DATA",
     TermStr   = "NO DATA",
@@ -106,6 +107,9 @@ evaluate_gate3 <- function(vol_data, tickers) {
     results$IV30[idx] <- if (!is.na(iv30)) round(iv30 * 100, 1) else NA
     results$RV30[idx] <- if (!is.na(rv30)) round(rv30 * 100, 1) else NA
     results$IVP[idx]  <- if (!is.na(ivp)) round(ivp, 1) else NA
+
+    # RVP (realized vol percentile, already 0-100 from DB)
+    results$RVP[idx] <- if (!is.na(rvp)) round(rvp, 1) else NA
 
     # VRP = IV30 - RV30 (in percentage points)
     vrp <- if (!is.na(iv30) && !is.na(rv30)) round((iv30 - rv30) * 100, 1) else NA

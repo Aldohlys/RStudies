@@ -52,7 +52,7 @@ calculate_breadth <- function() {
                 n_valid = NA_integer_, elapsed = NA))
   }
 
-  n_cores <- max(1, parallel::detectCores() - 1)
+  n_cores <- min(6, max(1, parallel::detectCores() - 1))
   message(sprintf("Breadth: %d tickers | %d cores...", length(tickers), n_cores))
 
   cl <- parallel::makeCluster(n_cores)

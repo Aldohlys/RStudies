@@ -3,15 +3,15 @@
 # EDIT THIS FILE EVERY MONDAY with upcoming week's events.
 # Each event has: date, event name, impact level, action recommendation.
 
+# Source: https://www.forexfactory.com/calendar
 EVENTS <- list(
-  list(date = "Mar-17", event = "FOMC Decision",           impact = "CRITICAL",
-       action = "No new trades before announcement — prepare 2 scenarios."),
-  list(date = "Mar-18", event = "Powell Press Conference",  impact = "CRITICAL",
-       action = "Tone on cuts — binary for DXY/Gold/Energy."),
-  list(date = "Mar-19", event = "CPI US (Feb)",             impact = "HIGH",
-       action = "Reduce size by 50% the day before if position open."),
-  list(date = "Mar-20", event = "Philadelphia Fed",         impact = "MODERATE",
-       action = "Industrial activity — relevant for XLI short."),
-  list(date = "Mar-21", event = "Options expiry (3rd Fri)", impact = "HIGH",
-       action = "Elevated volatility — pinning around major strikes.")
+  list(date = "Mar-24", event = "Flash Manufacturing & Services PMI (EUR/GBP/USD)",
+       impact = "HIGH",
+       action = "Cluster of PMIs — watch for divergence across regions, directional for EUR/USD."),
+  list(date = "Mar-25", event = "UK CPI y/y",               impact = "HIGH",
+       action = "Forecast 3.0% — relevant for GBP pairs and rate expectations."),
+  list(date = "Mar-26", event = "US Unemployment Claims",    impact = "MODERATE",
+       action = "Forecast 211K — labor market pulse, watch deviation from trend."),
+  list(date = "Mar-27", event = "UK Retail Sales m/m",       impact = "MODERATE",
+       action = "Forecast -0.3% — GBP sentiment, consumer spending gauge.")
 )

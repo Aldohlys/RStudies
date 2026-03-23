@@ -194,7 +194,7 @@ gate3 <- evaluate_gate3(vol_data, out$Ticker)
 check_tws <- flag_missing(gate3)
 
 # Merge optionality columns into output
-out <- merge(out, gate3[, c("Ticker", "IV30", "RV30", "IVP", "VRP", "Optionality", "TermStr", "Vol_Date")],
+out <- merge(out, gate3[, c("Ticker", "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr", "Vol_Date")],
              by = "Ticker", all.x = TRUE)
 
 # ── History: save results, compute transitions + persistence ──────────────

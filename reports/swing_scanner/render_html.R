@@ -137,7 +137,7 @@ summary_badge_css <- function(sig) {
 
 SIGNAL_COLS <- c("Ticker", "Sector", "Composite", "Price",
   "ADX10", "RSI14", "RS_vs_ETF",
-  "IV30", "RV30", "IVP", "VRP", "Optionality", "TermStr")
+  "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr")
 
 SIGNAL_TIPS <- c(
   Ticker      = "Stock ticker symbol",
@@ -150,6 +150,7 @@ SIGNAL_TIPS <- c(
   IV30        = "Implied volatility 30d",
   RV30        = "Realized volatility 30d",
   IVP         = "IV percentile vs history",
+  RVP         = "Realized vol percentile vs history (30d)",
   VRP         = "Vol Risk Premium: IV30 - RV30 (percentage points)",
   Optionality = "PASS (3-4), PARTIAL (2), FAIL (0-1): IV30<40 + IVP<60 + VRP<0 + Contango",
   TermStr     = "IV term structure: Contango/Backwardation"
