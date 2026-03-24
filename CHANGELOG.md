@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-03-24] - Fix VIX 20d ago lookback bugs
+
+### Fixed
+- **macro_context/analyze.R**: VIX 20d ago showed wrong value due to two bugs:
+  - `get_series()` returned duplicate rows for same date, shifting the lookback window
+  - Off-by-one: `nrow - 19` selected 19 trading days ago instead of 20
+  - Added `!duplicated(date, fromLast = TRUE)` dedup and corrected index to `nrow - 20`
+
 ## [2026-03-23] - Scanner universe expansion, RVP column, sector cleanup
 
 ### Added

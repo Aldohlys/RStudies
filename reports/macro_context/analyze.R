@@ -8,7 +8,7 @@ source(file.path(SCRIPT_DIR, "..", "shared", "html_helpers.R"))
 # ── Data accessors ──────────────────────────────────────────────────────────
 get_series <- function(raw, tk, n = 60) {
   raw |> dplyr::filter(ticker == tk) |> dplyr::arrange(date) |>
-    dplyr::filter(!is.na(Close)) |> tail(n)
+    dplyr::filter(!is.na(Close), !duplicated(date, fromLast = TRUE)) |> tail(n)
 }
 
 last_close <- function(raw, tk) {
@@ -66,7 +66,7 @@ analyze_vix <- function(raw) {
   }
 
   vix_s    <- get_series(raw, "^VIX", 30)
-  vix_20d  <- if (nrow(vix_s) >= 20) vix_s$Close[max(1, nrow(vix_s) - 19)] else NA
+  vix_20d  <- if (nrow(vix_s) >= 21) vix_s$Close[nrow(vix_s) - 20] else NA
   vix_delta <- if (!is.na(vix_20d)) vix - vix_20d else NA
   vix_tend <- if (!is.na(vix_20d)) sprintf("%+.1fpts %s", vix_delta, ifelse(vix > vix_20d, "rising (bearish)", "falling (bullish)")) else "n/a"
 
