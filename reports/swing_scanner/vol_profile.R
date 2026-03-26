@@ -51,23 +51,9 @@ load_vol_profiles <- function(tickers, conn) {
     message(sprintf("Vol data missing for %d tickers (no Prices row) — run getVolMetrics() manually or via TWS",
       length(missing_syms)))
 
-  if (length(need_refresh) > 0) {
-    message(sprintf("Vol data stale (>1d) for %d tickers — attempting TWS refresh...",
+  if (length(need_refresh) > 0)
+    message(sprintf("Vol data stale (>1d) for %d tickers — will be refreshed on-demand via /analyze Gate 3",
       length(need_refresh)))
-    refreshed <- tryCatch({
-      Tdata::getVolMetrics(need_refresh)
-    }, error = function(e) {
-      message("TWS refresh failed (TWS not connected?): ", e$message)
-      NULL
-    })
-
-    if (!is.null(refreshed) && nrow(refreshed) > 0) {
-      message(sprintf("TWS refreshed %d/%d tickers", nrow(refreshed), length(need_refresh)))
-      # Re-query DB after refresh (getVolMetrics appends to Prices)
-      vol <- tryCatch(dbGetQuery(conn, query), error = function(e) vol)
-      if ("datetime" %in% names(vol)) vol$date_part <- substr(vol$datetime, 1, 8)
-    }
-  }
 
   vol
 }

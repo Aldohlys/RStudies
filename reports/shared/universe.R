@@ -6,10 +6,16 @@
 .universe_cache <- new.env(parent = emptyenv())
 
 #' Load scanner universe (cached per session)
+#'
+#' On first load, syncs Tickers (IV=YES, Type=STK, price <= $500) into
+#' ScannerUniverse so new tickers are automatically included.
 #' @param force Logical. Force reload from DB even if cached
 #' @return data.frame with Symbol, Sector, Role, IsActive, Notes
 get_universe <- function(force = FALSE) {
   if (force || is.null(.universe_cache$data)) {
+    if (exists("syncTickersToScanner", envir = asNamespace("Tdata"))) {
+      Tdata::syncTickersToScanner(max_price = 500)
+    }
     .universe_cache$data <- Tdata::getScannerUniverse()
     message(sprintf("Universe loaded: %d symbols", nrow(.universe_cache$data)))
   }

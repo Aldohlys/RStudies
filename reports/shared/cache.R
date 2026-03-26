@@ -44,3 +44,16 @@ cache_write <- function(table_name, data, date = as.character(Sys.Date())) {
   DBI::dbWriteTable(conn, table_name, data, append = TRUE)
   message(sprintf("Cache written: %s (%d rows)", table_name, nrow(data)))
 }
+
+#' Append new rows to existing cache (no delete)
+#' @param table_name DB table name
+#' @param data data.frame to append (cache_date column will be added)
+#' @param date Character date string (default: today)
+cache_append <- function(table_name, data, date = as.character(Sys.Date())) {
+  conn <- Tdata::safe_db_connect()
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+
+  data$cache_date <- date
+  DBI::dbWriteTable(conn, table_name, data, append = TRUE)
+  message(sprintf("Cache appended: %s (+%d rows)", table_name, nrow(data)))
+}

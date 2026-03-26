@@ -4,7 +4,9 @@
 # No artificial threshold — just gate + rank + cut.
 #
 # The 2 gates:
-#   1. TECHNICAL ANALYSIS — sector gate passed + stock score >= 5 (WATCH minimum)
+#   1. TECHNICAL ANALYSIS — stock score >= 5 (WATCH minimum) + sector gate passed
+#      Note: scores are always computed regardless of sector gate.
+#      Sector gate (ETF above MA20 + positive slope + ADX>20) is an additional filter.
 #   2. OPTIONALITY — vol profile exists AND Optionality >= PARTIAL
 #
 # Composite score = technical_score + persistence_bonus
@@ -41,7 +43,15 @@ final_rank <- function(out, macro, scenario_scores = NULL, persistence = NULL,
 
   for (i in seq_len(nrow(out))) {
     # ── Gate 1: Technical analysis ─────────────────────────────────────
-    out$Gate_Tech[i] <- tech_score[i] >= 5
+    # Score must be >= 5 AND the sector gate must approve the direction
+    score_ok <- tech_score[i] >= 5
+    sect_ok  <- TRUE
+    if ("Sector_Long_Gate" %in% names(out) && "Sector_Short_Gate" %in% names(out)) {
+      long_viable  <- !is.na(out$Long_Score[i])  && out$Long_Score[i] >= 5  && isTRUE(out$Sector_Long_Gate[i])
+      short_viable <- !is.na(out$Short_Score[i]) && out$Short_Score[i] >= 5 && isTRUE(out$Sector_Short_Gate[i])
+      sect_ok <- long_viable || short_viable
+    }
+    out$Gate_Tech[i] <- score_ok && sect_ok
 
     # ── Gate 2: Optionality ────────────────────────────────────────────
     opt <- if ("Optionality" %in% names(out)) out$Optionality[i] else "NO DATA"

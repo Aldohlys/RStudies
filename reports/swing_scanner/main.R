@@ -112,14 +112,16 @@ message("Scoring stocks...")
 results <- list()
 
 for (sec in sectors) {
-  do_long  <- sec %in% long_approved
-  do_short <- sec %in% short_approved
-  if (!do_long && !do_short) next
+  sect_gate <- sector_ok[[sec]]
+  etf       <- sector_etfs[sec]
+  etf_ret   <- sect_gate$ret20
+  stocks    <- get_sector_stocks(sec)
+  mmod      <- sect_gate$macro_mod
 
-  etf     <- sector_etfs[sec]
-  etf_ret <- sector_ok[[sec]]$ret20
-  stocks  <- get_sector_stocks(sec)
-  mmod    <- sector_ok[[sec]]$macro_mod
+  # Sector gate flags — informational, do NOT block scoring
+
+  sg_long  <- sect_gate$long
+  sg_short <- sect_gate$short
 
   for (tk in stocks) {
     last <- get_last(computed, tk)
@@ -127,22 +129,22 @@ for (sec in sectors) {
     price   <- last$Close
     atr_pct <- round(last$atr14 / price * 100, 2)
 
+    # Always score both directions — sector gate does not block
     sl_obj <- NULL; long_sig <- "n/a"; long_score <- NA_integer_
-    if (do_long) {
-      if (price > PRICE_MAX) { long_sig <- "SKIP" }
-      else {
-        sl_obj <- score_long(last, price, etf_ret)
-        long_score <- sl_obj$score + mmod$long_boost
-        long_sig <- sig_label(long_score)
-      }
+    if (price > PRICE_MAX) {
+      long_sig <- "SKIP"
+    } else {
+      sl_obj <- score_long(last, price, etf_ret)
+      long_score <- sl_obj$score + mmod$long_boost
+      long_sig <- sig_label(long_score)
     }
 
-    ss_obj <- NULL; short_sig <- "n/a"; short_score <- NA_integer_
-    if (do_short) {
-      ss_obj <- score_short(last, price, etf_ret)
-      short_score <- ss_obj$score + mmod$short_boost
-      short_sig <- sig_label(short_score)
-    }
+    ss_obj <- score_short(last, price, etf_ret)
+    short_score <- ss_obj$score + mmod$short_boost
+    short_sig   <- sig_label(short_score)
+
+    # RS_vs_ETF always available from long score (both compute the same RS)
+    rs_val <- if (!is.null(sl_obj)) sl_obj$rs else ss_obj$rs
 
     results[[paste0(sec, "_", tk)]] <- data.frame(
       Ticker = tk, Sector = sec, Sector_ETF = etf,
@@ -152,36 +154,45 @@ for (sec in sectors) {
       Long_Entry = if (!is.null(sl_obj) && price <= PRICE_MAX) round(price * 1.002, 2) else NA_real_,
       Long_Stop = if (!is.null(sl_obj) && price <= PRICE_MAX) round(last$ma50 * 0.99, 2) else NA_real_,
       Long_Target = if (!is.null(sl_obj) && price <= PRICE_MAX) round(price * 1.002 + 2.5 * (price * 1.002 - last$ma50 * 0.99), 2) else NA_real_,
-      Short_Score = ifelse(is.null(ss_obj), NA_integer_, short_score),
+      Short_Score = short_score,
       Short_Signal = short_sig,
-      Short_Entry = if (!is.null(ss_obj)) round(price * 0.998, 2) else NA_real_,
-      Short_Stop = if (!is.null(ss_obj)) round(last$ma50 * 1.01, 2) else NA_real_,
-      Short_Target = if (!is.null(ss_obj)) round(price * 0.998 - 2.5 * (last$ma50 * 1.01 - price * 0.998), 2) else NA_real_,
+      Short_Entry = round(price * 0.998, 2),
+      Short_Stop = round(last$ma50 * 1.01, 2),
+      Short_Target = round(price * 0.998 - 2.5 * (last$ma50 * 1.01 - price * 0.998), 2),
       ADX10 = round(last$adx10, 1), RSI14 = round(last$rsi14, 1),
       RSI_slope = round(last$rsi_slope, 1),
       MA50_dist = round(ifelse(!is.na(last$ma50) && last$ma50 > 0, (price - last$ma50) / last$ma50 * 100, 0), 1),
       OBV_rising = !is.na(last$obv_slope) && last$obv_slope > 0,
       UpDn_ratio = round(ifelse(is.na(last$updn_ratio), 0, last$updn_ratio), 2),
-      RS_vs_ETF = if (!is.null(sl_obj)) sl_obj$rs else if (!is.null(ss_obj)) ss_obj$rs else NA_real_,
+      RS_vs_ETF = rs_val,
       Macro_Note = mmod$macro_note,
+      Sector_Long_Gate = sg_long,
+      Sector_Short_Gate = sg_short,
       stringsAsFactors = FALSE)
   }
 }
 
 if (length(results) == 0) { message("No results."); quit("no") }
 
-out <- bind_rows(results) |>
+out <- bind_rows(results)
+
+# Best_Signal: prefer the direction where sector gate is open + highest score
+# Both directions always have scores now — use sector gate to pick the actionable one
+out <- out |>
   mutate(
+    # Effective signal: score-based signal filtered by sector gate
+    Long_Eff  = ifelse(Sector_Long_Gate  & Long_Signal  %in% c("TRADE","WATCH"), Long_Signal,  "SKIP"),
+    Short_Eff = ifelse(Sector_Short_Gate & Short_Signal %in% c("TRADE","WATCH"), Short_Signal, "SKIP"),
     Best_Signal = case_when(
-      Long_Signal == "TRADE"  ~ "LONG TRADE",  Short_Signal == "TRADE" ~ "SHORT TRADE",
-      Long_Signal == "WATCH"  ~ "LONG WATCH",  Short_Signal == "WATCH" ~ "SHORT WATCH",
+      Long_Eff == "TRADE"  ~ "LONG TRADE",  Short_Eff == "TRADE" ~ "SHORT TRADE",
+      Long_Eff == "WATCH"  ~ "LONG WATCH",  Short_Eff == "WATCH" ~ "SHORT WATCH",
       TRUE ~ "SKIP"),
     Sort = case_when(
       Best_Signal == "LONG TRADE" ~ 1, Best_Signal == "SHORT TRADE" ~ 2,
       Best_Signal == "LONG WATCH" ~ 3, Best_Signal == "SHORT WATCH" ~ 4, TRUE ~ 5),
     Best_Score = pmax(ifelse(is.na(Long_Score), 0L, Long_Score),
                       ifelse(is.na(Short_Score), 0L, Short_Score))) |>
-  arrange(Sort, desc(Best_Score)) |> select(-Sort, -Best_Score)
+  arrange(Sort, desc(Best_Score)) |> select(-Sort, -Best_Score, -Long_Eff, -Short_Eff)
 
 message("Stocks scored: ", nrow(out))
 message("Signals: ", paste(names(table(out$Best_Signal)), table(out$Best_Signal), sep = ":", collapse = " | "))
