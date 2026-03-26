@@ -91,7 +91,7 @@ score_breakout <- function(last, price, etf_ret) {
   S3  <- rs > 0
   S4  <- !is.na(last$obv_slope)     && last$obv_slope > 0
   S5  <- !is.na(last$squeeze_ratio) && last$squeeze_ratio < 0.65
-  S6  <- !is.na(last$vol_decline)   && last$vol_decline < 0.90
+  S6  <- !is.na(last$vol_decline)   && last$vol_decline < 0.95
 
   # ── BREAKOUT phase (4 criteria) ────────────────────────────────────────
   BK1 <- !is.na(last$rsi14)      && last$rsi14 > 50 &&

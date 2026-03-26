@@ -349,18 +349,17 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
   # Build BOT section
   bot_html <- build_bot_section(out)
 
-  # Signal summary badges
-  display_out <- out[out$Best_Signal != "SKIP", , drop = FALSE]
-  sig_counts <- table(display_out$Best_Signal)
-  summary_items <- paste0(vapply(names(sig_counts), function(s) {
-    sprintf('<span class="sig-badge %s">%s: %d</span>', summary_badge_css(s), s, sig_counts[s])
-  }, character(1)), collapse = " ")
-  n_top <- sum(display_out$Rank == "TOP PICK", na.rm = TRUE)
-  if (n_top > 0) {
-    summary_items <- paste0(
-      sprintf('<span class="sig-badge sig-top-pick">TOP PICK: %d</span> ', n_top),
-      summary_items)
-  }
+  # Signal summary badges — BOT focused
+  n_bot_green <- sum(!is.na(out$BOT_Setup) & !is.na(out$BOT_Breakout) &
+                      out$BOT_Setup >= 5 & out$BOT_Breakout >= 3, na.rm = TRUE)
+  n_bot_amber <- sum(!is.na(out$BOT_Setup) & !is.na(out$BOT_Breakout) &
+                      ((out$BOT_Setup >= 5 & out$BOT_Breakout >= 1 & out$BOT_Breakout < 3) |
+                       (out$BOT_Setup >= 4 & out$BOT_Setup < 5 & out$BOT_Breakout >= 3)), na.rm = TRUE)
+  summary_items <- ""
+  if (n_bot_green > 0)
+    summary_items <- paste0(summary_items, sprintf('<span class="sig-badge" style="background:#1a8a1a;color:#fff">BOT LONG CONFIRMED: %d</span> ', n_bot_green))
+  if (n_bot_amber > 0)
+    summary_items <- paste0(summary_items, sprintf('<span class="sig-badge" style="background:#E69F00;color:#000">BOT LONG WATCH: %d</span> ', n_bot_amber))
 
   # Macro banner
   macro_banner <- sprintf("Bias: %s | VIX: %s | S5FI: %s%%",
@@ -369,9 +368,11 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
     ifelse(is.na(macro$s5fi[1]), "n/a", round(macro$s5fi[1], 1)))
   macro_css <- switch(macro_bias, "LONG BIAS" = "badge-green", "SHORT BIAS" = "badge-red", "badge-orange")
 
-  # Transitions and Alerts HTML
-  transitions_html <- build_transitions_html(transitions)
-  alerts_html <- build_alerts_html(active_alerts, display_out$Ticker)
+  # BOT displayed count
+  n_bot_displayed <- n_bot_green + n_bot_amber
+
+  # Alerts HTML
+  alerts_html <- build_alerts_html(active_alerts, out$Ticker)
 
   replacements <- list(
     "{{RUN_DATE}}"     = format(Sys.time(), "%d %B %Y — %H:%M"),
@@ -379,16 +380,11 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
     "{{MACRO_BANNER}}" = macro_banner,
     "{{SUMMARY}}"      = summary_items,
     "{{N_SCORED}}"     = as.character(nrow(out)),
-    "{{N_DISPLAYED}}"  = as.character(nrow(display_out)),
+    "{{N_DISPLAYED}}"  = as.character(n_bot_displayed),
     "{{PRICE_MAX}}"    = as.character(price_max),
     "{{SECTOR_ROWS}}"  = build_sector_rows(sector_ok),
-    "{{TRANSITIONS}}"  = transitions_html,
     "{{ALERTS}}"       = alerts_html,
     "{{BOT_SIGNALS}}"  = bot_html,
-    "{{TRADE_TH}}"     = trade_th,
-    "{{TRADE_TBODY}}"  = trade_tbody,
-    "{{WATCH_TH}}"     = watch_th,
-    "{{WATCH_TBODY}}"  = watch_tbody,
     "{{CSV_FILE}}"     = basename(csv_file)
   )
 
