@@ -111,6 +111,12 @@ td.g3-nodata{background:#e5e5e5;color:#999;text-align:center}
 .alert-match{background:#337ab7;color:#fff;font-size:10px;font-weight:700;
   padding:1px 6px;border-radius:3px;margin-left:6px}
 
+/* BOT breakout score — high contrast green/amber/grey */
+td.bot-green{background:#1a8a1a;color:#fff;font-weight:700;text-align:center}
+td.bot-orange{background:#E69F00;color:#000;font-weight:700;text-align:center}
+td.bot-red{background:#f0f0f0;color:#333;text-align:center}
+.veh-hint{font-size:10px;font-weight:600;margin-left:3px}
+
 .footer{margin-top:16px;padding:10px 0;border-top:1px solid #ddd;
   font-size:12px;color:#666;display:flex;justify-content:space-between}
 </style>
@@ -134,70 +140,71 @@ td.g3-nodata{background:#e5e5e5;color:#999;text-align:center}
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">01</span>Scoring Methodology &mdash; 2-Gate System</div>
+  <div class="stitle"><span class="snum">01</span>BOT Scoring &mdash; Setup / Breakout Phases</div>
   <div class="method-grid">
     <div class="method-card">
-      <h3>Gate 1: Technical Analysis</h3>
-      <div class="gate-label">Gate: sector ETF gate passed + stock score &ge; 5</div>
-      <div class="score-label">Score (0&ndash;10): 10 criteria across 4 themes. TRADE &ge; 7 | WATCH 5&ndash;6 | SKIP &lt; 5</div>
+      <h3>SETUP phase (S: 0&ndash;6)</h3>
+      <div class="gate-label">Conditions that build the base over time</div>
       <div class="method-themes">
         <div class="method-theme">
-          <div class="theme-title">Relative Strength <span class="theme-pts">1 pt</span></div>
-          <ul><li>Stock outperforming (long) or underperforming (short) its sector ETF over 20 days</li></ul>
-        </div>
-        <div class="method-theme">
-          <div class="theme-title">Trend Structure <span class="theme-pts">4 pts</span></div>
+          <div class="theme-title">Trend <span class="theme-pts">2 pts</span></div>
           <ul>
-            <li>Price above (long) or below (short) MA50</li>
-            <li>MA50 slope rising (long) or declining (short)</li>
-            <li>ADX &gt; 20 with directional index confirming (DI+ &gt; DI- for long, DI- &gt; DI+ for short)</li>
-            <li>Price in upper (long &ge; 55%) or lower (short &le; 45%) half of 20-day range</li>
+            <li>S1: Price above MA50 (uptrend established)</li>
+            <li>S2: MA50 slope rising over 5 bars (trend confirmed)</li>
           </ul>
         </div>
         <div class="method-theme">
-          <div class="theme-title">Momentum &amp; Asymmetry <span class="theme-pts">3 pts</span></div>
+          <div class="theme-title">Accumulation <span class="theme-pts">2 pts</span></div>
           <ul>
-            <li>RSI14 above (long) or below (short) 50, with slope confirming direction</li>
-            <li>Not overextended: within 15% of MA50 (room to mean-revert against you)</li>
-            <li><strong>Room to run</strong>: price &gt; 1 ATR away from 20-day support (short) or resistance (long)</li>
+            <li>S3: Relative Strength &gt; 0 vs sector ETF (20d)</li>
+            <li>S4: On-Balance Volume rising (20d accumulation)</li>
           </ul>
         </div>
         <div class="method-theme">
-          <div class="theme-title">Volume Confirmation <span class="theme-pts">2 pts</span></div>
+          <div class="theme-title">Consolidation <span class="theme-pts">2 pts</span></div>
           <ul>
-            <li>On-Balance Volume (OBV) trend aligned with direction over 20 days</li>
-            <li>Up/Down volume ratio: up-volume &gt; down-volume for long (ratio &gt; 1.1), inverse for short (&lt; 0.9)</li>
+            <li>S5: Squeeze &mdash; range 20d / range 40d &lt; 0.65 (range contracting)</li>
+            <li>S6: Volume decline &mdash; vol 20d / vol 50d &lt; 0.90 (supply drying up)</li>
           </ul>
         </div>
       </div>
     </div>
     <div class="method-card">
-      <h3>Gate 2: Optionality</h3>
-      <div class="gate-label">Gate: IV data exists + Optionality &ge; PARTIAL</div>
-      <div class="score-label">PASS (3&ndash;4) | PARTIAL (2) | FAIL (0&ndash;1)</div>
-      <ul>
-        <li>IV30 &lt; 40%: favorable level (+1)</li>
-        <li>IVP &lt; 60%: room for IV expansion (+1)</li>
-        <li>VRP &lt; 0: negative vol risk premium (+1)</li>
-        <li>Contango: iv30 &lt; iv180 (+1)</li>
+      <h3>BREAKOUT phase (BK: 0&ndash;4)</h3>
+      <div class="gate-label">Conditions that confirm the breakout NOW</div>
+      <div class="method-themes">
+        <div class="method-theme">
+          <div class="theme-title">Momentum <span class="theme-pts">2 pts</span></div>
+          <ul>
+            <li>BK1: RSI14 &gt; 50 AND slope rising (momentum accelerating)</li>
+            <li>BK2: Up/Down volume ratio &gt; 1.1 (buying pressure)</li>
+          </ul>
+        </div>
+        <div class="method-theme">
+          <div class="theme-title">Confirmation <span class="theme-pts">2 pts</span></div>
+          <ul>
+            <li>BK3: Price in top 30% of 20d range (pushing against resistance)</li>
+            <li>BK4: Volume surge &ge; 1.2x average (volume confirmation today)</li>
+          </ul>
+        </div>
+      </div>
+      <h3 style="margin-top:14px">Optionality gate</h3>
+      <div class="gate-label">Informational &mdash; displayed per stock</div>
+      <ul style="margin-top:6px">
+        <li>IV30 &lt; 40% (+1) | IVP &lt; 60% (+1) | VRP &lt; 0 (+1) | Contango (+1)</li>
+        <li>PASS (3&ndash;4) | PARTIAL (2) | FAIL (0&ndash;1)</li>
       </ul>
     </div>
   </div>
   <div style="padding:6px 14px 12px;font-size:12px;color:#666">
-    <strong>TRADE</strong> = both gates pass + top 3 composite (tech + persistence) &nbsp;|&nbsp;
-    <strong>WATCH</strong> = tech gate passed, optionality gate failed (max 10 shown) &nbsp;|&nbsp;
-    <strong>SKIP</strong> = tech gate failed (hidden, in CSV) &nbsp;|&nbsp;
-    <strong>VIX &gt; 25</strong> = warning banner in macro report (informational only)
+    <strong style="color:#1a8a1a">Green</strong> = S &ge; 5 AND BK &ge; 3 (breakout confirmed) &nbsp;|&nbsp;
+    <strong style="color:#E69F00">Amber</strong> = setup ready / trigger partial (watch) &nbsp;|&nbsp;
+    <strong style="color:#999">Grey</strong> = no signal
   </div>
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">02</span>Transitions vs Previous Run</div>
-  {{TRANSITIONS}}
-</div>
-
-<div class="section">
-  <div class="stitle"><span class="snum">03</span>Sector Gate</div>
+  <div class="stitle"><span class="snum">02</span>Sector Gate</div>
   <table>
   <tr><th>Sector</th><th>ETF</th><th>Direction</th><th title="ETF vs MA20 + slope + ADX directional strength">ETF Status</th><th title="Sector ETF 20d return minus SPY 20d return">RS vs SPY</th><th title="Tailwinds / headwinds from macro flags + mismatches">Macro Context</th></tr>
   {{SECTOR_ROWS}}
@@ -205,27 +212,21 @@ td.g3-nodata{background:#e5e5e5;color:#999;text-align:center}
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">04</span>Trade Signals</div>
+  <div class="stitle"><span class="snum">03</span>BOT Breakout Signals &mdash; LONG only</div>
+  <div style="padding:6px 14px;font-size:12px;color:#666">
+    <strong style="color:#1a8a1a">Green</strong> = Setup &ge; 5/6 AND Breakout &ge; 3/4 (confirmed) &nbsp;|&nbsp;
+    <strong style="color:#E69F00">Amber</strong> = Setup ready but no trigger, or trigger without full setup (watch) &nbsp;|&nbsp;
+    Vehicle hint: <strong>call</strong> (price &lt; $150, IVP &lt; 60) | <strong>spread</strong> (price &gt; $150 or IVP &gt; 60) | <strong>stock</strong> (price &lt; $10)
+  </div>
   <div style="overflow-x:auto">
-  <table>
-  <tr>{{TRADE_TH}}</tr>
-  {{TRADE_TBODY}}
-  </table>
+  {{BOT_SIGNALS}}
   </div>
 </div>
 
-<div class="section">
-  <div class="stitle"><span class="snum">05</span>Watch Signals</div>
-  <div style="overflow-x:auto">
-  <table>
-  <tr>{{WATCH_TH}}</tr>
-  {{WATCH_TBODY}}
-  </table>
-  </div>
-</div>
+<!-- Trade/Watch signals removed — BOT section is the primary signal source -->
 
 <div class="section">
-  <div class="stitle"><span class="snum">06</span>Active Alerts</div>
+  <div class="stitle"><span class="snum">04</span>Active Alerts</div>
   {{ALERTS}}
 </div>
 

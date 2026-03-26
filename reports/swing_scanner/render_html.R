@@ -5,7 +5,9 @@ source(file.path(SCRIPT_DIR, "scoring.R"))
 
 #' Build sector gate HTML rows with clear direction badge and macro context
 build_sector_rows <- function(sector_ok) {
-  paste0(lapply(names(sector_ok), function(sec) {
+  # Skip non-tradeable sectors
+  skip_sectors <- c("US Stocks", "US stocks", "China stocks", "Forex")
+  paste0(lapply(setdiff(names(sector_ok), skip_sectors), function(sec) {
     s <- sector_ok[[sec]]
     css <- if (s$long && s$short) "gate-both"
            else if (s$long) "gate-long"
@@ -135,7 +137,7 @@ summary_badge_css <- function(sig) {
 # ── Column definitions for the two tables ─────────────────────────────────────
 # Technical columns first, then optionality columns.
 
-SIGNAL_COLS <- c("Ticker", "Sector", "Composite", "Price",
+SIGNAL_COLS <- c("Ticker", "Sector", "Composite", "BOT", "Price",
   "ADX10", "RSI14", "RS_vs_ETF",
   "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr")
 
@@ -143,6 +145,7 @@ SIGNAL_TIPS <- c(
   Ticker      = "Stock ticker symbol",
   Sector      = "Industry sector classification",
   Composite   = "Tech score (0-10) + persistence (+1 if previously on watchlist)",
+  BOT         = "Breakout score (0-10): 6 trend + 4 breakout criteria (squeeze, vol decline, range position, vol surge). Hover for details.",
   Price       = "Last closing price in USD",
   ADX10       = "Average Directional Index (10d)",
   RSI14       = "Relative Strength Index (14d)",
@@ -191,6 +194,30 @@ build_signal_tbody <- function(df, show_top_pick = FALSE) {
     } else ""
 
     cells <- paste0(vapply(SIGNAL_COLS, function(col) {
+      if (col == "BOT") {
+        # BOT displayed as S:X/6 BK:Y/4 with color based on combination
+        bot_setup <- if ("BOT_Setup" %in% names(row) && !is.na(row[["BOT_Setup"]])) as.integer(row[["BOT_Setup"]]) else NA_integer_
+        bot_bk    <- if ("BOT_Breakout" %in% names(row) && !is.na(row[["BOT_Breakout"]])) as.integer(row[["BOT_Breakout"]]) else NA_integer_
+        bot_flags <- if ("BOT_Flags" %in% names(row)) as.character(row[["BOT_Flags"]]) else ""
+        if (is.na(bot_setup)) return('<td></td>')
+        # Color logic: setup >= 5 AND breakout >= 3 = green
+        #              setup >= 5 AND breakout 1-2 = orange (watch)
+        #              setup >= 4 AND breakout >= 3 = orange (weak setup)
+        #              else = grey
+        bot_css <- if (bot_setup >= 5 && bot_bk >= 3) "bot-green"
+                   else if (bot_setup >= 5 && bot_bk >= 1) "bot-orange"
+                   else if (bot_setup >= 4 && bot_bk >= 3) "bot-orange"
+                   else "bot-red"
+        # Vehicle hint
+        price_val <- as.numeric(row[["Price"]])
+        ivp_val   <- if ("IVP" %in% names(row) && !is.na(row[["IVP"]])) as.numeric(row[["IVP"]]) else NA
+        veh <- if (!is.na(price_val) && price_val < 10) "stock"
+               else if (!is.na(ivp_val) && ivp_val > 60) "spread"
+               else if (!is.na(price_val) && price_val > 150) "spread"
+               else "call"
+        label <- sprintf("S:%d BK:%d", bot_setup, bot_bk)
+        return(sprintf('<td class="%s" title="%s">%s <span class="veh-hint">%s</span></td>', bot_css, bot_flags, label, veh))
+      }
       v <- as.character(row[[col]])
       if (is.na(v) || v == "NA") v <- ""
       if (col == "Optionality") {
@@ -215,6 +242,88 @@ build_signal_tbody <- function(df, show_top_pick = FALSE) {
   }, character(1)), collapse = "\n")
 }
 
+#' Build BOT signals section — stocks with meaningful Setup/Breakout scores
+#' Shown independently of long/short Best_Signal (a BOT candidate may be SKIP for trend)
+build_bot_section <- function(out) {
+  # Select stocks with BOT potential: green or orange
+  bot_rows <- out[!is.na(out$BOT_Setup) & !is.na(out$BOT_Breakout) &
+    ((out$BOT_Setup >= 5 & out$BOT_Breakout >= 1) |
+     (out$BOT_Setup >= 4 & out$BOT_Breakout >= 3)), , drop = FALSE]
+
+  if (nrow(bot_rows) == 0) {
+    return('<div class="no-data">No BOT signals today.</div>')
+  }
+
+  # Sort: green first (S>=5 BK>=3), then orange, by setup desc then breakout desc
+  bot_rows$bot_priority <- ifelse(bot_rows$BOT_Setup >= 5 & bot_rows$BOT_Breakout >= 3, 0, 1)
+  bot_rows <- bot_rows[order(bot_rows$bot_priority, -bot_rows$BOT_Setup, -bot_rows$BOT_Breakout), ]
+
+  BOT_COLS <- c("Ticker", "Sector", "Price", "BOT", "BOT_Squeeze", "BOT_VolDec", "BOT_VolSurge",
+                "IV30", "IVP", "Optionality")
+  BOT_TIPS <- c(
+    Ticker      = "Stock ticker symbol",
+    Sector      = "Industry sector",
+    Price       = "Last closing price",
+    BOT         = "Setup (S:X/6) + Breakout (BK:Y/4) phase scores",
+    BOT_Squeeze = "Range 20d / Range 40d (< 0.65 = squeeze confirmed)",
+    BOT_VolDec  = "Vol 20d avg / Vol 50d avg (< 0.90 = supply drying up)",
+    BOT_VolSurge = "Today volume / 20d avg (>= 1.2 = surge confirmed)",
+    IV30        = "Implied volatility 30d",
+    IVP         = "IV percentile",
+    Optionality = "Optionality gate"
+  )
+
+  th <- paste0(vapply(BOT_COLS, function(col) {
+    tip <- BOT_TIPS[col]
+    if (!is.na(tip)) sprintf('<th title="%s">%s</th>', tip, col)
+    else sprintf('<th>%s</th>', col)
+  }, character(1)), collapse = "")
+
+  tbody <- paste0(vapply(seq_len(nrow(bot_rows)), function(ri) {
+    row <- bot_rows[ri, ]
+    bot_setup <- as.integer(row[["BOT_Setup"]])
+    bot_bk    <- as.integer(row[["BOT_Breakout"]])
+    bot_flags <- as.character(row[["BOT_Flags"]])
+
+    bot_css <- if (bot_setup >= 5 && bot_bk >= 3) "bot-green"
+               else "bot-orange"
+
+    # Vehicle hint
+    price_val <- as.numeric(row[["Price"]])
+    ivp_val   <- if ("IVP" %in% names(row) && !is.na(row[["IVP"]])) as.numeric(row[["IVP"]]) else NA
+    veh <- if (!is.na(price_val) && price_val < 10) "stock"
+           else if (!is.na(ivp_val) && ivp_val > 60) "spread"
+           else if (!is.na(price_val) && price_val > 150) "spread"
+           else "call"
+
+    bot_label <- sprintf("S:%d BK:%d", bot_setup, bot_bk)
+    bot_cell <- sprintf('<td class="%s" title="%s">%s <span class="veh-hint">%s</span></td>',
+                        bot_css, bot_flags, bot_label, veh)
+
+    # Other cells
+    fmt <- function(v) { v <- as.character(v); if (is.na(v) || v == "NA") "" else v }
+    opt <- fmt(row[["Optionality"]])
+    opt_cell <- sprintf('<td class="%s">%s</td>', opt_css(opt), opt)
+
+    sq <- fmt(row[["BOT_Squeeze"]])
+    vd <- fmt(row[["BOT_VolDec"]])
+    vs <- fmt(row[["BOT_VolSurge"]])
+    # Highlight squeeze/vol values that pass threshold
+    sq_css <- if (!is.na(row[["BOT_Squeeze"]]) && row[["BOT_Squeeze"]] < 0.65) ' style="font-weight:700"' else ''
+    vd_css <- if (!is.na(row[["BOT_VolDec"]]) && row[["BOT_VolDec"]] < 0.90) ' style="font-weight:700"' else ''
+    vs_css <- if (!is.na(row[["BOT_VolSurge"]]) && row[["BOT_VolSurge"]] >= 1.2) ' style="font-weight:700"' else ''
+
+    sprintf('<tr><td>%s</td><td>%s</td><td>%s</td>%s<td%s>%s</td><td%s>%s</td><td%s>%s</td><td>%s</td><td>%s</td>%s</tr>',
+      fmt(row[["Ticker"]]), fmt(row[["Sector"]]), fmt(row[["Price"]]),
+      bot_cell,
+      sq_css, sq, vd_css, vd, vs_css, vs,
+      fmt(row[["IV30"]]), fmt(row[["IVP"]]),
+      opt_cell)
+  }, character(1)), collapse = "\n")
+
+  sprintf('<table>\n<tr>%s</tr>\n%s\n</table>', th, tbody)
+}
+
 #' Render swing scanner HTML
 render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out_dir,
                                  price_max, transitions = NULL, active_alerts = NULL) {
@@ -236,6 +345,9 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
   watch_th    <- trade_th  # same columns
   trade_tbody <- build_signal_tbody(trade_rows, show_top_pick = TRUE)
   watch_tbody <- build_signal_tbody(watch_rows, show_top_pick = FALSE)
+
+  # Build BOT section
+  bot_html <- build_bot_section(out)
 
   # Signal summary badges
   display_out <- out[out$Best_Signal != "SKIP", , drop = FALSE]
@@ -272,6 +384,7 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
     "{{SECTOR_ROWS}}"  = build_sector_rows(sector_ok),
     "{{TRANSITIONS}}"  = transitions_html,
     "{{ALERTS}}"       = alerts_html,
+    "{{BOT_SIGNALS}}"  = bot_html,
     "{{TRADE_TH}}"     = trade_th,
     "{{TRADE_TBODY}}"  = trade_tbody,
     "{{WATCH_TH}}"     = watch_th,

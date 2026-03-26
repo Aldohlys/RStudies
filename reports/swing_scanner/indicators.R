@@ -43,6 +43,23 @@ calc_ind <- function(d) {
   d$updn_ratio <- ifelse(!is.na(d$dnvol10) & d$dnvol10 > 0, d$upvol10 / d$dnvol10, NA)
 
   d$ret20 <- (d$Close / dplyr::lag(d$Close, 20) - 1) * 100
+
+  # ── BOT breakout indicators ────────────────────────────────────────────
+  # Squeeze: 20d range / 40d range
+  d$high40  <- zoo::rollapply(d$High, width = 40, FUN = max, fill = NA, align = "right")
+  d$low40   <- zoo::rollapply(d$Low,  width = 40, FUN = min, fill = NA, align = "right")
+  range_20  <- d$high20 - d$low20
+  range_40  <- d$high40 - d$low40
+  d$squeeze_ratio <- ifelse(!is.na(range_40) & range_40 > 0, range_20 / range_40, NA)
+
+  # Volume decline: vol_20 / vol_50
+  d$vol_ma20 <- zoo::rollapply(d$Volume, width = 20, FUN = mean, fill = NA, align = "right")
+  d$vol_ma50 <- zoo::rollapply(d$Volume, width = 50, FUN = mean, fill = NA, align = "right")
+  d$vol_decline <- ifelse(!is.na(d$vol_ma50) & d$vol_ma50 > 0, d$vol_ma20 / d$vol_ma50, NA)
+
+  # Volume surge: today's volume / 20d avg
+  d$vol_surge <- ifelse(!is.na(d$vol_ma20) & d$vol_ma20 > 0, d$Volume / d$vol_ma20, NA)
+
   d
 }
 

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-03-26] - BOT breakout scoring with Setup/Breakout phases
+
+### Added
+- **scoring.R**: New `score_breakout()` function with 10 criteria split into 2 phases:
+  - SETUP (S: 0-6): trend (S1 price>MA50, S2 MA50 slope), accumulation (S3 RS>0, S4 OBV rising), consolidation (S5 squeeze<0.65, S6 vol decline<0.90)
+  - BREAKOUT (BK: 0-4): momentum (BK1 RSI>50 rising, BK2 up/down>1.1), confirmation (BK3 rng_pct>=70, BK4 vol surge>=1.2x)
+- **indicators.R**: New BOT indicators: `squeeze_ratio` (range_20/range_40), `vol_decline` (vol_20/vol_50), `vol_surge` (vol_today/vol_20avg), `high40`, `low40`
+- **main.R**: BOT scoring integrated into stock loop — outputs `BOT_Score`, `BOT_Setup`, `BOT_Breakout`, `BOT_Squeeze`, `BOT_VolDec`, `BOT_VolSurge`, `BOT_Flags`
+- **render_html.R**: New `build_bot_section()` — dedicated BOT signals table independent of long/short scoring. Color: green (S>=5 BK>=3), amber (partial), grey (no signal). Vehicle hint (call/spread/stock) based on price and IVP.
+- **template.html**: New section "03 BOT Breakout Signals — LONG only" with dedicated legend
+
+### Changed
+- **template.html**: Section 01 methodology rewritten to describe Setup/Breakout phase scoring instead of old 2-gate system
+- **template.html**: Removed Transitions section (noise, low signal)
+- **template.html**: Removed Trade/Watch signal tables (replaced by BOT section as primary signal source)
+- **template.html**: Sector gate hides non-tradeable sectors (US Stocks, China stocks, Forex)
+- **render_html.R**: `SIGNAL_COLS` includes BOT column with Setup/Breakout display
+- **render_html.R**: `build_sector_rows()` filters out VXX/QQQ/FXC/Forex sectors
+- **template.html**: BOT colors use high-contrast palette for colorblind accessibility (green #1a8a1a / amber #E69F00 / grey #f0f0f0)
+
 ## [2026-03-26] - Macro context calibration, bias labels, section reorder
 
 ### Changed

@@ -146,6 +146,13 @@ for (sec in sectors) {
     # RS_vs_ETF always available from long score (both compute the same RS)
     rs_val <- if (!is.null(sl_obj)) sl_obj$rs else ss_obj$rs
 
+    # ── BOT breakout score ─────────────────────────────────────────────
+    bot_obj <- NULL; bot_score <- NA_integer_
+    if (price <= PRICE_MAX) {
+      bot_obj <- score_breakout(last, price, etf_ret)
+      bot_score <- bot_obj$score
+    }
+
     results[[paste0(sec, "_", tk)]] <- data.frame(
       Ticker = tk, Sector = sec, Sector_ETF = etf,
       Price = round(price, 2), ATR_pct = atr_pct,
@@ -159,6 +166,13 @@ for (sec in sectors) {
       Short_Entry = round(price * 0.998, 2),
       Short_Stop = round(last$ma50 * 1.01, 2),
       Short_Target = round(price * 0.998 - 2.5 * (last$ma50 * 1.01 - price * 0.998), 2),
+      BOT_Score = bot_score,
+      BOT_Setup = if (!is.null(bot_obj)) bot_obj$setup else NA_integer_,
+      BOT_Breakout = if (!is.null(bot_obj)) bot_obj$breakout else NA_integer_,
+      BOT_Squeeze = if (!is.null(bot_obj)) bot_obj$squeeze else NA_real_,
+      BOT_VolDec = if (!is.null(bot_obj)) bot_obj$vol_dec else NA_real_,
+      BOT_VolSurge = if (!is.null(bot_obj)) bot_obj$vol_surge else NA_real_,
+      BOT_Flags = if (!is.null(bot_obj)) bot_obj$flags else "",
       ADX10 = round(last$adx10, 1), RSI14 = round(last$rsi14, 1),
       RSI_slope = round(last$rsi_slope, 1),
       MA50_dist = round(ifelse(!is.na(last$ma50) && last$ma50 > 0, (price - last$ma50) / last$ma50 * 100, 0), 1),
