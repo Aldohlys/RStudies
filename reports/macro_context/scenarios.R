@@ -23,18 +23,20 @@ sig <- function(x, center, scale) {
 # Converts raw market data into continuous [0,1] signals.
 #
 # Each signal has a tooltip description for the report:
+# Parameters calibrated from 10yr historical medians/SDs (calibrate_from_history.R, 2026-03-26)
+# center = median (0.5 = historically normal), scale = SD (full 0-1 range used)
 SIGNAL_TOOLTIPS <- list(
-  vix_stress    = "VIX stress level | sig(VIX, center=25, scale=4) | 0=calm, 0.5=threshold, 1=panic",
-  vix_calm      = "VIX calm level | 1 - sig(VIX, center=20, scale=3) | inverse of stress",
-  backwardation = "VIX term structure inversion | sig(1 - VIX/VIX3M, center=0.10, scale=0.05) | 1=severe backwardation",
+  vix_stress    = "VIX stress level | sig(VIX, center=16.65, scale=7.33) | 0.5=normal, >0.85=extreme",
+  vix_calm      = "VIX calm level | 1 - sig(VIX, center=16.65, scale=7.33) | inverse of stress",
+  backwardation = "VIX term structure inversion | sig(1 - VIX/VIX3M, center=0.12, scale=0.08) | 1=severe backwardation",
   breadth_bull  = "Breadth bullish | sig(S5FI, center=50, scale=10) | >0.5 = majority above MA50",
   breadth_bear  = "Breadth bearish | 1 - sig(S5FI, center=35, scale=8) | high when S5FI < 35",
-  rates_press   = "Rate pressure | sig(10Y, center=4.5, scale=0.3) | rises sharply above 4.5%",
-  dxy_strength  = "Dollar momentum | sig(DXY 20d ret, center=2, scale=1.5) | strong when DXY gaining",
+  rates_press   = "Rate pressure | sig(10Y, center=2.66, scale=1.19) | 0.5=normal, >0.85=high rates",
+  dxy_strength  = "Dollar momentum | sig(DXY 20d ret, center=0.07, scale=1.77) | 0.5=flat, >0.85=strong rally",
   reflation     = "Reflation composite | mean of oil+gold strength, dollar weakness",
-  tlt_bid       = "Bond bid | sig(TLT 20d ret, center=1, scale=1.5) | high when bonds rallying",
-  credit_stress = "Credit stress | sig(-(HYG 20d ret), center=1, scale=1) | high when HY selling off",
-  copper_gold   = "Risk appetite proxy | sig(CPER/GLD ratio change, center=0, scale=2) | high = growth > safety",
+  tlt_bid       = "Bond bid | sig(TLT 20d ret, center=-0.33, scale=3.80) | 0.5=normal, >0.85=strong rally",
+  credit_stress = "Credit stress | sig(-(HYG 20d ret), center=-0.16, scale=2.19) | 0.5=normal, >0.85=selloff",
+  copper_gold   = "Risk appetite proxy | sig(CPER/GLD ratio change, center=-0.17, scale=6.27) | 0.5=normal, >0.85=growth>safety",
   sentiment     = "Sentiment composite | mean of VIX calm + breadth bull + credit health"
 )
 
@@ -73,27 +75,29 @@ compute_signals <- function(vix_res, rates_res, breadth, comm_res, raw) {
   gld_ret2 <- ret20("GLD")
   copper_gold_ret <- if (!is.na(cper_ret) && !is.na(gld_ret2)) cper_ret - gld_ret2 else NA
 
+  # Calibrated from 10yr historical data (calibrate_from_history.R, 2026-03-26)
+  # center = median, scale = SD → 0.5 = historically normal
   signals <- list(
-    vix_stress    = sig(vix, 25, 4),
-    vix_calm      = 1 - sig(vix, 20, 3),
-    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.10, 0.05) else 0,
-    breadth_bull  = sig(s5fi, 50, 10),
-    breadth_bear  = 1 - sig(s5fi, 35, 8),
-    rates_press   = sig(y10, 4.5, 0.3),
-    dxy_strength  = sig(dxy_ret, 2, 1.5),
+    vix_stress    = sig(vix, 16.65, 7.33),
+    vix_calm      = 1 - sig(vix, 16.65, 7.33),
+    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.12, 0.08) else 0,
+    breadth_bull  = sig(s5fi, 50, 10),       # S5FI: no Yahoo history, keep manual
+    breadth_bear  = 1 - sig(s5fi, 35, 8),    # S5FI: no Yahoo history, keep manual
+    rates_press   = sig(y10, 2.66, 1.19),
+    dxy_strength  = sig(dxy_ret, 0.07, 1.77),
     reflation     = mean(c(
-      sig(uso_ret, 8, 4),
-      sig(gld_ret, 4, 3),
-      1 - sig(dxy_ret, 2, 1.5)
+      sig(uso_ret, 1.46, 11.02),
+      sig(gld_ret, 0.76, 4.12),
+      1 - sig(dxy_ret, 0.07, 1.77)
     ), na.rm = TRUE),
-    tlt_bid       = sig(tlt_ret, 1, 1.5),
-    credit_stress = if (!is.na(hyg_ret)) sig(-hyg_ret, 1, 1) else 0.3,
-    copper_gold   = sig(copper_gold_ret, 0, 2),
+    tlt_bid       = sig(tlt_ret, -0.33, 3.80),
+    credit_stress = if (!is.na(hyg_ret)) sig(-hyg_ret, -0.16, 2.19) else 0.3,
+    copper_gold   = sig(copper_gold_ret, -0.17, 6.27),
     sentiment     = NA  # computed below as composite
   )
 
   # Sentiment composite: mean of calm + bullish breadth + credit health
-  credit_health <- if (!is.na(hyg_ret)) sig(hyg_ret, 0, 1.5) else 0.5
+  credit_health <- if (!is.na(hyg_ret)) sig(hyg_ret, 0.16, 2.19) else 0.5
   signals$sentiment <- mean(c(signals$vix_calm, signals$breadth_bull, credit_health), na.rm = TRUE)
 
   signals
@@ -109,25 +113,25 @@ REGIME_WEIGHTS <- list(
     label   = "Liquidity Stress",
     tooltip = "Forced selling, correlation converging to 1. Sell what you can, not what you want. DO NOT open new trades.",
     weights = list(
-      vix_stress    = 0.25,
-      backwardation = 0.25,
-      breadth_bear  = 0.20,
-      credit_stress = 0.20,
-      vix_calm      = -0.20,
-      sentiment     = -0.15
+      vix_stress    = 0.35,   # was 0.25 — core stress signal, highest weight
+      backwardation = 0.05,   # was 0.25 — mild backwardation is common, low weight
+      breadth_bear  = 0.25,   # was 0.20
+      credit_stress = 0.25,   # was 0.20
+      vix_calm      = -0.10,  # was -0.20 — reduce negative drag
+      sentiment     = -0.10   # was -0.15
     )
   ),
   directional_flow = list(
     label   = "Directional Flow",
     tooltip = "Capital moving into identifiable sector groups. Sectors with RS + volume + breadth momentum are attracting flow. This is where swing trades live.",
     weights = list(
-      breadth_bull  = 0.20,
-      vix_calm      = 0.15,
+      breadth_bull  = 0.25,   # was 0.20
+      vix_calm      = 0.20,   # was 0.15
       copper_gold   = 0.15,
       sentiment     = 0.20,
-      credit_stress = -0.15,
+      credit_stress = -0.20,  # was -0.15
       vix_stress    = -0.15,
-      backwardation = -0.10
+      backwardation = -0.05   # was -0.10
     )
   ),
   neutral = list(
@@ -391,7 +395,7 @@ run_scenarios <- function(raw, vix_res, rates_res, breadth, comm_res, events, co
   }
 
   # 6. Softmax → probabilities
-  probs <- softmax(raw_scores, temperature = 2)
+  probs <- softmax(raw_scores, temperature = 0.8)  # was 2 — lower = more decisive
 
   # 7. Build results data.frame
   results <- data.frame(

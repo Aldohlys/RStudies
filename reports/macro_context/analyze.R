@@ -220,11 +220,11 @@ analyze_mismatches <- function(raw, macro_env) {
       signal <- "SHORT strong — structural weakness"
     } else if (prof$trend == "FLAT" && n_tw >= 2 && n_hw == 0 && !is.na(prof$rs) && prof$rs < -3) {
       type <- "LAGGING vs MACRO"
-      note <- sprintf("%s flat RS:%+.1f%% despite %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
+      note <- sprintf("%s flat vs. MA20 RS vs. SPY:%+.1f%% despite %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
       signal <- "LONG upcoming — wait for MA20 gate"
     } else if (prof$trend == "DOWN" && n_hw >= 2 && !is.na(prof$rs) && prof$rs < -4) {
       type <- "CONFIRMED SHORT"
-      note <- sprintf("%s downtrend + %d headwinds (%s) RS:%+.1f%%", etf, n_hw, paste(hw_names, collapse = "+"), prof$rs)
+      note <- sprintf("%s downtrend + %d headwinds (%s) RS vs. SPY:%+.1f%%", etf, n_hw, paste(hw_names, collapse = "+"), prof$rs)
       signal <- "SHORT high conviction"
     }
     if (!is.null(type))
@@ -283,8 +283,8 @@ synthesize <- function(vix_res, rates_res, breadth, commodities_res, mismatches)
     else if (vix >= 30) short_drivers <- c(short_drivers, sprintf("VIX %.0f", vix))
   }
   if (!is.na(vix9d) && !is.na(vix3m)) {
-    if (vix9d > vix3m) short_drivers <- c(short_drivers, "backwardation")
-    else long_drivers <- c(long_drivers, "contango")
+    if (vix9d > vix3m) short_drivers <- c(short_drivers, "VIX backwardation")
+    else long_drivers <- c(long_drivers, "VIX contango")
   }
   if (!is.na(y10)) {
     if (y10 < 4.5) long_drivers <- c(long_drivers, sprintf("10Y %.1f%%", y10))
@@ -294,8 +294,8 @@ synthesize <- function(vix_res, rates_res, breadth, commodities_res, mismatches)
     if (S5FI_VALUE > 50) long_drivers <- c(long_drivers, sprintf("breadth %.0f%%", S5FI_VALUE))
     else if (S5FI_VALUE <= 35) short_drivers <- c(short_drivers, sprintf("breadth %.0f%%", S5FI_VALUE))
   }
-  if (n_short_mm > 0) short_drivers <- c(short_drivers, sprintf("%d short mismatch", n_short_mm))
-  if (n_long_mm > 0)  long_drivers  <- c(long_drivers, sprintf("%d long mismatch", n_long_mm))
+  if (n_short_mm > 0) short_drivers <- c(short_drivers, sprintf("%d short sector mismatch", n_short_mm))
+  if (n_long_mm > 0)  long_drivers  <- c(long_drivers, sprintf("%d long sector mismatch", n_long_mm))
 
   explain_parts <- c()
   if (length(long_drivers) > 0) explain_parts <- c(explain_parts, paste0("Long: ", paste(long_drivers, collapse = ", ")))

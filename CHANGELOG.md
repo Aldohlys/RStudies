@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-03-26] - Macro context calibration, bias labels, section reorder
+
+### Changed
+- **scenarios.R**: Sigmoid parameters calibrated from 10yr historical medians/SDs instead of manual guesses. Signals now use full 0-1 range (0.5 = historically normal). Major shifts: vix_stress center 25→16.65, rates_press center 4.5→2.66, dxy_strength center 2→0.07, credit_stress center 1→-0.16
+- **scenarios.R**: Liquidity Stress weights rebalanced — vix_stress 0.25→0.35, backwardation 0.25→0.05, breadth_bear/credit_stress 0.20→0.25, negative drags reduced
+- **scenarios.R**: Softmax temperature 2.0→0.8 for more decisive scenario probabilities
+- **backtest_regimes.R**: Updated CURRENT_PARAMS and compute_signals to match new calibration
+- **analyze.R**: Bias explanation labels: "backwardation"→"VIX backwardation", "contango"→"VIX contango", "long mismatch"→"long sector mismatch"
+- **analyze.R**: Mismatch notes: "flat RS:"→"flat vs. MA20 RS vs. SPY:", "RS:"→"RS vs. SPY:" for clarity
+- **render_html.R**: Mismatch meta: "RS:"→"RS vs. SPY:"
+- **template.html**: Section numbers swapped — Market Scenarios is now 07, Events is now 08 (matching visual order)
+
+### Added
+- **calibrate_from_history.R**: New script to derive sigmoid center/scale from 10yr Yahoo historical data (VIX, TNX, DXY, TLT, HYG, CPER, GLD, USO). Outputs comparison table and copy-paste snippet for scenarios.R
+
 ## [2026-03-24] - Fix VIX 20d ago lookback bugs
 
 ### Fixed

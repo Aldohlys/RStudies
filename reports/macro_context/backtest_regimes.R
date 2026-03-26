@@ -37,18 +37,18 @@ MACRO_TICKERS <- c(
   uso    = "USO"
 )
 
-# Current sigmoid parameters from scenarios.R (to compare against)
+# Current sigmoid parameters from scenarios.R (calibrated from 10yr history, 2026-03-26)
 CURRENT_PARAMS <- list(
-  vix_stress    = list(center = 25,   scale = 4),
-  vix_calm      = list(center = 20,   scale = 3),
-  backwardation = list(center = 0.10, scale = 0.05),
-  breadth_bull  = list(center = 50,   scale = 10),
-  breadth_bear  = list(center = 35,   scale = 8),
-  rates_press   = list(center = 4.5,  scale = 0.3),
-  dxy_strength  = list(center = 2,    scale = 1.5),
-  tlt_bid       = list(center = 1,    scale = 1.5),
-  credit_stress = list(center = 1,    scale = 1),
-  copper_gold   = list(center = 0,    scale = 2)
+  vix_stress    = list(center = 16.65, scale = 7.33),
+  vix_calm      = list(center = 16.65, scale = 7.33),
+  backwardation = list(center = 0.12,  scale = 0.08),
+  breadth_bull  = list(center = 50,    scale = 10),
+  breadth_bear  = list(center = 35,    scale = 8),
+  rates_press   = list(center = 2.66,  scale = 1.19),
+  dxy_strength  = list(center = 0.07,  scale = 1.77),
+  tlt_bid       = list(center = -0.33, scale = 3.80),
+  credit_stress = list(center = -0.16, scale = 2.19),
+  copper_gold   = list(center = -0.17, scale = 6.27)
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ compute_signals_at_date <- function(target_date, macro) {
 
   ratio <- if (!is.na(vix) && !is.na(vix3m) && vix3m > 0) vix / vix3m else NA
   copper_gold_ret <- if (!is.na(cper_ret) && !is.na(gld_ret)) cper_ret - gld_ret else NA
-  credit_health <- if (!is.na(hyg_ret)) sig(hyg_ret, 0, 1.5) else 0.5
+  credit_health <- if (!is.na(hyg_ret)) sig(hyg_ret, 0.16, 2.19) else 0.5
 
   # Raw inputs (for calibration analysis)
   raw <- list(
@@ -160,18 +160,18 @@ compute_signals_at_date <- function(target_date, macro) {
     cper_ret = cper_ret, copper_gold_ret = copper_gold_ret
   )
 
-  # Computed signals (using CURRENT parameters)
+  # Computed signals (calibrated from 10yr history, 2026-03-26)
   signals <- list(
-    vix_stress    = sig(vix, 25, 4),
-    vix_calm      = 1 - sig(vix, 20, 3),
-    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.10, 0.05) else 0,
-    rates_press   = sig(y10, 4.5, 0.3),
-    dxy_strength  = sig(dxy_ret, 2, 1.5),
-    reflation     = mean(c(sig(uso_ret, 8, 4), sig(gld_ret, 4, 3),
-                           1 - sig(dxy_ret, 2, 1.5)), na.rm = TRUE),
-    tlt_bid       = sig(tlt_ret, 1, 1.5),
-    credit_stress = if (!is.na(hyg_ret)) sig(-hyg_ret, 1, 1) else 0.3,
-    copper_gold   = sig(copper_gold_ret, 0, 2)
+    vix_stress    = sig(vix, 16.65, 7.33),
+    vix_calm      = 1 - sig(vix, 16.65, 7.33),
+    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.12, 0.08) else 0,
+    rates_press   = sig(y10, 2.66, 1.19),
+    dxy_strength  = sig(dxy_ret, 0.07, 1.77),
+    reflation     = mean(c(sig(uso_ret, 1.46, 11.02), sig(gld_ret, 0.76, 4.12),
+                           1 - sig(dxy_ret, 0.07, 1.77)), na.rm = TRUE),
+    tlt_bid       = sig(tlt_ret, -0.33, 3.80),
+    credit_stress = if (!is.na(hyg_ret)) sig(-hyg_ret, -0.16, 2.19) else 0.3,
+    copper_gold   = sig(copper_gold_ret, -0.17, 6.27)
   )
   signals$sentiment <- mean(c(signals$vix_calm, credit_health), na.rm = TRUE)
 

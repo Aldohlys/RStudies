@@ -93,7 +93,7 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
       '<tr class="mm-header %s">
         <td colspan="3"><span class="mm-type">%s</span>
           <span class="mm-etf">%s \u2014 %s</span>
-          <span class="mm-meta">Trend:%s | 20d:%+.1f%% | RS:%+.1f%%</span></td></tr>
+          <span class="mm-meta">Trend:%s | 20d:%+.1f%% | RS vs. SPY:%+.1f%%</span></td></tr>
       <tr class="mm-detail"><td colspan="3">
           <span class="mm-winds">TW(%d):%s &nbsp;|&nbsp; HW(%d):%s</span><br>
           <span class="mm-note">%s</span><br>
