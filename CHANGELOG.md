@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-03-31] - Fix conda race condition in breadth + events week Mar-30
+
+### Fixed
+- **breadth.R**: Isolate TEMP/TMP per parallel worker before `library(Tdata)` to prevent conda temp file race condition (`__conda_tmp_*.txt` locking errors with 6 cores)
+
+### Changed
+- **events.R**: Updated to week of Mar-30 — Apr-03 (German CPI, Eurozone Flash CPI, ISM Mfg, NFP, ISM Services, Good Friday)
+
 ## [2026-03-26] - BOT breakout scoring with Setup/Breakout phases
 
 ### Added

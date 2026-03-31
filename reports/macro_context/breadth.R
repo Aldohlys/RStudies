@@ -57,7 +57,12 @@ calculate_breadth <- function() {
 
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
-  parallel::clusterEvalQ(cl, library(Tdata))
+  # Isolate TEMP per worker to prevent conda temp file race condition
+  # (each worker's library(Tdata) loads reticulate which probes conda)
+  parallel::clusterEvalQ(cl, {
+    Sys.setenv(TEMP = tempdir(), TMP = tempdir())
+    library(Tdata)
+  })
   parallel::clusterExport(cl, ".is_above_ma50", envir = environment())
 
   t0 <- Sys.time()
