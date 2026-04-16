@@ -207,6 +207,11 @@ compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL) {
 #' @return Numeric boost (0 to 0.15)
 compute_catalyst_boost <- function(events, today = Sys.Date()) {
   if (is.null(events) || length(events) == 0) return(0)
+  # Force C locale for English month abbreviation parsing
+  old_lc <- Sys.getlocale("LC_TIME")
+  Sys.setlocale("LC_TIME", "C")
+  on.exit(Sys.setlocale("LC_TIME", old_lc), add = TRUE)
+
   max_boost <- 0
   year <- format(today, "%Y")
   for (ev in events) {

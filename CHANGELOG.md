@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-04-16] - Auto-fetch economic events from Equals Money calendar
+
+### Changed
+- **events.R**: Replaced hardcoded weekly events with automated fetch from Equals Money calendar
+  - Parses HTML (rvest) for upcoming 7-day window from report run date
+  - Keyword-based impact classification (CRITICAL/HIGH/MODERATE) with ~50 rules
+  - Auto-generates action recommendations per event type
+  - Handles month boundaries (fetches 2 months when window spans months)
+  - Fixed French locale issue: forces `LC_TIME="C"` for English month abbreviation parsing
+  - No longer requires manual Monday editing
+- **main.R**: Added `library(logger)`, `library(Tlogger)`, and `setup_namespace_logging("RStudies")` for proper log initialization
+- **scenarios.R**: Fixed `compute_catalyst_boost()` locale bug — English month abbreviations failed on French locale systems
+
 ## [2026-03-31] - Fix conda race condition in breadth + events week Mar-30
 
 ### Fixed

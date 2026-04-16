@@ -6,6 +6,14 @@
 library(Tdata)
 library(dplyr)
 library(DBI)
+library(logger)
+library(Tlogger)
+
+setup_namespace_logging(
+  "RStudies",
+  console_level = "INFO",
+  file_level = "INFO"
+)
 
 # Resolve script directory robustly (works with Rscript, source(), and interactive)
 .get_script_dir <- function() {
