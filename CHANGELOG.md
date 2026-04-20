@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-04-20] - Earnings-date flag in swing scanner + FAIL-Optionality filter
+
+### Added
+- **swing_scanner/main.R**: refresh stale earnings dates (`Tdata::updateStaleEarnings()`) at scan start, LEFT JOIN `NextEarnings` from Tickers into the scored `out` dataframe, derive `EarningsInDays` column
+- **swing_scanner/render_html.R**: new `Earnings` column at end of both Signal and BOT tables with colored badge (Okabe-Ito palette)
+  - `≤7 days` → vermillion `#D55E00` (don't trade this week)
+  - `8-14 days` → yellow `#F0E442` (caution)
+  - `>14 days` → plain
+  - Tooltip: `"Next earnings: YYYYMMDD (in Nd)"`
+- **swing_scanner/render_html.R**: new `fmt_earnings_cell()` helper reused by both tables
+
+### Changed
+- **swing_scanner/render_html.R**: `build_bot_section()` now hides rows where `Optionality == "FAIL"` AND `Price > 30` — no viable trading vehicle (no options play and stock position too capital-heavy). FAIL under $30 kept for direct stock-buy fallback (e.g. RIG, LAC). "NO DATA" is preserved (unknown ≠ FAIL).
+- **swing_scanner/template.html**: added `.earn-soon` / `.earn-near` CSS classes; updated section 03 description to document the $30 FAIL filter
+
+### Context
+- Depends on `Tdata >= 5.10.0` (new `updateStaleEarnings()` function)
+- Scanner universe: 49 of 200+ tickers showed earnings within 14 days on first run (Q1 reporting peak)
+
 ## [2026-04-16] - Auto-fetch economic events from Equals Money calendar
 
 ### Changed

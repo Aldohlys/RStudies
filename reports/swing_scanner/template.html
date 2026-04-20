@@ -117,6 +117,10 @@ td.bot-orange{background:#E69F00;color:#000;font-weight:700;text-align:center}
 td.bot-red{background:#f0f0f0;color:#333;text-align:center}
 .veh-hint{font-size:10px;font-weight:600;margin-left:3px}
 
+/* Earnings proximity — Okabe-Ito palette: vermillion (≤7d), yellow (≤14d) */
+td.earn-soon{background:#D55E00;color:#fff;font-weight:700;text-align:center}
+td.earn-near{background:#F0E442;color:#000;font-weight:700;text-align:center}
+
 .footer{margin-top:16px;padding:10px 0;border-top:1px solid #ddd;
   font-size:12px;color:#666;display:flex;justify-content:space-between}
 </style>
@@ -216,7 +220,8 @@ td.bot-red{background:#f0f0f0;color:#333;text-align:center}
   <div style="padding:6px 14px;font-size:12px;color:#666">
     <strong style="color:#1a8a1a">Green</strong> = Setup &ge; 5/6 AND Breakout &ge; 3/4 (confirmed) &nbsp;|&nbsp;
     <strong style="color:#E69F00">Amber</strong> = Setup ready but no trigger, or trigger without full setup (watch) &nbsp;|&nbsp;
-    Vehicle hint: <strong>call</strong> (price &lt; $150, IVP &lt; 60) | <strong>spread</strong> (price &gt; $150 or IVP &gt; 60) | <strong>stock</strong> (price &lt; $10)
+    Vehicle hint: <strong>call</strong> (price &lt; $150, IVP &lt; 60) | <strong>spread</strong> (price &gt; $150 or IVP &gt; 60) | <strong>stock</strong> (price &lt; $10)<br>
+    <strong>Filter:</strong> rows with Optionality=FAIL and Price &gt; $30 are hidden (no viable vehicle &mdash; no options play, stock purchase too capital-heavy). FAIL under $30 kept for direct stock-buy fallback (e.g. RIG, LAC).
   </div>
   <div style="overflow-x:auto">
   {{BOT_SIGNALS}}

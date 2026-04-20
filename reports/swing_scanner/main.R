@@ -211,6 +211,28 @@ out <- out |>
 message("Stocks scored: ", nrow(out))
 message("Signals: ", paste(names(table(out$Best_Signal)), table(out$Best_Signal), sep = ":", collapse = " | "))
 
+# ── Earnings enrichment ──────────────────────────────────────────────────
+# Refresh stale earnings dates (usually touches 0-5 tickers whose date passed),
+# then left-join NextEarnings into the scored table and derive days-until.
+tryCatch(Tdata::updateStaleEarnings(), error = function(e)
+  message("updateStaleEarnings failed: ", e$message, " — continuing without refresh"))
+
+conn <- safe_db_connect()
+earnings <- DBI::dbGetQuery(conn,
+  "SELECT Name AS Ticker, NextEarnings FROM Tickers WHERE NextEarnings IS NOT NULL")
+dbDisconnect(conn)
+
+out <- out |>
+  left_join(earnings, by = "Ticker") |>
+  mutate(
+    EarningsInDays = ifelse(
+      !is.na(NextEarnings),
+      as.integer(as.Date(NextEarnings, format = "%Y%m%d") - Sys.Date()),
+      NA_integer_))
+
+n_soon <- sum(!is.na(out$EarningsInDays) & out$EarningsInDays <= 14, na.rm = TRUE)
+message("Earnings within 14 days: ", n_soon, " ticker(s)")
+
 # ── Gate 3: Vol Profile enrichment ────────────────────────────────────────
 message("Loading vol profiles (Optionality gate)...")
 conn <- safe_db_connect()

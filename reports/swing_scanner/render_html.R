@@ -139,7 +139,7 @@ summary_badge_css <- function(sig) {
 
 SIGNAL_COLS <- c("Ticker", "Sector", "Composite", "BOT", "Price",
   "ADX10", "RSI14", "RS_vs_ETF",
-  "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr")
+  "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr", "Earnings")
 
 SIGNAL_TIPS <- c(
   Ticker      = "Stock ticker symbol",
@@ -156,8 +156,26 @@ SIGNAL_TIPS <- c(
   RVP         = "Realized vol percentile vs history (30d)",
   VRP         = "Vol Risk Premium: IV30 - RV30 (percentage points)",
   Optionality = "PASS (3-4), PARTIAL (2), FAIL (0-1): IV30<40 + IVP<60 + VRP<0 + Contango",
-  TermStr     = "IV term structure: Contango/Backwardation"
+  TermStr     = "IV term structure: Contango/Backwardation",
+  Earnings    = "Days until next earnings report (≤7d = red, ≤14d = amber)"
 )
+
+#' Format EarningsInDays as a colored <td> cell
+#' ≤7 days: vermillion (severe), 8-14: amber (caution), >14: plain
+fmt_earnings_cell <- function(row) {
+  if (!"EarningsInDays" %in% names(row)) return('<td></td>')
+  d <- row[["EarningsInDays"]]
+  if (is.na(d) || d < 0) return('<td></td>')
+  nd <- if ("NextEarnings" %in% names(row)) row[["NextEarnings"]] else ""
+  title <- sprintf("Next earnings: %s (in %dd)", nd, d)
+  if (d <= 7) {
+    sprintf('<td class="earn-soon" title="%s">%dd</td>', title, d)
+  } else if (d <= 14) {
+    sprintf('<td class="earn-near" title="%s">%dd</td>', title, d)
+  } else {
+    sprintf('<td title="%s">%dd</td>', title, d)
+  }
+}
 
 #' Build table header
 build_th <- function(cols, tips) {
@@ -194,6 +212,9 @@ build_signal_tbody <- function(df, show_top_pick = FALSE) {
     } else ""
 
     cells <- paste0(vapply(SIGNAL_COLS, function(col) {
+      if (col == "Earnings") {
+        return(fmt_earnings_cell(row))
+      }
       if (col == "BOT") {
         # BOT displayed as S:X/6 BK:Y/4 with color based on combination
         bot_setup <- if ("BOT_Setup" %in% names(row) && !is.na(row[["BOT_Setup"]])) as.integer(row[["BOT_Setup"]]) else NA_integer_
@@ -250,6 +271,15 @@ build_bot_section <- function(out) {
     ((out$BOT_Setup >= 5 & out$BOT_Breakout >= 1) |
      (out$BOT_Setup >= 4 & out$BOT_Breakout >= 3)), , drop = FALSE]
 
+  # Hide Optionality=FAIL rows above $30 — no viable vehicle (no options via IVP,
+  # stock purchase too capital-heavy). Keep NA/NO DATA (unknown, not FAIL).
+  if ("Optionality" %in% names(bot_rows) && nrow(bot_rows) > 0) {
+    opt   <- as.character(bot_rows$Optionality)
+    price <- suppressWarnings(as.numeric(bot_rows$Price))
+    keep  <- !(!is.na(opt) & opt == "FAIL" & !is.na(price) & price > 30)
+    bot_rows <- bot_rows[keep, , drop = FALSE]
+  }
+
   if (nrow(bot_rows) == 0) {
     return('<div class="no-data">No BOT signals today.</div>')
   }
@@ -259,7 +289,7 @@ build_bot_section <- function(out) {
   bot_rows <- bot_rows[order(bot_rows$bot_priority, -bot_rows$BOT_Setup, -bot_rows$BOT_Breakout), ]
 
   BOT_COLS <- c("Ticker", "Sector", "Price", "BOT", "BOT_Squeeze", "BOT_VolDec", "BOT_VolSurge",
-                "IV30", "IVP", "Optionality")
+                "IV30", "IVP", "Optionality", "Earnings")
   BOT_TIPS <- c(
     Ticker      = "Stock ticker symbol",
     Sector      = "Industry sector",
@@ -270,7 +300,8 @@ build_bot_section <- function(out) {
     BOT_VolSurge = "Today volume / 20d avg (>= 1.2 = surge confirmed)",
     IV30        = "Implied volatility 30d",
     IVP         = "IV percentile",
-    Optionality = "Optionality gate"
+    Optionality = "Optionality gate",
+    Earnings    = "Days until next earnings report (≤7d = red, ≤14d = amber)"
   )
 
   th <- paste0(vapply(BOT_COLS, function(col) {
@@ -313,12 +344,14 @@ build_bot_section <- function(out) {
     vd_css <- if (!is.na(row[["BOT_VolDec"]]) && row[["BOT_VolDec"]] < 0.90) ' style="font-weight:700"' else ''
     vs_css <- if (!is.na(row[["BOT_VolSurge"]]) && row[["BOT_VolSurge"]] >= 1.2) ' style="font-weight:700"' else ''
 
-    sprintf('<tr><td>%s</td><td>%s</td><td>%s</td>%s<td%s>%s</td><td%s>%s</td><td%s>%s</td><td>%s</td><td>%s</td>%s</tr>',
+    earn_cell <- fmt_earnings_cell(row)
+
+    sprintf('<tr><td>%s</td><td>%s</td><td>%s</td>%s<td%s>%s</td><td%s>%s</td><td%s>%s</td><td>%s</td><td>%s</td>%s%s</tr>',
       fmt(row[["Ticker"]]), fmt(row[["Sector"]]), fmt(row[["Price"]]),
       bot_cell,
       sq_css, sq, vd_css, vd, vs_css, vs,
       fmt(row[["IV30"]]), fmt(row[["IVP"]]),
-      opt_cell)
+      opt_cell, earn_cell)
   }, character(1)), collapse = "\n")
 
   sprintf('<table>\n<tr>%s</tr>\n%s\n</table>', th, tbody)
