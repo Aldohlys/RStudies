@@ -211,6 +211,44 @@ out <- out |>
 message("Stocks scored: ", nrow(out))
 message("Signals: ", paste(names(table(out$Best_Signal)), table(out$Best_Signal), sep = ":", collapse = " | "))
 
+# ── Trend-continuation gate (Tdata::isTrendContinuation) ──────────────────
+# Runs only on non-SKIP tickers to limit Yahoo calls. Attaches diagnostic
+# columns for display; does NOT filter rows — user reviews and narrows manually.
+# See Tdata/R/trend.R for criteria.
+message("Trend-continuation check (non-SKIP tickers)...")
+candidates_for_trend <- out$Ticker[out$Best_Signal != "SKIP"]
+message(sprintf("  %d candidates to evaluate", length(candidates_for_trend)))
+
+trend_df <- if (length(candidates_for_trend) > 0) {
+  purrr::map_dfr(candidates_for_trend, function(sym) {
+    tc <- tryCatch(
+      Tdata::isTrendContinuation(sym),
+      error = function(e) {
+        message(sprintf("  trend check failed for %s: %s", sym, e$message))
+        list(sym = sym, passes = NA, pullback_state = NA_character_,
+             rs_vs_bench_3m = NA_real_, rsi14 = NA_real_,
+             pct_from_52wh = NA_real_, reason = "error")
+      }
+    )
+    data.frame(
+      Ticker         = tc$sym,
+      Trend_Passes   = tc$passes,
+      Pullback       = tc$pullback_state,
+      RS_3m          = tc$rs_vs_bench_3m,
+      Trend_Reason   = tc$reason,
+      stringsAsFactors = FALSE
+    )
+  })
+} else {
+  data.frame(Ticker=character(0), Trend_Passes=logical(0),
+             Pullback=character(0), RS_3m=numeric(0),
+             Trend_Reason=character(0))
+}
+
+out <- out |> left_join(trend_df, by = "Ticker")
+n_trend_pass <- sum(out$Trend_Passes, na.rm = TRUE)
+message(sprintf("  Trend-continuation passes: %d / %d candidates", n_trend_pass, length(candidates_for_trend)))
+
 # ── Earnings enrichment ──────────────────────────────────────────────────
 # Refresh stale earnings dates (usually touches 0-5 tickers whose date passed),
 # then left-join NextEarnings into the scored table and derive days-until.
@@ -240,8 +278,10 @@ vol_data <- load_vol_profiles(out$Ticker, conn)
 gate3 <- evaluate_gate3(vol_data, out$Ticker)
 check_tws <- flag_missing(gate3)
 
-# Merge optionality columns into output
-out <- merge(out, gate3[, c("Ticker", "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr", "Vol_Date")],
+# Merge optionality columns into output (now includes iv15/iv90/iv180, IVR, IVP_2y)
+out <- merge(out, gate3[, c("Ticker", "IV15", "IV30", "IV90", "IV180",
+                            "RV30", "IVP", "IVR", "IVP_2y", "RVP", "VRP",
+                            "Optionality", "TermStr", "Vol_Date")],
              by = "Ticker", all.x = TRUE)
 
 # ── History: save results, compute transitions + persistence ──────────────

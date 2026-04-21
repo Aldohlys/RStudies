@@ -65,9 +65,14 @@ load_vol_profiles <- function(tickers, conn) {
 evaluate_gate3 <- function(vol_data, tickers) {
   results <- data.frame(
     Ticker    = tickers,
+    IV15      = NA_real_,
     IV30      = NA_real_,
+    IV90      = NA_real_,
+    IV180     = NA_real_,
     RV30      = NA_real_,
     IVP       = NA_real_,
+    IVR       = NA_real_,
+    IVP_2y    = NA_real_,
     RVP       = NA_real_,
     VRP       = NA_real_,
     Optionality     = "NO DATA",
@@ -83,22 +88,34 @@ evaluate_gate3 <- function(vol_data, tickers) {
     idx <- which(results$Ticker == sym)
     if (length(idx) == 0) next
 
+    iv15  <- if ("iv15"  %in% names(vol_data)) vol_data$iv15[i]  else NA
     iv30  <- vol_data$iv30[i]
+    iv90  <- if ("iv90"  %in% names(vol_data)) vol_data$iv90[i]  else NA
     iv180 <- if ("iv180" %in% names(vol_data)) vol_data$iv180[i] else NA
     ivp   <- vol_data$ivp[i]
+    ivr   <- if ("ivr"    %in% names(vol_data)) vol_data$ivr[i]    else NA
+    ivp2y <- if ("ivp_2y" %in% names(vol_data)) vol_data$ivp_2y[i] else NA
     rv30  <- vol_data$rv30[i]
     rvp   <- vol_data$rvp[i]
+    # Persisted VRP from Tdata 5.10.3+ (log-ratio form: log(iv30/rv30)*100).
+    # Fallback to local computation for legacy rows that predate the column.
+    vrp_persisted <- if ("vrp" %in% names(vol_data)) vol_data$vrp[i] else NA
 
-    # Store as percentages for display (multiply by 100)
-    results$IV30[idx] <- if (!is.na(iv30)) round(iv30 * 100, 1) else NA
-    results$RV30[idx] <- if (!is.na(rv30)) round(rv30 * 100, 1) else NA
-    results$IVP[idx]  <- if (!is.na(ivp)) round(ivp, 1) else NA
+    # Store as percentages for display (multiply by 100 for raw IV/RV values)
+    results$IV15[idx]  <- if (!is.na(iv15))  round(iv15  * 100, 1) else NA
+    results$IV30[idx]  <- if (!is.na(iv30))  round(iv30  * 100, 1) else NA
+    results$IV90[idx]  <- if (!is.na(iv90))  round(iv90  * 100, 1) else NA
+    results$IV180[idx] <- if (!is.na(iv180)) round(iv180 * 100, 1) else NA
+    results$RV30[idx]  <- if (!is.na(rv30))  round(rv30  * 100, 1) else NA
+    results$IVP[idx]   <- if (!is.na(ivp))   round(ivp,       1) else NA
+    results$IVR[idx]   <- if (!is.na(ivr))   round(ivr,       1) else NA
+    results$IVP_2y[idx]<- if (!is.na(ivp2y)) round(ivp2y,     1) else NA
+    results$RVP[idx]   <- if (!is.na(rvp))   round(rvp,       1) else NA
 
-    # RVP (realized vol percentile, already 0-100 from DB)
-    results$RVP[idx] <- if (!is.na(rvp)) round(rvp, 1) else NA
-
-    # VRP = IV30 - RV30 (in percentage points)
-    vrp <- if (!is.na(iv30) && !is.na(rv30)) round((iv30 - rv30) * 100, 1) else NA
+    # VRP: prefer persisted log-ratio form; fallback to local diff for legacy rows
+    vrp <- if (!is.na(vrp_persisted)) vrp_persisted
+           else if (!is.na(iv30) && !is.na(rv30) && iv30 > 0 && rv30 > 0) round(log(iv30 / rv30) * 100, 2)
+           else NA
     results$VRP[idx] <- vrp
 
     # Timestamp

@@ -139,25 +139,36 @@ summary_badge_css <- function(sig) {
 
 SIGNAL_COLS <- c("Ticker", "Sector", "Composite", "BOT", "Price",
   "ADX10", "RSI14", "RS_vs_ETF",
-  "IV30", "RV30", "IVP", "RVP", "VRP", "Optionality", "TermStr", "Earnings")
+  "Trend_Passes", "Pullback", "RS_3m",
+  "IV15", "IV30", "IV90", "IV180", "RV30",
+  "IVP", "IVR", "IVP_2y", "RVP", "VRP",
+  "Optionality", "TermStr", "Earnings")
 
 SIGNAL_TIPS <- c(
-  Ticker      = "Stock ticker symbol",
-  Sector      = "Industry sector classification",
-  Composite   = "Tech score (0-10) + persistence (+1 if previously on watchlist)",
-  BOT         = "Breakout score (0-10): 6 trend + 4 breakout criteria (squeeze, vol decline, range position, vol surge). Hover for details.",
-  Price       = "Last closing price in USD",
-  ADX10       = "Average Directional Index (10d)",
-  RSI14       = "Relative Strength Index (14d)",
-  RS_vs_ETF   = "Relative Strength vs sector ETF (20d)",
-  IV30        = "Implied volatility 30d",
-  RV30        = "Realized volatility 30d",
-  IVP         = "IV percentile vs history",
-  RVP         = "Realized vol percentile vs history (30d)",
-  VRP         = "Vol Risk Premium: IV30 - RV30 (percentage points)",
-  Optionality = "PASS (3-4), PARTIAL (2), FAIL (0-1): IV30<40 + IVP<60 + VRP<0 + Contango",
-  TermStr     = "IV term structure: Contango/Backwardation",
-  Earnings    = "Days until next earnings report (≤7d = red, ≤14d = amber)"
+  Ticker       = "Stock ticker symbol",
+  Sector       = "Industry sector classification",
+  Composite    = "Tech score (0-10) + persistence (+1 if previously on watchlist)",
+  BOT          = "Breakout score (0-10): 6 trend + 4 breakout criteria (squeeze, vol decline, range position, vol surge). Hover for details.",
+  Price        = "Last closing price in USD",
+  ADX10        = "Average Directional Index (10d)",
+  RSI14        = "Relative Strength Index (14d)",
+  RS_vs_ETF    = "Relative Strength vs sector ETF (20d)",
+  Trend_Passes = "isTrendContinuation: TRUE = confirmed stage-2 trend + active pullback (2nd-3rd inning setup)",
+  Pullback     = "Pullback state: 'at SMA20' | 'RSI retraced' | 'strong' | 'none'",
+  RS_3m        = "Relative strength vs SPY over last 3 months (%)",
+  IV15         = "Implied vol at ~15 DTE (variance-interpolated; near-term, event-sensitive)",
+  IV30         = "Implied volatility 30d",
+  IV90         = "Implied vol at ~90 DTE",
+  IV180        = "Implied vol at ~180 DTE",
+  RV30         = "Realized volatility 30d",
+  IVP          = "IV percentile (IBKR, 1y history)",
+  IVR          = "IV Rank (1y): (iv30-min)/(max-min)*100 — range-position",
+  IVP_2y       = "IV percentile over 2y (density-based, complements 1y IVP)",
+  RVP          = "Realized vol percentile vs history (30d)",
+  VRP          = "Vol Risk Premium = log(IV30/RV30)*100 — positive: options rich vs realized; negative: cheap",
+  Optionality  = "PASS (3-4), PARTIAL (2), FAIL (0-1): IV30<40 + IVP<60 + VRP<0 + Contango",
+  TermStr      = "IV term structure: Contango/Backwardation",
+  Earnings     = "Days until next earnings report (≤7d = red, ≤14d = amber)"
 )
 
 #' Format EarningsInDays as a colored <td> cell
@@ -243,8 +254,14 @@ build_signal_tbody <- function(df, show_top_pick = FALSE) {
       if (is.na(v) || v == "NA") v <- ""
       if (col == "Optionality") {
         sprintf('<td class="%s">%s</td>', opt_css(v), v)
-      } else if (col %in% c("IV30", "RV30") && nzchar(v)) {
+      } else if (col %in% c("IV15", "IV30", "IV90", "IV180", "RV30") && nzchar(v)) {
         sprintf('<td title="Vol data: %s">%s%%</td>', vol_ts, v)
+      } else if (col == "Trend_Passes" && nzchar(v)) {
+        cls <- if (v == "TRUE") "trend-pass" else "trend-fail"
+        label <- if (v == "TRUE") "✓" else "✗"
+        sprintf('<td class="%s" title="Trend-continuation gate">%s</td>', cls, label)
+      } else if (col == "RS_3m" && nzchar(v)) {
+        sprintf('<td>%s%%</td>', v)
       } else if (col == "Price") {
         sprintf('<td title="Yahoo cache: %s">%s</td>', cache_date_str, v)
       } else if (col == "ATR_pct") {
@@ -254,9 +271,14 @@ build_signal_tbody <- function(df, show_top_pick = FALSE) {
       }
     }, character(1)), collapse = "")
 
-    # Prepend direction badge + TOP PICK if applicable
+    # Prepend direction badge + TOP PICK / TREND CONT if applicable
     badge <- sprintf('<span class="dir-badge dir-%s">%s</span>', tolower(direction), direction)
-    if (show_top_pick) badge <- paste0('<span class="top-pick-badge">TOP PICK</span> ', badge)
+    rank_val <- if ("Rank" %in% names(row)) as.character(row[["Rank"]]) else ""
+    if (show_top_pick && !is.na(rank_val) && rank_val == "TOP PICK") {
+      badge <- paste0('<span class="top-pick-badge">TOP PICK</span> ', badge)
+    } else if (!is.na(rank_val) && rank_val == "TREND CONT") {
+      badge <- paste0('<span class="trend-cont-badge">TREND CONT</span> ', badge)
+    }
     cells <- sub("^<td>", paste0("<td>", badge, " "), cells)
 
     sprintf('<tr class="%s">%s</tr>', r_css, cells)

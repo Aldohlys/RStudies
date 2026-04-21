@@ -125,13 +125,47 @@ final_rank <- function(out, macro, scenario_scores = NULL, persistence = NULL,
     out$Best_Signal[drop] <- "SKIP"
   }
 
-  # ── Sort: TOP PICK first, then TRADE, WATCH, SKIP ──────────────────
+  # ── Trend-continuation rescue: promote SKIP → LONG WATCH when isTrendContinuation passes ──
+  # These are confirmed stage-2 trends with an active pullback — high-quality 2nd/3rd-inning
+  # setups that the raw tech score may have missed. Bypass the WATCH cap to always surface them.
+  # Exclude if earnings within 10 days (option IV will be loaded with event premium, unfair entry).
+  if ("Trend_Passes" %in% names(out)) {
+    earnings_safe <- is.na(out$EarningsInDays) | out$EarningsInDays >= 10
+    rescue_idx <- which(
+      out$Best_Signal == "SKIP" &
+      !is.na(out$Trend_Passes) & out$Trend_Passes == TRUE &
+      earnings_safe
+    )
+    for (idx in rescue_idx) {
+      out$Best_Signal[idx] <- "LONG WATCH"
+      out$Long_Signal[idx] <- "WATCH"
+      out$Rank[idx] <- "TREND CONT"   # marker — sorted between TOP PICK and regular WATCH
+    }
+    if (length(rescue_idx) > 0) {
+      message(sprintf("Trend-continuation rescue: promoted %d SKIP → LONG WATCH (earnings-safe, trend-confirmed)",
+                      length(rescue_idx)))
+    }
+    # Log tickers filtered out by earnings proximity for transparency
+    earn_filtered <- which(
+      out$Best_Signal == "SKIP" &
+      !is.na(out$Trend_Passes) & out$Trend_Passes == TRUE &
+      !is.na(out$EarningsInDays) & out$EarningsInDays < 10
+    )
+    if (length(earn_filtered) > 0) {
+      message(sprintf("Trend-continuation: filtered out %d due to earnings <10d: %s",
+                      length(earn_filtered),
+                      paste(out$Ticker[earn_filtered], collapse = ", ")))
+    }
+  }
+
+  # ── Sort: TOP PICK, TRADE, TREND CONT, WATCH, SKIP; group by sector within same tier ──────
   out$Sort <- ifelse(out$Rank == "TOP PICK", 0,
     ifelse(out$Best_Signal == "LONG TRADE", 1,
     ifelse(out$Best_Signal == "SHORT TRADE", 2,
-    ifelse(out$Best_Signal == "LONG WATCH", 3,
-    ifelse(out$Best_Signal == "SHORT WATCH", 4, 5)))))
-  out <- out[order(out$Sort, -out$Composite), ]
+    ifelse(out$Rank == "TREND CONT", 3,
+    ifelse(out$Best_Signal == "LONG WATCH", 4,
+    ifelse(out$Best_Signal == "SHORT WATCH", 5, 6))))))
+  out <- out[order(out$Sort, out$Sector, -out$Composite), ]
   out$Sort <- NULL
 
   out
