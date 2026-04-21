@@ -385,21 +385,18 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
   template_file <- file.path(SCRIPT_DIR, "template.html")
   template <- paste(readLines(template_file, encoding = "UTF-8"), collapse = "\n")
 
-  # Split into TRADE and WATCH subsets
-  trade_rows <- out[out$Best_Signal %in% c("LONG TRADE", "SHORT TRADE"), , drop = FALSE]
-  watch_rows <- out[out$Best_Signal %in% c("LONG WATCH", "SHORT WATCH"), , drop = FALSE]
+  # Priority Signals table — combined TRADE + WATCH (TOP PICK and TREND CONT badges
+  # applied inside build_signal_tbody based on the Rank column). SKIP rows excluded.
+  priority_rows <- out[out$Best_Signal %in% c("LONG TRADE", "SHORT TRADE",
+                                                "LONG WATCH", "SHORT WATCH"), , drop = FALSE]
 
   # Ensure all columns exist
   for (col in c(SIGNAL_COLS, "Best_Signal", "Rank")) {
-    if (!col %in% names(trade_rows)) trade_rows[[col]] <- NA
-    if (!col %in% names(watch_rows)) watch_rows[[col]] <- NA
+    if (!col %in% names(priority_rows)) priority_rows[[col]] <- NA
   }
 
-  # Build tables
-  trade_th    <- build_th(SIGNAL_COLS, SIGNAL_TIPS)
-  watch_th    <- trade_th  # same columns
-  trade_tbody <- build_signal_tbody(trade_rows, show_top_pick = TRUE)
-  watch_tbody <- build_signal_tbody(watch_rows, show_top_pick = FALSE)
+  priority_th    <- build_th(SIGNAL_COLS, SIGNAL_TIPS)
+  priority_tbody <- build_signal_tbody(priority_rows, show_top_pick = TRUE)
 
   # Build BOT section
   bot_html <- build_bot_section(out)
@@ -430,17 +427,19 @@ render_scanner_html <- function(out, sector_ok, macro_bias, macro, csv_file, out
   alerts_html <- build_alerts_html(active_alerts, out$Ticker)
 
   replacements <- list(
-    "{{RUN_DATE}}"     = format(Sys.time(), "%d %B %Y — %H:%M"),
-    "{{MACRO_CSS}}"    = macro_css,
-    "{{MACRO_BANNER}}" = macro_banner,
-    "{{SUMMARY}}"      = summary_items,
-    "{{N_SCORED}}"     = as.character(nrow(out)),
-    "{{N_DISPLAYED}}"  = as.character(n_bot_displayed),
-    "{{PRICE_MAX}}"    = as.character(price_max),
-    "{{SECTOR_ROWS}}"  = build_sector_rows(sector_ok),
-    "{{ALERTS}}"       = alerts_html,
-    "{{BOT_SIGNALS}}"  = bot_html,
-    "{{CSV_FILE}}"     = basename(csv_file)
+    "{{RUN_DATE}}"       = format(Sys.time(), "%d %B %Y — %H:%M"),
+    "{{MACRO_CSS}}"      = macro_css,
+    "{{MACRO_BANNER}}"   = macro_banner,
+    "{{SUMMARY}}"        = summary_items,
+    "{{N_SCORED}}"       = as.character(nrow(out)),
+    "{{N_DISPLAYED}}"    = as.character(n_bot_displayed),
+    "{{PRICE_MAX}}"      = as.character(price_max),
+    "{{SECTOR_ROWS}}"    = build_sector_rows(sector_ok),
+    "{{PRIORITY_TH}}"    = priority_th,
+    "{{PRIORITY_TBODY}}" = priority_tbody,
+    "{{ALERTS}}"         = alerts_html,
+    "{{BOT_SIGNALS}}"    = bot_html,
+    "{{CSV_FILE}}"       = basename(csv_file)
   )
 
   html <- render_template(template, replacements)

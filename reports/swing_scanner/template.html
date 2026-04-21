@@ -224,7 +224,24 @@ td.trend-fail{background:#f0f0f0;color:#999;text-align:center;font-size:14px}
 </div>
 
 <div class="section">
-  <div class="stitle"><span class="snum">03</span>BOT Breakout Signals &mdash; LONG only</div>
+  <div class="stitle"><span class="snum">03</span>Priority Signals &mdash; Curated shortlist</div>
+  <div style="padding:6px 14px;font-size:12px;color:#666">
+    <strong style="background:gold;padding:1px 5px;border-radius:3px">TOP PICK</strong> = passes both Gate 1 (tech score &ge; 5 + sector open) and Gate 2 (Optionality &ge; PARTIAL), top 3 by composite score &nbsp;|&nbsp;
+    <strong style="background:#0072B2;color:#fff;padding:1px 5px;border-radius:3px">TREND CONT</strong> = confirmed stage-2 + active pullback (isTrendContinuation), rescued from SKIP; earnings &ge; 10d away<br>
+    <strong>Rich vol columns:</strong> IV15/30/90/180 term structure &middot; IVR (1y rank) &middot; IVP_2y (2y percentile density) &middot; VRP = log(IV30/RV30)&middot;100 &middot; Trend_Passes &middot; Pullback state &middot; RS vs SPY 3m
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+    <thead><tr>{{PRIORITY_TH}}</tr></thead>
+    <tbody>
+    {{PRIORITY_TBODY}}
+    </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <div class="stitle"><span class="snum">04</span>BOT Breakout Signals &mdash; LONG only</div>
   <div style="padding:6px 14px;font-size:12px;color:#666">
     <strong style="color:#1a8a1a">Green</strong> = Setup &ge; 5/6 AND Breakout &ge; 3/4 (confirmed) &nbsp;|&nbsp;
     <strong style="color:#E69F00">Amber</strong> = Setup ready but no trigger, or trigger without full setup (watch) &nbsp;|&nbsp;
@@ -236,10 +253,8 @@ td.trend-fail{background:#f0f0f0;color:#999;text-align:center;font-size:14px}
   </div>
 </div>
 
-<!-- Trade/Watch signals removed — BOT section is the primary signal source -->
-
 <div class="section">
-  <div class="stitle"><span class="snum">04</span>Active Alerts</div>
+  <div class="stitle"><span class="snum">05</span>Active Alerts</div>
   {{ALERTS}}
 </div>
 
