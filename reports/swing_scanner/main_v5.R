@@ -144,13 +144,18 @@ if (length(phase_b_syms) > 0) {
                       stringsAsFactors = FALSE)
 }
 
-# Sector cross-sectional median IVP_2y per sector (rich universe)
+# Sector cross-sectional median IVP per sector (rich universe).
+# Prefer IBKR-native 1y IVP; fall back to IVP_2y for rows with only that.
 sector_ivp_median <- list()
 for (sec in unique(unlist(lapply(results, `[[`, "sector"))[!is.na(unique(unlist(lapply(results, `[[`, "sector"))))])) {
   sec_syms <- sapply(Filter(function(r) !is.na(r$sector) && r$sector == sec,
                             results), function(r) r$sym)
-  rows <- gate3[gate3$Ticker %in% sec_syms & !is.na(gate3$IVP_2y), ]
-  sector_ivp_median[[sec]] <- if (nrow(rows) > 0) median(rows$IVP_2y) else NA
+  ivp_vals <- gate3[gate3$Ticker %in% sec_syms, "IVP"]
+  ivp2_vals <- if ("IVP_2y" %in% names(gate3))
+    gate3[gate3$Ticker %in% sec_syms, "IVP_2y"] else rep(NA, length(ivp_vals))
+  combined <- ifelse(!is.na(ivp_vals), ivp_vals, ivp2_vals)
+  combined <- combined[!is.na(combined)]
+  sector_ivp_median[[sec]] <- if (length(combined) > 0) median(combined) else NA
 }
 
 for (key in names(results)) {
@@ -201,8 +206,26 @@ for (key in names(results)) {
       round(st$spot_target_low / 5) * 5 else NA_real_
   }
 
-  # Target expiry = nearest available with DTE in target_dte ± 7
-  exp_dt <- format(Sys.Date() + vex$target_dte, "%Y%m%d")
+  # Target expiry: use the most-recent expiry from option_chain_oi_history for
+  # this symbol with DTE in [target_dte - 14, target_dte + 14]. This aligns
+  # with what daily_option_fetch.R persisted (real listed expiries) instead
+  # of a fabricated date.
+  exp_dt <- tryCatch(dbGetQuery(conn,
+    "SELECT DISTINCT expiry FROM option_chain_oi_history
+     WHERE sym = ? ORDER BY expiry",
+    params = list(r$sym))$expiry, error = function(e) character(0))
+  if (length(exp_dt) > 0) {
+    exp_dates <- as.Date(as.character(exp_dt), format = "%Y%m%d")
+    dte <- as.integer(exp_dates - Sys.Date())
+    good <- which(dte >= max(1, vex$target_dte - 14) &
+                  dte <= vex$target_dte + 14)
+    exp_dt <- if (length(good) > 0) exp_dt[good[1]]
+              else format(Sys.Date() + vex$target_dte, "%Y%m%d")
+  } else {
+    # No persisted expiry — fall back to the synthetic date (Phase D.3 will
+    # return NO DATA, name demoted to WATCH downstream).
+    exp_dt <- format(Sys.Date() + vex$target_dte, "%Y%m%d")
+  }
 
   # Chain walk (reads from option_chain_oi_history)
   chain <- if (!is.na(st$spot_target_low) && !is.na(st$spot_target_high))
