@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-04-27] - Swing Scanner v5: front-run option flow redesign
+
+### Added
+- **swing_scanner/universe_filter.R** (new): Phase A rich-options gate — weeklies in next 14d + ATM bid/ask ≤ 12% (end-of-day). Permissive default until daily fetch wires bid/ask check.
+- **swing_scanner/pull_score.R** (new): Phase B Pull screen — Stage classification (early/continuation/extended/none, priority: extended > early > continuation), sector RS rank (top-3 +3, 4-6 +2, bottom-half 0, SHORT-only −2), footprint (OBV/UpDn/RS_3m). Cutoff Pull_Score ≥ 6 AND Stage ∈ {early, continuation}. Reuses `score_breakout()` from scoring.R.
+- **swing_scanner/cheap_score.R** (new): Phase C Cheap screen — IVP (4 pts, prefers 1y IBKR-native, falls back to 2y), VRP (2 pts), term structure (2 pts), skew vs own history (1 pt), cross-sectional sector rank (1 pt). Cutoff Cheap_Score ≥ 6 AND Cheap_Side aligns with Pull_Direction.
+- **swing_scanner/setup_chain_rr.R** (new): Phase D — vehicle selection (call/spread/stock per BOT checklist), structural target consensus (prior swing high + 52w high + tiered round number; Fib confirmation overlay only), per-strike OI walk via `option_chain_oi_history`, R:R + Entry_Floor/Entry_Ceiling via BS-inversion at R:R_min.
+- **swing_scanner/final_classify_v5.R** (new): Phase E — TOP PICK / WATCH / SKIP gate, phase-of-drop tagging (A/B/C/D), sector-cluster badge.
+- **swing_scanner/render_html_v5.R** (new): interactive HTML with DataTables — funnel header (Universe → Pull → Cheap → Setup → TOP PICK), filter chips (phase-of-drop, sector, vehicle, show-SKIP), Tier 1 visible / Tier 2 hidden columns, per-day file `swing_scanner_v5_YYYYMMDD.html`. Self-contained: data embedded as JSON, DataTables from CDN, no build step.
+- **swing_scanner/main_v5.R** (new): orchestrator wiring all five phases. Persists results to `scanner_results_v5` table (DDL in `NewTrading/scripts/init_scanner_tables.R`).
+
+### Context
+- Replaces legacy 2-gate composite (`final_filter.R` preserved during transition).
+- Driven by JPM rotation miss (2026-04-24): scanner surfaced BAC + JPM as TOP PICK while Tech led the tape; sector RS data existed but wasn't consumed.
+- Edge reframed: "front-run upcoming option flow — buy cheap options, sell expensive but still buyable" (validated against 39 BOT winners, JNJ/DOW/URA exit remarques explicitly state this lens).
+- R:R_min = 0.5 calibrated empirically from `Trades` table (25th percentile of realized R:R_max across 37 BOT winners; calibration in `NewTrading/scripts/calibrate_rr_min.R`).
+- Anti-noise N.1/N.2: 5-day median IV/OI smoothing wherever numeric inputs feed gates.
+- Tier 1 columns visible by default: Ticker, Sector, Stage, Pull_Score, Cheap_Score, Vehicle, Spot_Target, R:R, Entry_Floor, Entry_Ceiling, Entry_State, Chain_State.
+- 27/27 unit tests passing (NewTrading/scripts/test_v5_modules.R).
+- Depends on Tdata 5.10.8+ for new `get_chain_oi()` chain-walk helper used by daily fetch task.
+- Depends on `option_skew_history` and `option_chain_oi_history` DB tables (DDL in NewTrading/scripts/init_scanner_tables.R).
+
+### Known limitations on first runs
+- Phase A passes everything until daily option fetch wires the bid/ask check.
+- Phase C requires `Prices.ivp` (1y IBKR-native); names with stale Vol metrics return Cheap_Score = 0.
+- Phase D.3 returns NO DATA → Entry_State = NO CHAIN until daily fetch populates `option_chain_oi_history`.
+
+### Validation pending
+- Replay 30 BOT winners' entry days + JPM 2026-04-24 day to confirm winners surface as TOP PICK and JPM is correctly demoted.
+
 ## [2026-04-20] - Earnings-date flag in swing scanner + FAIL-Optionality filter
 
 ### Added
