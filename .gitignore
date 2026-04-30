@@ -55,3 +55,12 @@ rsconnect/
 # Log files
 *.log
 logs/
+.positai
+
+# Generated outputs
+*.pdf
+*.html
+ivol_probe_out/
+
+# Claude project config
+.claude/

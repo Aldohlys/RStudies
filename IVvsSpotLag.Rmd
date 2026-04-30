@@ -1,0 +1,31 @@
+---
+title: "IVvsSpotLag"
+output: html_document
+---
+
+# IV30 Retail Lag Event Study — AAPL
+
+## Hypothesis
+After strong upside spot momentum (top decile 5d return), 
+retail call buying in subsequent days lifts IV30 and call 
+skew with a lag of ~3-7 days. Goal: position in monthly 
+options before retail arrives in weeklies.
+
+## Method
+Event study, not regression. For each signal date, track 
+ATM IV30, 25d call IV, and 25d risk reversal paths over 
+horizons 0-15 days. Compare to random-date control sample. 
+Bootstrap peak excess for significance.
+
+## Key design choices
+- Monthlies preferred over weeklies (better spreads, 
+  cleaner vega capture, lower hedging cost for MMs)
+- Exclude ±10 days around earnings
+- Post-2021 sample (retail flow regime change)
+- Control for trailing 20d realized vol
+
+## Script
+@"C:\Users\aldoh\Documents\RApplication\RStudies\IVvsSpotLag.R"
+
+## Current issue
+Erreur dans eval(ei, envir) : '...' utilisé dans un contexte incorrect

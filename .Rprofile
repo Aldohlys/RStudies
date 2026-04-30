@@ -1,3 +1,4 @@
+source("renv/activate.R")
 # .Rprofile for RStudies applications
 # Ensures proper configuration and paths are set when running RStudies apps
 

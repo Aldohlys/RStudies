@@ -1,23 +1,36 @@
 default:
   account:
   - U1804173
+  - U25343478
   - DU5221795
   - Gonet
   - Live
   DB: C:/Users/aldoh/Documents/RApplication/data/mydb.db
+  Tuser: C:/Users/aldoh/Documents/RApplication/Tuser
   chains_dir: C:/Users/aldoh/Documents/NewTrading/chains
   strikes_dir: C:/Users/aldoh/Documents/NewTrading/strikes
+  chains: C:/Users/aldoh/Documents/NewTrading/Chains.json
+  strikes: C:/Users/aldoh/Documents/NewTrading/Strikes.json
+  gonet_dir: C:/Users/aldoh/Documents/NewTrading
   historical_config: C:/Users/aldoh/Documents/NewTrading/historical_config.json
   logging:
     level: INFO
     log_dir: C:/Users/aldoh/Documents/RApplication/logs
     python:
-      level: ERROR
+      level: INFO
+      control_ibinsync: yes
+      ibinsync_level: ERROR
     package_specific:
       Tbasics:
         file_level: INFO
         console_level: INFO
       Tdata:
+        file_level: INFO
+        console_level: INFO
+      Tuser:
+        file_level: INFO
+        console_level: DEBUG
+      RPreTrade:
         file_level: INFO
         console_level: INFO
   email:
@@ -30,6 +43,53 @@ default:
     flex_query_timezone: America/New_York
     display:
       timezone: Europe/Zurich
+  portfolio_analysis:
+    flag_thresholds:
+      var_change_significant: 0.02
+      beta_change_significant: 0.05
+      correlation_low: 0.3
+      correlation_high: 0.6
+  analyze:
+    # Hard per-lot risk cap on option structures. One lot = one full instance
+    # (bull call spread = 2 contracts; iron condor = 4; outright = 1). Applies
+    # to the structure's max_risk as a whole, not per leg.
+    risk_cap_lot_usd: 300
+    # Calibrated R:R floor (25th percentile of realized R:R_max from 37 BOT
+    # winners, 2026-04-27).
+    rr_min: 0.5
+    # IVP regime bands (1y IBKR-native percentile)
+    ivp_regime:
+      cheap_max: 30   # IVP < 30 → cheap
+      rich_min: 70   # IVP > 70 → rich
+    # IVP scoring thresholds (Phase C.1 component 1, 0–4 pts)
+    ivp_pts:
+      pt4_max: 25    # < 25 → 4
+      pt3_max: 40    # < 40 → 3
+      pt2_max: 60    # < 60 → 2
+      pt1_max: 75    # < 75 → 1, else 0
+    # VRP log-ratio bands for mechanical labels
+    vrp_log_bands:
+      neg_max: 0      # ≤ 0 → IV<RV
+      mild_max: 10    # 0..10 → mildly positive
+      moderate_max: 30   # 10..30 → moderately positive
+      strong_max: 70     # 30..70 → strongly positive
+    # VRP scoring thresholds (Phase C.1 component 2, 0–2 pts)
+    vrp_pts:
+      pt2_max: 0
+      pt1_max: 10
+    # Term-structure scoring thresholds (Phase C.1 component 3, 0–2 pts)
+    term_pts:
+      pt2_max: -5    # IV30/IV90 < -5% → 2
+      pt1_max: 0     # IV30/IV90 < 0%  → 1
+    # Maximum vertical-spread width to enumerate
+    spread_widths: [5, 10]
+    moneyness_pct: 0.20
+    # Earnings event window (days)
+    earnings_window_days: 14
+    # Skew-history table lookback for Phase C.2.d
+    skew_lookback_days: 365
+    # HTML output directory
+    out_dir: C:/Users/aldoh/Documents/NewTrading/reports
 production:
   DB: ~/data/mydb.db
   cloud:
