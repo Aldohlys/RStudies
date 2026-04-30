@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-04-30] - /analyze ported from slash-command to R script (data-only)
+
+### Added
+- **reports/analyze/main.R** (new): single-ticker /analyze pipeline orchestrator. Runs Phases A→B→C→D→E mechanically; produces neutral HTML + terminal data table. Args: `<TICKER> <DIRECTION> [--no-html] [--no-vol-funnel]`.
+- **reports/analyze/phases.R** (new): Phase A (Universe rich-options gate), B (Pull score), C.1 (Cheap score), E (mechanical classification). Reads latest `swing_scanner_v5_<DATE>.csv` row; falls back to live Tdata helpers when CSV emits NA.
+- **reports/analyze/funnel.R** (new): Phase C.2 directional vol funnel — IV landscape, VRP (both log-ratio and vol-pts forms), term-structure shape detect, RR 25Δ skew, earnings DTE. Outputs a 6-row mechanical-label grid + signal tally for the user's direction (favorable / unfavorable / unavailable counts). Tally is a count, not a verdict.
+- **reports/analyze/structures.R** (new): Phase D structural-target read + structures-within-cap enumerator. Calls `tdata_py.spread.compute_spread_risk_reward` via reticulate when TWS is reachable; falls back to placeholder rows otherwise. Applies `risk_cap_lot_usd` filter.
+- **reports/analyze/report.R** (new): neutral HTML renderer. Colorblind-safe Okabe-Ito palette, mechanical PASS/SKIP/NO SIGNAL/STALE badges. Sections: phase summaries, vol funnel grid, structural targets, chain, structures table, data summary. NO verdict cards, NO conviction levels, NO Best/Alternative/Avoid framing, NO edge-source narrative.
+- **reports/analyze/defaults.R** (new): built-in defaults + deep-merge with optional `config.yml`. The script ships with sensible defaults (`risk_cap_lot_usd: 300`, `rr_min: 0.5`, IVP regime / scoring thresholds, VRP log-ratio bands, term scoring thresholds, spread widths, moneyness, earnings window, skew lookback, out_dir) so a fresh clone runs without any local config.
+- **../scripts/run_analyze.bat** (new, in RApplication/scripts): batch wrapper. Activates RStudies renv, runs `Rscript reports/analyze/main.R <TICKER> <DIRECTION>`, opens the produced HTML.
+
+### Configuration model
+- `config.yml` is instance-specific and **not tracked** (may contain secrets, paths, account lists). It is NOT required to run the script.
+- If `config.yml` exists at the RStudies root and contains a `default.analyze` block, its keys override the built-in defaults via deep-merge — only the keys you set differ; everything else inherits from `defaults.R`.
+- To recalibrate (e.g. raise `risk_cap_lot_usd` to 500 for a single instance): add only that key in `config.yml`'s `default.analyze` block. No code change.
+
+### Changed
+- **NewTrading/.claude/commands/analyze.md**: shrunk from ~330 lines to a thin wrapper that shells out to the R script and surfaces its HTML in chat. The data-only contract (no verdicts, no rankings) is enforced in `report.R`, not in the prompt — editing the slash-command stub cannot re-introduce verdicts.
+
+### Context
+- Drove the split: the slash-command version produced inconsistent verdicts despite a `feedback_analyze_neutral_stance.md` memory note explicitly forbidding them. Mechanical computation belongs in code; LLM stays for follow-up Q&A.
+- Layout mirrors `reports/macro_context/` and `reports/swing_scanner/` — sources `shared/html_helpers.R` and `shared/cache.R`.
+- Reuses (does not duplicate) Phase B/C scoring logic by reading the most recent v5 CSV. If a future caller wants to compute Phases B/C without the v5 batch having run first, `phases.R` would need a path to invoke `pull_score.R` / `cheap_score.R` directly — deferred until needed.
+- Compute_spread_risk_reward called via reticulate with `force_refresh=True` (mandatory cache bypass per pre-existing rule). Live OI walk and direct Tdata `getOptMarketData` integration deferred — placeholder rows surface the data gap in the report.
+
+### Validation
+- First-run target: UPS short on 2026-04-30 — should reproduce the data shown in the most recent UPS HTML report (PASS A, SKIP B with pull_score=0, NO SIGNAL D, v5=SKIP, phase_of_drop=B).
+
 ## [2026-04-27] - Swing Scanner v5: front-run option flow redesign
 
 ### Added
