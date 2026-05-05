@@ -4,6 +4,56 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-05] - analyze + scanner: 4-phase refactor (drop _v5, live refresh, indicator breakdown, vehicle rule)
+
+### Phase 1 — Drop version suffix from code & filenames
+- Rename `swing_scanner/main_v5.R` → `main.R`, `render_html_v5.R` → `render_html.R`, `final_classify_v5.R` → `classify.R`.
+- Delete legacy bundle: `scoring.R`, `final_filter.R`, `history.R`, `template.html`, `swing_scanner/indicators.R`. `score_breakout()` inlined into its sole consumer `pull_score.R`.
+- Output filenames now `swing_scanner_<DATE>.{csv,html}` (no `_v5` suffix).
+- DB table `scanner_results_v5` → `scanner_results`. Migration via new `RApplication/scripts/migrate_scanner_results_table.R` (idempotent, retains legacy table for verification).
+- Schema version moves to internal constant `SCANNER_SCHEMA_VERSION = 5L` written as `schema_version` column in CSV + DB row, never in filenames.
+- `analyze/`: every `v5_classification` / `"v5 CSV"` / `.read_v5_row` / `.find_latest_v5_csv` reference purged. Locals renamed (`v5_cheap_pass` → `cached_cheap_pass`, etc.).
+
+### Phase 2 — Live refresh on stale data (12h cutoff)
+- **reports/shared/freshness.R** (new): `resolve_freshness_policy()`, `is_fresh()`, `hours_since()`, `scanner_csv_mtime()`. CLI flags `--refresh` (force live everywhere) and `--max-age <hours>` (custom window). Default `SCANNER_DATA_MAX_AGE_HOURS = 12`.
+- `analyze/phases.R::.read_scanner_row` returns `stale=TRUE` when CSV mtime exceeds policy cutoff; phase A/B/C/D signatures take `freshness` argument.
+- `analyze/funnel.R`: gates `Prices.datetime` + `option_skew_history.cache_date`; "FETCH FAILED" cell reasons now distinguish `"DB Prices stale (Xh old)"` from `"DB Prices NA"`.
+- `analyze/structures.R::.resolve_chain` gates `option_chain_oi_history.cache_date` similarly.
+- `hours_since()` parses 9 timestamp formats including SQLite TEXT dense format (`20260428 21:14`) — earlier "Inf h old" caused by unparseable strings is fixed.
+- `analyze/main.R` prints policy banner + scanner CSV mtime up front before any phase runs.
+
+### Phase 3 — Phase B per-indicator breakdown via shared module
+- **reports/shared/indicators.R** (new): `calc_ind()`, `compute_all_indicators()`, `get_last()` lifted from deleted `swing_scanner/indicators.R` (single source of truth — scanner + analyze share it).
+- `compute_breakdown(last, price, direction)`: emits a 12-row data frame for /analyze Phase B drill-down — S1-S6 setup criteria + BK1-BK4 breakout criteria + AUX_ADX/AUX_RET/AUX_ATR informational rows. Mirrored thresholds for `direction = "short"`.
+- `fetch_single_ohlcv(ticker)`: 300-day Yahoo pull for /analyze single-ticker case.
+- `analyze/phases.R::run_phase_b` calls the breakdown live; falls back silently to NULL on any failure (aggregate row stays).
+- `analyze/report.R::.render_phase_b_breakdown`: collapsible `<details open>` block with PASS/FAIL/info badges; summary shows `setup N/5 · breakout N/4`.
+
+### Phase 4 — Conditional structures + tooltips + retrieval timestamps
+- **reports/shared/vehicle_rule.R** (new): `pick_vehicle_expiry(price, cheap_score, stage, atm_bid_ask_pct)` — single source of truth. Used by both scanner (replaces inline rule in `setup_chain_rr.R`) and /analyze (re-derives when scanner CSV is silent).
+- `analyze/structures.R::run_phase_d` now emits `vehicle_reason` and `structures_retrieved_at`. When the scanner row carries no `vehicle`, the shared rule is invoked with `phase_b$stage` and `phase_c$cheap_score`.
+- `analyze/report.R::.render_structures` is now vehicle-aware: only the matching vehicle is rendered open by default; non-applicable structures collapse to `<details>` the user can expand. Banner shows the rule's reasoning ("price $276.83, cheap_score 3 < 7 (vertical spread for IV cost control)").
+- 30+ field tooltips via `.TOOLTIPS` glossary in `report.R` — wrapped as `<span title="...">label</span>` across header / Phase A/B/C/D tables / breakdown criterion IDs / funnel signals.
+- Per-phase "data retrieved" captions (`<div class="retrieved">`): Prices DB / Skew DB / live now / live pricer timestamps. Sourced from `funnel$retrieved`, `pa$retrieved_at`, `pb$scanner_csv_mtime`, `pb$breakdown_retrieved_at`, `pd$structures_retrieved_at`.
+- CSS additions: `[title]{cursor:help;border-bottom:1px dotted #999}`, `.retrieved` styling, `<details>` hover + marker styling.
+- `macro_context/scenarios.R`: stale comment about deleted `final_filter.R` updated.
+
+### Migration & launcher updates (RApplication side, commit 22252d4)
+- `scripts/run_scanner.bat`: drops `_v5` from code path (`reports/swing_scanner/main.R`) and HTML filename (`swing_scanner_<DATE>.html`).
+- `scripts/run_analyze.bat`: pass-through for arbitrary args (no longer capped at `%3 %4`) so `--refresh` / `--max-age <hours>` reach Rscript; cleaner open-html guard via `findstr` instead of inverted string-substitution.
+- `scripts/migrate_scanner_results_table.R` (new): idempotent migration adding `schema_version` column and copying rows from `scanner_results_v5`. Legacy table retained for manual verification before DROP.
+- `docs/TODO.md`: path reference updated (Option B sidecar CSV name).
+
+### Validation
+- Parse-checked all 14 touched files via `Rscript -e parse(...)`.
+- Smoke-tested `swing_scanner/main.R` end-to-end: 196 today rows + 188 historical rows in `scanner_results`, `schema_version` column populated.
+- Smoke-tested `/analyze AAPL long` with default 12h policy (uses cached scanner CSV) and with `--max-age 0.001` forcing the stale path through every phase (Phase A reports STALE, downstream cascade live-fetches).
+- HTML output verified: 15 retrieval/tooltip elements rendered; vehicle banner shows `spread` with rule reasoning; spread enumeration in `<details open>`; Phase B breakdown shows BK1 PASS (RSI 61.8 + positive slope) + BK3 PASS (75% near high) + others FAIL.
+
+### Net change
+- 21 files changed in RStudies repo (commit `0dd9a55`), +2041 / -2392 lines (net code reduction).
+- 5 files changed in RApplication repo (commit `22252d4`).
+
 ## [2026-04-30] - /analyze ported from slash-command to R script (data-only)
 
 ### Added
