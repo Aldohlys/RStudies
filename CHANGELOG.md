@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-05] - analyze: click-to-sort headers on spread structures table
+
+### Changed
+- **reports/analyze/report.R**: spread enumeration table now `<table class="sortable">` with inline vanilla-JS click handler on every `<th>`. Numeric vs text auto-detected per column; NaN/empty cells sink to bottom regardless of direction. Up/down arrow indicator on the active column. No dependencies — no DataTables, no CDN — report stays self-contained.
+
+### Why
+78-row spread enumeration was hard to scan unsorted (default order: live pricer's reward_risk_ratio descending, but users want to drill by max_risk, EV, prob_success_delta, etc.).
+
+## [2026-05-05] - analyze: format OBV slope as M-shares + % of 20d volume
+
+### Fixed
+- **reports/shared/indicators.R::compute_breakdown**: `S4 OBV slope (20d)` was rendered as a raw 9-digit cumulative-volume count (e.g. `937612100`). Now displays signed M/B/K with % of 20d total volume in parens — e.g. `+77.6M (+8.3% of 20d vol)`. Threshold check ("> 0 = accumulation") unchanged; only display formatting updated.
+
 ## [2026-05-05] - analyze: Phase D always lives — re-derive targets / R:R when scanner is silent
 
 ### Problem
