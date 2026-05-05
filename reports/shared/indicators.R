@@ -117,6 +117,22 @@ compute_breakdown <- function(last, price, direction = "long") {
     else if (is.numeric(x)) sprintf(paste0("%.", d, "f"), x)
     else as.character(x)
   }
+  # Format OBV slope (cumulative signed volume over 20 sessions) as a
+  # readable M-share figure plus % of 20d total volume, instead of a raw
+  # 9-digit count. obv_slope is in shares; vol_ma20 is mean daily volume,
+  # so total_vol_20d ≈ vol_ma20 * 20.
+  .fmt_obv_slope <- function(obv_slope, vol_ma20) {
+    if (is.null(obv_slope) || is.na(obv_slope)) return("n/a")
+    abs_v <- abs(obv_slope)
+    mag <- if (abs_v >= 1e9) sprintf("%+.2fB", obv_slope / 1e9)
+           else if (abs_v >= 1e6) sprintf("%+.1fM", obv_slope / 1e6)
+           else if (abs_v >= 1e3) sprintf("%+.1fK", obv_slope / 1e3)
+           else sprintf("%+.0f", obv_slope)
+    pct <- if (!is.null(vol_ma20) && !is.na(vol_ma20) && vol_ma20 > 0)
+             sprintf(" (%+.1f%% of 20d vol)", obv_slope / (vol_ma20 * 20) * 100)
+           else ""
+    paste0(mag, pct)
+  }
   row <- function(id, label, value, threshold, pass, note = "") {
     data.frame(id = id, label = label, value = value, threshold = threshold,
                pass = pass, note = note, stringsAsFactors = FALSE)
@@ -159,9 +175,9 @@ compute_breakdown <- function(last, price, direction = "long") {
         if (long) "> 0" else "< 0",
         S2, "5-day slope"),
     row("S4",  "OBV slope (20d)",
-        fmt(ll$obv_slope, 0),
+        .fmt_obv_slope(ll$obv_slope, ll$vol_ma20),
         if (long) "> 0 (accumulation)" else "< 0 (distribution)",
-        S4, ""),
+        S4, "share-volume net of last 20 sessions"),
     row("S5",  "Squeeze ratio (20d/40d)",
         fmt(ll$squeeze_ratio, 3),
         "< 0.65 (range contracting)",
