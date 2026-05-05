@@ -14,6 +14,11 @@
 }
 [title]{cursor:help;border-bottom:1px dotted #999}
 .retrieved{font-size:11px;color:#888;margin:4px 0 8px;font-style:italic}
+table.sortable th{cursor:pointer;user-select:none;position:relative;padding-right:18px}
+table.sortable th:hover{background:#e7e7e7}
+table.sortable th::after{content:"";position:absolute;right:6px;top:50%;transform:translateY(-50%);border:4px solid transparent;opacity:.25}
+table.sortable th.sort-asc::after{border-bottom-color:#444;border-top:0;opacity:1;margin-top:-2px}
+table.sortable th.sort-desc::after{border-top-color:#444;border-bottom:0;opacity:1;margin-top:2px}
 details{margin:6px 0 14px;background:#fff;border:1px solid var(--rule);border-radius:4px}
 details>summary{padding:8px 12px;cursor:pointer;font-weight:600;font-size:13px;color:#444;user-select:none;list-style:none}
 details>summary::-webkit-details-marker{display:none}
@@ -120,6 +125,58 @@ td.note{color:#555;font-size:13px}
   txt <- paste(sapply(names(parts), function(k)
     sprintf("%s: %s", k, format(parts[[k]]))), collapse = " &middot; ")
   sprintf('<div class="retrieved">data retrieved &mdash; %s</div>', txt)
+}
+
+# Vanilla-JS sortable: click any <th> in a table.sortable to toggle ASC/DESC.
+# Numeric columns sort numerically; text columns lexicographically.
+.sortable_script <- function() {
+  '<script>
+(function(){
+  function parseCell(td){
+    var t = td.textContent.trim();
+    if (t === "" || t === "—" || t === "n/a") return {n: NaN, s: ""};
+    var n = parseFloat(t.replace(/[$,%]/g, "").replace(/[+]/g, ""));
+    return {n: n, s: t.toLowerCase()};
+  }
+  function sortBy(table, idx, dir){
+    var tbody = table.tBodies[0];
+    var rows = Array.prototype.slice.call(tbody.rows);
+    var allNumeric = rows.every(function(r){
+      var c = parseCell(r.cells[idx]);
+      return c.s === "" || !isNaN(c.n);
+    });
+    rows.sort(function(a,b){
+      var ca = parseCell(a.cells[idx]), cb = parseCell(b.cells[idx]);
+      var x, y;
+      if (allNumeric){ x = ca.n; y = cb.n; }
+      else { x = ca.s; y = cb.s; }
+      // NaN/empty always last
+      var aEmpty = (allNumeric ? isNaN(x) : x === "");
+      var bEmpty = (allNumeric ? isNaN(y) : y === "");
+      if (aEmpty && bEmpty) return 0;
+      if (aEmpty) return 1;
+      if (bEmpty) return -1;
+      if (x < y) return dir === "asc" ? -1 : 1;
+      if (x > y) return dir === "asc" ?  1 : -1;
+      return 0;
+    });
+    rows.forEach(function(r){ tbody.appendChild(r); });
+  }
+  document.querySelectorAll("table.sortable").forEach(function(table){
+    var ths = table.tHead ? table.tHead.rows[0].cells : table.rows[0].cells;
+    Array.prototype.forEach.call(ths, function(th, i){
+      th.addEventListener("click", function(){
+        var dir = th.classList.contains("sort-asc") ? "desc" : "asc";
+        Array.prototype.forEach.call(ths, function(o){
+          o.classList.remove("sort-asc","sort-desc");
+        });
+        th.classList.add("sort-" + dir);
+        sortBy(table, i, dir);
+      });
+    });
+  });
+})();
+</script>'
 }
 
 .row_class <- function(result) {
@@ -270,6 +327,7 @@ render_analyze_html <- function(ctx, out_dir) {
     'Sources: latest swing_scanner CSV; mydb.db (Prices, option_skew_history, ',
     'option_chain_oi_history, scanner_rich_universe); Tdata helpers; ',
     'tdata_py.compute_spread_risk_reward when TWS reachable.</div>',
+    .sortable_script(),
     '</body></html>')
 
   out_file <- file.path(out_dir, sprintf("analyze_%s_%s.html",
@@ -491,9 +549,11 @@ render_analyze_html <- function(ctx, out_dir) {
     }, character(1)), collapse = "")
     sprintf('<tr class="row-warn">%s</tr>', cells)
   }, character(1))
-  paste0('<table><tr>', hdr, '</tr>', paste(rows, collapse = "\n"), '</table>',
-         sprintf('<p class="sub">Neutral enumeration. Rows are not ranked or recommended. ',
-                 '<code>within_cap</code> indicates max_risk &le; $%d per lot.</p>',
+  paste0('<table class="sortable"><thead><tr>', hdr, '</tr></thead><tbody>',
+         paste(rows, collapse = "\n"), '</tbody></table>',
+         sprintf(paste0('<p class="sub">Click any column header to sort. ',
+                        'Neutral enumeration — rows are not ranked or recommended. ',
+                        '<code>within_cap</code> indicates max_risk &le; $%d per lot.</p>'),
                  cap))
 }
 
