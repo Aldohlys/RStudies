@@ -372,7 +372,12 @@ render_analyze_html <- function(ctx, out_dir) {
 .render_phase_d <- function(pd, direction) {
   t <- pd$targets
   t_reason <- t$reason
-  targets_html <- sprintf(paste0(
+  src_caption <- if (!is.null(t$source) && t$source == "live OHLC")
+    '<p class="sub" style="margin:0 0 6px">Targets re-derived live from OHLC history (scanner did not emit).</p>'
+  else if (!is.null(pd$entry_source) && pd$entry_source == "live")
+    '<p class="sub" style="margin:0 0 6px">R:R / entry framework re-derived live (scanner did not emit).</p>'
+  else ''
+  targets_html <- paste0(src_caption, sprintf(paste0(
     '<h3>Structural target sources</h3>',
     '<table><tr><th>Field</th><th>Value</th><th>Note</th></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note"></td></tr>',
@@ -387,7 +392,7 @@ render_analyze_html <- function(ctx, out_dir) {
     .tt("fib_confirms"),
       if (is.na(t$fib_confirms)) (.fmt_cell(NA, t_reason)) else as.character(t$fib_confirms),
     .tt("expiry"), .fmt_cell(pd$expiry, pd$expiry_reason),
-    if (!is.null(pd$expiry_reason)) "live-picked from IBKR" else "from scanner CSV")
+    if (!is.null(pd$expiry_reason)) "live-picked from IBKR" else "from scanner CSV"))
 
   c_reason <- pd$chain_reason
   e_reason <- pd$entry_reason

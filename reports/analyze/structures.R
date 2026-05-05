@@ -37,18 +37,20 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   # Targets: scanner-derived; not reconstructable in /analyze without a re-run.
   drop_phase <- if (!is.null(r) && !is.na(r$phase_of_drop) && nzchar(r$phase_of_drop))
                   r$phase_of_drop else NA_character_
+  # Targets: prefer scanner row; otherwise live-compute from fresh OHLC.
   has_targets <- !is.null(r) && !is.na(suppressWarnings(as.numeric(r$spot_target_low)))
-  targets_reason <- if (has_targets) NULL
-                    else if (!is.na(drop_phase))
-                      sprintf("scanner did not emit targets (phase_of_drop=%s); chart targets not re-derived live", drop_phase)
-                    else "scanner did not emit targets; chart targets not re-derived live"
-  targets <- list(
-    spot_target_low  = if (has_targets) as.numeric(r$spot_target_low)  else NA_real_,
-    spot_target_high = if (has_targets) as.numeric(r$spot_target_high) else NA_real_,
-    targets_agreeing = if (has_targets) suppressWarnings(as.integer(r$targets_agreeing)) else NA_integer_,
-    fib_confirms     = if (has_targets) as.logical(r$fib_confirms) else NA,
-    reason           = targets_reason
-  )
+  targets <- if (has_targets) {
+    list(
+      spot_target_low  = as.numeric(r$spot_target_low),
+      spot_target_high = as.numeric(r$spot_target_high),
+      targets_agreeing = suppressWarnings(as.integer(r$targets_agreeing)),
+      fib_confirms     = as.logical(r$fib_confirms),
+      source           = "scanner CSV",
+      reason           = NULL
+    )
+  } else {
+    .live_targets(ticker, spot)
+  }
 
   # Chain / OI: prefer scanner row, fall back to live get_chain_oi
   chain <- .resolve_chain(r, ticker, expiry, spot, config, tws_ok = tws_ok,
@@ -63,21 +65,38 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
               structures$within_cap else logical(0)
   n_within <- sum(within, na.rm = TRUE)
 
-  # rr / entry framework — taken from scanner row when present, otherwise NA +
-  # reason so the report renders "FETCH FAILED: <reason>" via .fmt_cell.
-  rr <- if (!is.null(r)) suppressWarnings(as.numeric(r$rr)) else NA_real_
-  entry_state <- if (!is.null(r) && !is.na(r$entry_state) && nzchar(r$entry_state))
-                   r$entry_state else NA_character_
-  entry_reason <- if (!is.null(r) && !is.na(r$entry_state) && nzchar(r$entry_state))
-                    NULL
-                  else if (!is.na(drop_phase))
-                    sprintf("scanner did not emit entry framework (phase_of_drop=%s)", drop_phase)
-                  else "scanner did not emit entry framework"
+  # Entry framework: prefer scanner row; live-derive when scanner is silent.
+  cached_rr <- if (!is.null(r)) suppressWarnings(as.numeric(r$rr)) else NA_real_
+  cached_entry_state <- if (!is.null(r) && !is.na(r$entry_state) && nzchar(r$entry_state))
+                          r$entry_state else NA_character_
+  cached_effective_target <- if (!is.null(r))
+                               suppressWarnings(as.numeric(r$effective_target)) else NA_real_
+  cached_strike <- if (!is.null(r)) suppressWarnings(as.numeric(r$strike)) else NA_real_
+
+  has_entry_framework <- !is.na(cached_rr) && !is.na(cached_entry_state) &&
+                         nzchar(cached_entry_state)
+
+  rr_obj <- if (has_entry_framework) {
+    list(rr = cached_rr,
+         entry_floor   = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_floor))   else NA_real_,
+         entry_ceiling = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_ceiling)) else NA_real_,
+         headroom_band = if (!is.null(r) && !is.na(r$headroom_band)) r$headroom_band else NA_character_,
+         entry_state   = cached_entry_state,
+         effective_target = cached_effective_target,
+         strike        = cached_strike,
+         spread_short_strike = NA_real_,
+         iv_used       = NA_real_,
+         source        = "scanner CSV",
+         reason        = NULL)
+  } else {
+    .live_entry_framework(ticker, direction, vehicle, spot, expiry,
+                          targets, chain, phase_c, config)
+  }
 
   d_pass <- !is.na(targets$targets_agreeing) &&
             targets$targets_agreeing >= 2L &&
-            isTRUE(rr >= config$rr_min) &&
-            (entry_state == "IN BAND") &&
+            isTRUE(rr_obj$rr >= config$rr_min) &&
+            (rr_obj$entry_state == "IN BAND") &&
             !identical(chain$chain_state, "chain-capped") &&
             n_within > 0
 
@@ -90,7 +109,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
                                   any(structures$source == "live", na.rm = TRUE))
                                 format(Sys.time(), "%Y-%m-%d %H:%M:%S")
                               else NA_character_,
-    strike            = if (!is.null(r)) suppressWarnings(as.numeric(r$strike)) else NA_real_,
+    strike            = rr_obj$strike,
     expiry            = expiry,
     expiry_reason     = expiry_reason,
     targets           = targets,
@@ -99,17 +118,154 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     chain_reason      = chain$reason,
     oi_cap_call       = chain$oi_cap_call,
     oi_cap_put        = chain$oi_cap_put,
-    effective_target  = if (!is.null(r)) suppressWarnings(as.numeric(r$effective_target)) else NA_real_,
-    rr                = rr,
-    entry_floor       = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_floor))   else NA_real_,
-    entry_ceiling     = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_ceiling)) else NA_real_,
-    headroom_band     = if (!is.null(r) && !is.na(r$headroom_band)) r$headroom_band else NA_character_,
-    entry_state       = entry_state,
-    entry_reason      = entry_reason,
+    effective_target  = rr_obj$effective_target,
+    rr                = rr_obj$rr,
+    entry_floor       = rr_obj$entry_floor,
+    entry_ceiling     = rr_obj$entry_ceiling,
+    headroom_band     = rr_obj$headroom_band,
+    entry_state       = rr_obj$entry_state,
+    entry_reason      = rr_obj$reason,
+    entry_source      = rr_obj$source,
     structures        = structures,
     n_structures_within_cap = n_within,
     any_within_cap    = n_within > 0,
     spot              = spot
+  )
+}
+
+#' Live-compute structural targets via 300-day OHLC + shared
+#' compute_structural_target(). Returns the same shape as the scanner-row path.
+.live_targets <- function(ticker, spot) {
+  if (is.na(spot)) return(list(
+    spot_target_low = NA_real_, spot_target_high = NA_real_,
+    targets_agreeing = NA_integer_, fib_confirms = NA,
+    source = "live", reason = "spot price unavailable"))
+  raw <- tryCatch(fetch_single_ohlcv(ticker), error = function(e) NULL)
+  if (is.null(raw) || nrow(raw) < 60) return(list(
+    spot_target_low = NA_real_, spot_target_high = NA_real_,
+    targets_agreeing = NA_integer_, fib_confirms = NA,
+    source = "live",
+    reason = "OHLC history insufficient (<60 days) for structural targets"))
+  raw <- raw[order(raw$date), ]
+  res <- tryCatch(compute_structural_target(spot, raw$Close, raw$High),
+                  error = function(e) NULL)
+  if (is.null(res)) return(list(
+    spot_target_low = NA_real_, spot_target_high = NA_real_,
+    targets_agreeing = NA_integer_, fib_confirms = NA,
+    source = "live", reason = "compute_structural_target failed"))
+  list(
+    spot_target_low  = res$spot_target_low,
+    spot_target_high = res$spot_target_high,
+    targets_agreeing = res$targets_agreeing,
+    fib_confirms     = res$fib_confirms,
+    source           = "live OHLC",
+    reason           = NULL
+  )
+}
+
+#' Live-derive R:R + entry framework when scanner row is silent. Picks strikes
+#' off rounded grid, prices via Black-Scholes (Tbasics::getOptPrice) using
+#' phase_c$ivp_used (or 0.30 fallback) as IV, then calls compute_rr_entry +
+#' classify_entry_state from shared/setup_chain_rr.R.
+.live_entry_framework <- function(ticker, direction, vehicle, spot, expiry,
+                                  targets, chain, phase_c, config) {
+  empty <- list(rr = NA_real_, entry_floor = NA_real_, entry_ceiling = NA_real_,
+                headroom_band = NA_character_, entry_state = NA_character_,
+                effective_target = NA_real_, strike = NA_real_,
+                spread_short_strike = NA_real_, iv_used = NA_real_,
+                source = "live", reason = NULL)
+  if (is.na(spot)) return(modifyList(empty,
+    list(reason = "spot price unavailable — cannot derive R:R")))
+  if (is.na(expiry) || !nzchar(expiry)) return(modifyList(empty,
+    list(reason = "expiry unavailable — cannot derive R:R")))
+  spot_target_low  <- targets$spot_target_low
+  spot_target_high <- targets$spot_target_high
+  if (is.na(spot_target_low)) return(modifyList(empty,
+    list(reason = "no structural target — cannot derive R:R")))
+
+  # Effective target: capped by chain OI if chain says so.
+  eff_target <- if (!is.null(chain$oi_cap_call) && !is.na(chain$oi_cap_call) &&
+                    chain$oi_cap_call < spot_target_low) chain$oi_cap_call
+                else spot_target_low
+
+  # IV: prefer phase_c funnel iv30, else cheap_score-side IVP estimate, else 0.30.
+  iv_now <- NA_real_
+  if (!is.null(phase_c$funnel) && !is.na(phase_c$funnel$iv30)) iv_now <- phase_c$funnel$iv30
+  if (is.na(iv_now)) iv_now <- 0.30
+
+  # Strike picks. Long: round up to $5 grid (call) or down (put).
+  right_C <- direction == "long"
+  strike_long <- NA_real_; strike_short <- NA_real_
+  if (vehicle == "call") {
+    strike_long <- if (right_C) ceiling(spot / 5) * 5 else floor(spot / 5) * 5
+  } else if (vehicle == "spread") {
+    strike_long  <- round(spot / 5) * 5
+    strike_short <- round(eff_target / 5) * 5
+    if (!is.na(strike_short) && strike_short <= strike_long)
+      strike_short <- strike_long + 5
+  }
+
+  # Entry premium via BS at current spot/strike with iv_now.
+  expiry_dt <- tryCatch(as.Date(expiry, format = "%Y%m%d"),
+                        error = function(e) NA)
+  dte <- if (inherits(expiry_dt, "Date") && !is.na(expiry_dt))
+           as.integer(expiry_dt - Sys.Date()) else NA_integer_
+  if (is.na(dte) || dte <= 0) return(modifyList(empty,
+    list(reason = sprintf("expiry %s is in the past — cannot derive R:R", expiry))))
+
+  entry_prem <- if (vehicle == "stock") {
+    spot * 0.05  # 5%-of-spot stop-distance proxy
+  } else if (vehicle == "call" && !is.na(strike_long)) {
+    tryCatch(Tbasics::getOptPrice(
+      type = if (right_C) "Call" else "Put",
+      S = spot, K = strike_long, r = 0.045, DTE = dte, sig = iv_now),
+      error = function(e) NA_real_)
+  } else if (vehicle == "spread" && !is.na(strike_long) && !is.na(strike_short)) {
+    long_p  <- tryCatch(Tbasics::getOptPrice(
+      type = "Call", S = spot, K = strike_long,  r = 0.045, DTE = dte, sig = iv_now),
+      error = function(e) NA_real_)
+    short_p <- tryCatch(Tbasics::getOptPrice(
+      type = "Call", S = spot, K = strike_short, r = 0.045, DTE = dte, sig = iv_now),
+      error = function(e) NA_real_)
+    if (!is.na(long_p) && !is.na(short_p)) max(long_p - short_p, 0.05) else NA_real_
+  } else NA_real_
+
+  if (is.na(entry_prem)) return(modifyList(empty,
+    list(strike = strike_long, spread_short_strike = strike_short,
+         effective_target = eff_target, iv_used = iv_now,
+         reason = "BS entry premium computation failed")))
+
+  rr_obj <- tryCatch(compute_rr_entry(
+    vehicle = vehicle, strike = strike_long, expiry = expiry,
+    current_price = spot, effective_target = eff_target,
+    iv_now = iv_now, entry_premium = entry_prem,
+    spread_short_strike = strike_short,
+    spot_target_high = spot_target_high,
+    rr_min = config$rr_min),
+    error = function(e) NULL)
+  if (is.null(rr_obj)) return(modifyList(empty,
+    list(strike = strike_long, spread_short_strike = strike_short,
+         effective_target = eff_target, iv_used = iv_now,
+         reason = "compute_rr_entry failed")))
+
+  chain_walk_status <- if (identical(chain$chain_state, "FETCH FAILED") ||
+                           is.na(chain$chain_state) ||
+                           !nzchar(chain$chain_state %||% "")) "FAILED" else "OK"
+  entry_state <- classify_entry_state(rr_obj$entry_floor, rr_obj$entry_ceiling,
+                                       chain_walk_status)
+
+  list(
+    rr            = rr_obj$rr,
+    entry_floor   = rr_obj$entry_floor,
+    entry_ceiling = rr_obj$entry_ceiling,
+    headroom_band = rr_obj$headroom_band,
+    entry_state   = entry_state,
+    effective_target = eff_target,
+    strike        = strike_long,
+    spread_short_strike = strike_short,
+    iv_used       = iv_now,
+    source        = "live",
+    reason        = NULL
   )
 }
 

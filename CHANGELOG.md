@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-05] - analyze: Phase D always lives — re-derive targets / R:R when scanner is silent
+
+### Problem
+When the scanner short-circuits at Phase B or C (TOP PICK / WATCH gates fail), the CSV row exists but Phase D fields (spot_target_*, targets_agreeing, fib_confirms, effective_target, rr, entry_floor / entry_ceiling, headroom_band, entry_state) come back NA. /analyze previously surfaced these as `FETCH FAILED: scanner did not emit ...`. Per design intent, /analyze should always surface every phase's data regardless of upstream drops.
+
+### Changed
+- **reports/shared/setup_chain_rr.R** (new): `compute_structural_target()`, `walk_chain_oi()`, `compute_rr_entry()`, `classify_entry_state()` lifted from `swing_scanner/setup_chain_rr.R` so /analyze can re-use them.
+- **reports/swing_scanner/setup_chain_rr.R**: now a one-line shim sourcing the shared module (zero behavioral change for scanner).
+- **reports/analyze/structures.R::run_phase_d**: when the scanner row lacks targets, calls new `.live_targets()` — fetches 300d OHLC via `fetch_single_ohlcv()`, runs `compute_structural_target()`, returns the same shape. When the scanner row lacks the entry framework, calls new `.live_entry_framework()` — picks strikes off rounded grid (±$5), prices via Black-Scholes (`Tbasics::getOptPrice`), runs `compute_rr_entry()` + `classify_entry_state()`. IV pulled from `phase_c$funnel$iv30` with 0.30 fallback.
+- **reports/analyze/report.R::.render_phase_d**: caption "Targets re-derived live from OHLC history (scanner did not emit)" when live path was used.
+
+### Validation
+AAPL long (scanner phase_of_drop=B) before/after:
+
+| Field | Before | After |
+|---|---|---|
+| spot_target_low / high  | FETCH FAILED | 280.91 / 288.62 |
+| targets_agreeing         | FETCH FAILED | 3 |
+| fib_confirms             | FETCH FAILED | TRUE |
+| effective_target         | FETCH FAILED | 280.91 |
+| R:R                      | FETCH FAILED | 0.13 |
+| entry_floor / ceiling    | FETCH FAILED | 2.48 / 1.86 |
+| entry_state              | FETCH FAILED | PRICED OUT |
+
 ## [2026-05-05] - analyze + scanner: 4-phase refactor (drop _v5, live refresh, indicator breakdown, vehicle rule)
 
 ### Phase 1 — Drop version suffix from code & filenames
