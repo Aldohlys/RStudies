@@ -6,26 +6,8 @@
 #   D.3 chain positioning via per-strike OI walk
 #   D.4 risk:reward + entry interval
 
-#' Pick vehicle and target expiry per BOT rules.
-#' @param price numeric — current spot
-#' @param cheap_score integer 0..10
-#' @param stage "early" | "continuation"
-#' @param atm_bid_ask_pct numeric — ATM bid-ask % (rich universe data)
-#' @return list with vehicle ("call" | "spread" | "stock"), target_dte (numeric)
-pick_vehicle_expiry <- function(price, cheap_score, stage,
-                                atm_bid_ask_pct = NA) {
-  vehicle <- if (price < 10 || (!is.na(atm_bid_ask_pct) && atm_bid_ask_pct > 8))
-    "stock"
-  else if (price < 150 && cheap_score >= 7)
-    "call"
-  else
-    "spread"
-
-  target_dte <- if (stage == "early") 35  # midpoint of 30-45
-                else if (stage == "continuation") 25  # midpoint of 21-30
-                else 30
-  list(vehicle = vehicle, target_dte = target_dte)
-}
+# Vehicle/expiry rule lives in shared/vehicle_rule.R
+# (sourced from main.R alongside indicators.R/freshness.R)
 
 #' Compute structural spot target consensus (Step D.2).
 #'

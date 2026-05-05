@@ -26,6 +26,9 @@ SCRIPT_DIR <- .get_script_dir()
 
 source(file.path(SCRIPT_DIR, "..", "shared", "html_helpers.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "cache.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "freshness.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "indicators.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "vehicle_rule.R"))
 source(file.path(SCRIPT_DIR, "defaults.R"))
 source(file.path(SCRIPT_DIR, "phases.R"))
 source(file.path(SCRIPT_DIR, "funnel.R"))
@@ -42,7 +45,7 @@ CONFIG <- load_analyze_config(.cfg_path)
 # ── Args ──────────────────────────────────────────────────────────────────
 parse_args <- function(argv) {
   if (length(argv) < 2) stop(
-    "Usage: Rscript main.R <TICKER> <DIRECTION> [--no-html] [--no-vol-funnel]")
+    "Usage: Rscript main.R <TICKER> <DIRECTION> [--no-html] [--no-vol-funnel] [--refresh] [--max-age <hours>]")
   ticker    <- toupper(argv[1])
   direction <- tolower(argv[2])
   if (!direction %in% c("long", "short")) stop("DIRECTION must be 'long' or 'short'")
@@ -56,18 +59,53 @@ parse_args <- function(argv) {
 
 argv <- commandArgs(trailingOnly = TRUE)
 args <- parse_args(argv)
+freshness <- resolve_freshness_policy(argv)
 
 message("=== /analyze ", args$ticker, " ", args$direction, "  (",
         as.character(Sys.Date()), ") ===")
+message(sprintf("Freshness policy: max_age=%gh%s",
+                freshness$max_age_hours,
+                if (freshness$force_refresh) " (force-refresh: cached values ignored)" else ""))
+
+# Make policy available to phase modules via CONFIG
+CONFIG$freshness <- freshness
+# Run timestamp threaded into the report for "data retrieved" tooltips
+CONFIG$run_started_at <- Sys.time()
+
+# Surface scanner CSV staleness up front
+csv_mtime <- scanner_csv_mtime(CONFIG$out_dir)
+csv_age_h <- hours_since(csv_mtime)
+if (is.null(csv_mtime)) {
+  message("Scanner CSV: none found in ", CONFIG$out_dir,
+          " — every field will be live-fetched.")
+} else {
+  message(sprintf("Scanner CSV mtime: %s (%.1fh old) — %s",
+                  format(csv_mtime, "%Y-%m-%d %H:%M:%S"),
+                  csv_age_h,
+                  if (is_fresh(csv_mtime, freshness)) "fresh, will use cached fields"
+                  else "STALE, will refetch live"))
+}
+
+# ── TWS reachability probe ───────────────────────────────────────────────
+# One quick check up front. If TWS isn't accepting connections, every
+# downstream live fetch will short-circuit with a "TWS not reachable" reason
+# instead of issuing a per-call request that blocks reticulate's asyncio loop.
+TWS_REACHABLE <- tryCatch(isTRUE(Tdata::isIBAvailable()), error = function(e) FALSE)
+if (!TWS_REACHABLE) {
+  message("WARNING: TWS not reachable (isIBAvailable() returned FALSE). ",
+          "Live IBKR fetches will be skipped; affected fields will surface ",
+          "'FETCH FAILED: TWS not reachable' in the report.")
+}
+CONFIG$tws_reachable <- TWS_REACHABLE
 
 # ── Phase A: Rich universe gate ───────────────────────────────────────────
 message("Phase A: Universe rich-options gate...")
-phase_a <- run_phase_a(args$ticker)
+phase_a <- run_phase_a(args$ticker, freshness = freshness)
 message(sprintf("  A: %s (%s)", phase_a$result, phase_a$reason))
 
 # ── Phase B: Pull score ───────────────────────────────────────────────────
 message("Phase B: Pull score...")
-phase_b <- run_phase_b(args$ticker, args$direction)
+phase_b <- run_phase_b(args$ticker, args$direction, freshness = freshness)
 message(sprintf("  B: %s | pull_score=%s direction=%s sector_rs_rank=%s",
                 phase_b$result, phase_b$pull_score, phase_b$pull_direction,
                 phase_b$sector_rs_rank))
@@ -76,7 +114,9 @@ message(sprintf("  B: %s | pull_score=%s direction=%s sector_rs_rank=%s",
 message("Phase C: Cheap score + Vol Funnel...")
 phase_c <- run_phase_c(args$ticker, args$direction,
                        run_funnel = !args$no_vol_funnel,
-                       config = CONFIG)
+                       config = CONFIG,
+                       spot = phase_b$price,
+                       freshness = freshness)
 message(sprintf("  C: %s | cheap_score=%s side=%s",
                 phase_c$result, phase_c$cheap_score, phase_c$cheap_side))
 if (!is.null(phase_c$funnel)) {
@@ -88,15 +128,15 @@ if (!is.null(phase_c$funnel)) {
 # ── Phase D: Setup, chain, R:R + structures table ─────────────────────────
 message("Phase D: Setup, chain, R:R, structures...")
 phase_d <- run_phase_d(args$ticker, args$direction, phase_b, phase_c,
-                       config = CONFIG)
+                       config = CONFIG, freshness = freshness)
 message(sprintf("  D: %s | targets_agreeing=%s | structures-within-cap=%s",
                 phase_d$result, phase_d$targets_agreeing,
                 phase_d$n_structures_within_cap))
 
 # ── Phase E: classification (mechanical label only) ───────────────────────
 phase_e <- run_phase_e(phase_a, phase_b, phase_c, phase_d, config = CONFIG)
-message(sprintf("  E: v5_classification=%s | phase_of_drop=%s",
-                phase_e$v5_classification, phase_e$phase_of_drop))
+message(sprintf("  E: classification=%s | phase_of_drop=%s",
+                phase_e$classification, phase_e$phase_of_drop))
 
 # ── Render report ─────────────────────────────────────────────────────────
 ctx <- list(
@@ -131,8 +171,8 @@ cat(strrep("=", 64), "\n", sep = "")
 }
 cat(sprintf("  Sector: %s | Spot: $%s\n",
             phase_b$sector %||% "n/a", .spot_str))
-cat(sprintf("  v5 classification: %s | phase_of_drop: %s\n",
-            phase_e$v5_classification, phase_e$phase_of_drop))
+cat(sprintf("  classification: %s | phase_of_drop: %s\n",
+            phase_e$classification, phase_e$phase_of_drop))
 cat(sprintf("  Phase A: %s\n", phase_a$result))
 cat(sprintf("  Phase B: %s  pull_score=%s direction=%s alignment=%s\n",
             phase_b$result, phase_b$pull_score, phase_b$pull_direction,

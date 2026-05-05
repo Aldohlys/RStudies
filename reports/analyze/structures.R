@@ -1,155 +1,305 @@
 # reports/analyze/structures.R — Phase D: setup, chain, R:R + structures table.
 #
-# Mechanical: enumerate vertical spreads via Tdata Python compute_spread_risk_reward
-# when reachable; fall back to v5 CSV row + DB option_chain_oi_history when not.
-# Apply $300/lot filter (config). NO Best/Alternative/Aggressive/Avoid framing.
+# Live-fetch policy (see feedback_analyze_live_data_fallback.md):
+#   Phase D NEVER short-circuits on upstream phase SKIPs. We always invoke
+#   the live spread pricer. When the scanner CSV doesn't carry an expiry, we
+#   pick one live from IBKR (~45 DTE). When option_chain_oi_history is empty
+#   for the ticker, we live-pull OI via get_chain_oi. Failures surface as
+#   "FETCH FAILED: <cause>" — never as silent placeholders.
 
-run_phase_d <- function(ticker, direction, phase_b, phase_c, config) {
-  v5 <- .read_v5_row(ticker)
-  empty_targets <- list(
-    spot_target_low = NA_real_, spot_target_high = NA_real_,
-    targets_agreeing = NA_integer_, fib_confirms = NA)
-  empty <- list(
-    result = "NO SIGNAL", vehicle = NA_character_, strike = NA_real_,
-    expiry = NA_character_, targets = empty_targets,
-    chain_state = NA_character_, oi_cap_call = NA_real_, oi_cap_put = NA_real_,
-    effective_target = NA_real_, rr = NA_real_, entry_floor = NA_real_,
-    entry_ceiling = NA_real_, headroom_band = NA_character_,
-    entry_state = "NO SIGNAL",
-    structures = data.frame(),
-    n_structures_within_cap = 0L, any_within_cap = FALSE,
-    targets_agreeing = NA_integer_)
-
-  if (is.null(v5$row)) return(empty)
-  r <- v5$row
-
-  # If Phase B emitted no pull signal, the entry framework has nothing to bracket
-  if (is.na(as.integer(r$pull_score)) || as.integer(r$pull_score) == 0 ||
-      r$pull_direction == "neutral") {
-    out <- empty
-    out$vehicle <- r$vehicle
-    out$expiry <- r$expiry
-    out$targets <- list(
-      spot_target_low = as.numeric(r$spot_target_low),
-      spot_target_high = as.numeric(r$spot_target_high),
-      targets_agreeing = as.integer(r$targets_agreeing),
-      fib_confirms = as.logical(r$fib_confirms))
-    out$targets_agreeing <- as.integer(r$targets_agreeing)
-    out$chain_state <- r$chain_state
-    out$oi_cap_call <- as.numeric(r$oi_cap_call)
-    out$oi_cap_put  <- as.numeric(r$oi_cap_put)
-    out$effective_target <- as.numeric(r$effective_target)
-    out$entry_state <- "NO SIGNAL"
-    out$structures <- enumerate_structures(ticker, direction, phase_b$price,
-                                            r, config, signal_present = FALSE)
-    out$n_structures_within_cap <- sum(out$structures$within_cap %||% logical(0),
-                                        na.rm = TRUE)
-    out$any_within_cap <- any(out$structures$within_cap %||% logical(0), na.rm = TRUE)
-    return(out)
+run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
+                        freshness = NULL) {
+  scan <- .read_scanner_row(ticker, freshness)
+  r  <- if (!is.null(scan$row)) scan$row else NULL
+  spot <- phase_b$price
+  if (is.null(spot) || is.na(spot)) {
+    spot <- tryCatch(.live_price(ticker), error = function(e) NA_real_)
   }
 
-  # Standard path: pull from v5 row
-  vehicle <- r$vehicle
-  expiry  <- r$expiry
-  rr      <- as.numeric(r$rr)
-  entry_state <- r$entry_state
-  any_within <- isTRUE(rr >= config$rr_min)
+  tws_ok <- isTRUE(config$tws_reachable)
 
-  structures <- enumerate_structures(ticker, direction, phase_b$price,
-                                      r, config, signal_present = TRUE)
+  # Resolve expiry: prefer scanner row, fall back to IBKR (~45 DTE)
+  expiry_resolved <- .resolve_expiry(r, ticker, target_dte = 45, tws_ok = tws_ok)
+  expiry  <- expiry_resolved$expiry
+  expiry_reason <- expiry_resolved$reason
+
+  # Vehicle: prefer scanner-row value; otherwise re-derive via shared rule.
+  cheap_score_for_rule <- if (!is.null(phase_c) && !is.na(phase_c$cheap_score))
+                            as.integer(phase_c$cheap_score) else NA_integer_
+  stage_for_rule <- if (!is.null(phase_b) && !is.null(phase_b$stage)) phase_b$stage else NA_character_
+  vehicle_pick <- pick_vehicle_expiry(spot,
+                                       cheap_score = cheap_score_for_rule,
+                                       stage       = stage_for_rule)
+  vehicle <- if (!is.null(r) && !is.na(r$vehicle) && nzchar(r$vehicle)) r$vehicle
+             else vehicle_pick$vehicle %||% "spread"
+  vehicle_reason <- vehicle_pick$reason
+
+  # Targets: scanner-derived; not reconstructable in /analyze without a re-run.
+  drop_phase <- if (!is.null(r) && !is.na(r$phase_of_drop) && nzchar(r$phase_of_drop))
+                  r$phase_of_drop else NA_character_
+  has_targets <- !is.null(r) && !is.na(suppressWarnings(as.numeric(r$spot_target_low)))
+  targets_reason <- if (has_targets) NULL
+                    else if (!is.na(drop_phase))
+                      sprintf("scanner did not emit targets (phase_of_drop=%s); chart targets not re-derived live", drop_phase)
+                    else "scanner did not emit targets; chart targets not re-derived live"
+  targets <- list(
+    spot_target_low  = if (has_targets) as.numeric(r$spot_target_low)  else NA_real_,
+    spot_target_high = if (has_targets) as.numeric(r$spot_target_high) else NA_real_,
+    targets_agreeing = if (has_targets) suppressWarnings(as.integer(r$targets_agreeing)) else NA_integer_,
+    fib_confirms     = if (has_targets) as.logical(r$fib_confirms) else NA,
+    reason           = targets_reason
+  )
+
+  # Chain / OI: prefer scanner row, fall back to live get_chain_oi
+  chain <- .resolve_chain(r, ticker, expiry, spot, config, tws_ok = tws_ok,
+                          freshness = freshness)
+
+  # Structures: live pricer runs whenever TWS is reachable; otherwise we
+  # surface FETCH FAILED instead of issuing a request that may hang.
+  structures <- enumerate_structures(ticker, direction, spot, expiry, vehicle,
+                                     config, expiry_reason = expiry_reason,
+                                     tws_ok = tws_ok)
   within <- if ("within_cap" %in% names(structures))
               structures$within_cap else logical(0)
   n_within <- sum(within, na.rm = TRUE)
 
-  d_pass <- (as.integer(r$targets_agreeing) %||% 0L) >= 2L &&
+  # rr / entry framework — taken from scanner row when present, otherwise NA +
+  # reason so the report renders "FETCH FAILED: <reason>" via .fmt_cell.
+  rr <- if (!is.null(r)) suppressWarnings(as.numeric(r$rr)) else NA_real_
+  entry_state <- if (!is.null(r) && !is.na(r$entry_state) && nzchar(r$entry_state))
+                   r$entry_state else NA_character_
+  entry_reason <- if (!is.null(r) && !is.na(r$entry_state) && nzchar(r$entry_state))
+                    NULL
+                  else if (!is.na(drop_phase))
+                    sprintf("scanner did not emit entry framework (phase_of_drop=%s)", drop_phase)
+                  else "scanner did not emit entry framework"
+
+  d_pass <- !is.na(targets$targets_agreeing) &&
+            targets$targets_agreeing >= 2L &&
             isTRUE(rr >= config$rr_min) &&
             (entry_state == "IN BAND") &&
-            (r$chain_state %||% "") != "chain-capped" &&
+            !identical(chain$chain_state, "chain-capped") &&
             n_within > 0
 
   list(
-    result = if (d_pass) "PASS" else "SKIP",
-    vehicle = vehicle, strike = as.numeric(r$strike), expiry = expiry,
-    targets = list(
-      spot_target_low = as.numeric(r$spot_target_low),
-      spot_target_high = as.numeric(r$spot_target_high),
-      targets_agreeing = as.integer(r$targets_agreeing),
-      fib_confirms = as.logical(r$fib_confirms)),
-    targets_agreeing = as.integer(r$targets_agreeing),
-    chain_state = r$chain_state,
-    oi_cap_call = as.numeric(r$oi_cap_call),
-    oi_cap_put  = as.numeric(r$oi_cap_put),
-    effective_target = as.numeric(r$effective_target),
-    rr = rr,
-    entry_floor = as.numeric(r$entry_floor),
-    entry_ceiling = as.numeric(r$entry_ceiling),
-    headroom_band = r$headroom_band,
-    entry_state = entry_state,
-    structures = structures,
+    result            = if (d_pass) "PASS" else "SKIP",
+    vehicle           = vehicle,
+    vehicle_reason    = vehicle_reason,
+    structures_retrieved_at = if (isTRUE(tws_ok) && !is.null(structures) &&
+                                  "source" %in% names(structures) &&
+                                  any(structures$source == "live", na.rm = TRUE))
+                                format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+                              else NA_character_,
+    strike            = if (!is.null(r)) suppressWarnings(as.numeric(r$strike)) else NA_real_,
+    expiry            = expiry,
+    expiry_reason     = expiry_reason,
+    targets           = targets,
+    targets_agreeing  = targets$targets_agreeing,
+    chain_state       = chain$chain_state,
+    chain_reason      = chain$reason,
+    oi_cap_call       = chain$oi_cap_call,
+    oi_cap_put        = chain$oi_cap_put,
+    effective_target  = if (!is.null(r)) suppressWarnings(as.numeric(r$effective_target)) else NA_real_,
+    rr                = rr,
+    entry_floor       = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_floor))   else NA_real_,
+    entry_ceiling     = if (!is.null(r)) suppressWarnings(as.numeric(r$entry_ceiling)) else NA_real_,
+    headroom_band     = if (!is.null(r) && !is.na(r$headroom_band)) r$headroom_band else NA_character_,
+    entry_state       = entry_state,
+    entry_reason      = entry_reason,
+    structures        = structures,
     n_structures_within_cap = n_within,
-    any_within_cap = n_within > 0
+    any_within_cap    = n_within > 0,
+    spot              = spot
   )
 }
 
-# ── Structure enumeration (live spread pricer if reachable, else DB cache) ──
-enumerate_structures <- function(ticker, direction, spot, v5_row, config,
-                                  signal_present = TRUE) {
-  cap <- config$risk_cap_lot_usd
-  expiry <- v5_row$expiry
-  vehicle <- v5_row$vehicle %||% "spread"
-  right <- if (direction == "long") "C" else "P"
+# ── Expiry resolution: scanner row first, then live IBKR pick ────────────
+.resolve_expiry <- function(scanner_row, ticker, target_dte = 45, tws_ok = TRUE) {
+  if (!is.null(scanner_row) && !is.na(scanner_row$expiry) && nzchar(as.character(scanner_row$expiry))) {
+    return(list(expiry = as.character(scanner_row$expiry), reason = NULL))
+  }
+  if (!isTRUE(tws_ok)) return(list(
+    expiry = NA_character_,
+    reason = "TWS not reachable; cannot pick live expiry"))
+  py <- tryCatch(Tdata:::tdata_py, error = function(e) NULL)
+  if (is.null(py)) return(list(
+    expiry = NA_character_,
+    reason = "tdata_py unavailable; cannot pick live expiry"))
+  expiries <- tryCatch(py$getExpirationDates(ticker),
+                       error = function(e) conditionMessage(e))
+  if (is.character(expiries) && length(expiries) == 1) return(list(
+    expiry = NA_character_, reason = paste("getExpirationDates:", expiries)))
+  if (is.null(expiries) || length(expiries) == 0) return(list(
+    expiry = NA_character_, reason = "no expirations from IBKR"))
+  exp_dates <- as.Date(as.character(expiries), format = "%Y%m%d")
+  dtes <- as.integer(exp_dates - Sys.Date())
+  ok <- !is.na(dtes) & dtes > 0
+  if (!any(ok)) return(list(
+    expiry = NA_character_, reason = "no future expirations from IBKR"))
+  expiries <- expiries[ok]; dtes <- dtes[ok]
+  list(expiry = expiries[which.min(abs(dtes - target_dte))], reason = NULL)
+}
 
-  # Try Python compute_spread_risk_reward via reticulate; bail if unavailable.
-  spreads_df <- tryCatch({
-    if (!requireNamespace("reticulate", quietly = TRUE)) stop("no reticulate")
-    if (is.na(expiry) || is.na(spot)) stop("no expiry/spot")
-    spread_mod <- reticulate::import("tdata_py.spread", delay_load = TRUE)
-    rows <- list()
-    for (w in config$spread_widths) {
-      df <- tryCatch(spread_mod$compute_spread_risk_reward(
-        sym = ticker, trading_class = ticker, expiration = expiry,
-        current_price = spot, moneyness_pct = config$moneyness_pct,
-        spread_width = as.integer(w), right = right,
-        multiplier = 100L, currency = "USD",
-        exchangeSec = "SMART", exchangeOpt = "SMART",
-        force_refresh = TRUE), error = function(e) NULL)
-      if (!is.null(df) && nrow(df) > 0) {
-        df$source <- "live"
-        rows[[length(rows) + 1]] <- df
-      }
-    }
-    if (length(rows) == 0) NULL else do.call(rbind, rows)
-  }, error = function(e) NULL)
-
-  if (is.null(spreads_df) || nrow(spreads_df) == 0) {
-    # DB fallback — return placeholder rows for the structure-table; the user
-    # sees that no live enumeration happened.
-    return(.placeholder_structures(ticker, direction, spot, v5_row, config))
+# ── Chain / OI resolution ────────────────────────────────────────────────
+.resolve_chain <- function(scanner_row, ticker, expiry, spot, config, tws_ok = TRUE,
+                           freshness = NULL) {
+  cached_oi_call <- if (!is.null(scanner_row)) suppressWarnings(as.numeric(scanner_row$oi_cap_call)) else NA_real_
+  cached_oi_put  <- if (!is.null(scanner_row)) suppressWarnings(as.numeric(scanner_row$oi_cap_put))  else NA_real_
+  cached_state   <- if (!is.null(scanner_row) && !is.na(scanner_row$chain_state) && nzchar(scanner_row$chain_state))
+                      scanner_row$chain_state else NA_character_
+  if (!is.na(cached_oi_call) && !is.na(cached_oi_put) && !is.na(cached_state)) {
+    return(list(oi_cap_call = cached_oi_call, oi_cap_put = cached_oi_put,
+                chain_state = cached_state, reason = NULL))
   }
 
-  # Filter: DEBIT (or both, neutral display) and within cap
+  # DB cache (option_chain_oi_history) — gated by freshness policy
+  conn <- tryCatch(Tdata::safe_db_connect(), error = function(e) NULL)
+  on.exit(if (!is.null(conn)) DBI::dbDisconnect(conn), add = TRUE)
+  oi_rows <- if (!is.null(conn) && !is.na(expiry)) {
+    tryCatch(DBI::dbGetQuery(conn,
+      "SELECT strike, right, open_interest, cache_date FROM option_chain_oi_history
+       WHERE sym = ? AND expiry = ?
+       ORDER BY cache_date DESC", params = list(ticker, expiry)),
+      error = function(e) NULL)
+  } else NULL
+
+  if (!is.null(oi_rows) && nrow(oi_rows) > 0) {
+    latest_cache <- max(oi_rows$cache_date, na.rm = TRUE)
+    if (is.null(freshness) || is_fresh(latest_cache, freshness)) {
+      return(.summarize_oi(oi_rows, source = "DB option_chain_oi_history"))
+    }
+    # Stale — fall through to live fetch with reason
+  }
+
+  # Live fallback: get_chain_oi
+  if (!isTRUE(tws_ok)) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = "DB option_chain_oi_history empty; TWS not reachable"))
+  py <- tryCatch(Tdata:::tdata_py, error = function(e) NULL)
+  if (is.null(py)) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = "DB option_chain_oi_history empty; tdata_py unavailable"))
+  if (is.na(expiry) || is.na(spot)) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = "missing expiry or spot — cannot pull live OI"))
+
+  smin <- spot * (1 - 0.25); smax <- spot * (1 + 0.25)
+  live_oi <- tryCatch(py$get_chain_oi(
+    sym = ticker, expiration = expiry,
+    strike_min = smin, strike_max = smax),
+    error = function(e) conditionMessage(e))
+  if (is.character(live_oi) && length(live_oi) == 1) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = paste("get_chain_oi:", live_oi)))
+  if (is.null(live_oi) || !is.data.frame(live_oi) || nrow(live_oi) == 0) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = sprintf("get_chain_oi returned no rows for %s @ %s", ticker, expiry)))
+  .summarize_oi(live_oi, source = "live get_chain_oi")
+}
+
+#' Reduce a per-strike/per-right OI table into oi_cap_call, oi_cap_put,
+#' and a chain_state label.
+.summarize_oi <- function(oi_rows, source = "DB") {
+  oi_rows$open_interest <- suppressWarnings(as.numeric(oi_rows$open_interest))
+  oi_rows <- oi_rows[!is.na(oi_rows$open_interest) & oi_rows$open_interest > 0, ]
+  if (nrow(oi_rows) == 0) return(list(
+    oi_cap_call = NA_real_, oi_cap_put = NA_real_,
+    chain_state = NA_character_,
+    reason = sprintf("%s: all OI rows empty/zero", source)))
+
+  calls <- oi_rows[oi_rows$right == "C", , drop = FALSE]
+  puts  <- oi_rows[oi_rows$right == "P", , drop = FALSE]
+  oi_cap_call <- if (nrow(calls) > 0)
+    calls$strike[which.max(calls$open_interest)] else NA_real_
+  oi_cap_put  <- if (nrow(puts)  > 0)
+    puts$strike[which.max(puts$open_interest)]   else NA_real_
+
+  # Chain state — mechanical: top-3 OI / total ratio
+  total_oi <- sum(oi_rows$open_interest)
+  top3 <- sum(sort(oi_rows$open_interest, decreasing = TRUE)[1:3], na.rm = TRUE)
+  conc <- if (total_oi > 0) top3 / total_oi else NA_real_
+  state <- if (is.na(conc)) "open"
+           else if (conc >= 0.6) "chain-capped"
+           else if (conc >= 0.4) "crowded"
+           else "open"
+
+  list(oi_cap_call = oi_cap_call, oi_cap_put = oi_cap_put,
+       chain_state = state, reason = NULL)
+}
+
+# ── Structure enumeration (live spread pricer; FETCH FAILED row otherwise) ──
+enumerate_structures <- function(ticker, direction, spot, expiry, vehicle,
+                                 config, expiry_reason = NULL, tws_ok = TRUE) {
+  cap <- config$risk_cap_lot_usd
+  right <- if (direction == "long") "C" else "P"
+
+  if (!isTRUE(tws_ok)) return(.fetch_failed_structures(
+    "TWS not reachable — cannot price spreads"))
+  if (is.na(spot)) return(.fetch_failed_structures(
+    "spot price unavailable — cannot price spreads"))
+  if (is.na(expiry)) return(.fetch_failed_structures(
+    paste0("expiry unavailable",
+           if (!is.null(expiry_reason)) paste0(" (", expiry_reason, ")") else "")))
+  if (!requireNamespace("reticulate", quietly = TRUE)) return(.fetch_failed_structures(
+    "reticulate package unavailable — cannot reach live pricer"))
+
+  spread_mod <- tryCatch(reticulate::import("tdata_py.spread", delay_load = TRUE),
+                         error = function(e) NULL)
+  if (is.null(spread_mod)) return(.fetch_failed_structures(
+    "tdata_py.spread import failed"))
+
+  rows <- list(); failures <- character(0)
+  for (w in config$spread_widths) {
+    df <- tryCatch(spread_mod$compute_spread_risk_reward(
+      sym = ticker, trading_class = ticker, expiration = expiry,
+      current_price = spot, moneyness_pct = config$moneyness_pct,
+      spread_width = as.integer(w), right = right,
+      multiplier = 100L, currency = "USD",
+      exchangeSec = "SMART", exchangeOpt = "SMART",
+      force_refresh = TRUE),
+      error = function(e) {
+        failures <<- c(failures,
+                       sprintf("width=%s: %s", w, conditionMessage(e)))
+        NULL
+      })
+    if (!is.null(df) && is.data.frame(df) && nrow(df) > 0) {
+      df$source <- "live"
+      rows[[length(rows) + 1]] <- df
+    }
+  }
+
+  if (length(rows) == 0) return(.fetch_failed_structures(
+    if (length(failures) > 0)
+      paste("compute_spread_risk_reward returned no rows;", paste(failures, collapse = "; "))
+    else
+      "compute_spread_risk_reward returned no rows for any width"))
+
+  spreads_df <- do.call(rbind, rows)
   spreads_df$within_cap <- spreads_df$max_risk <= cap
   spreads_df <- spreads_df[order(-spreads_df$reward_risk_ratio), ]
   spreads_df
 }
 
-.placeholder_structures <- function(ticker, direction, spot, v5_row, config) {
+#' Single-row data frame surfacing a FETCH FAILED reason in the structures
+#' table. Numeric cells stay NA so report.R renders them as `n/a`, but the
+#' `reason` column carries the cause so the user is never silently misled.
+.fetch_failed_structures <- function(reason) {
   data.frame(
-    structure = c("Stock direct",
-                  sprintf("%s vertical debit (live pricer unavailable)",
-                          if (direction == "long") "Bull call" else "Bear put")),
-    expiry = c(NA, v5_row$expiry %||% NA_character_),
-    debit  = c(NA_real_, NA_real_),
-    max_risk = c(NA_real_, NA_real_),
-    max_reward = c(NA_real_, NA_real_),
-    reward_risk_ratio = c(NA_real_, NA_real_),
-    prob_success_delta = c(NA_real_, NA_real_),
-    within_cap = c(NA, NA),
-    surface_fact = c("n/a — IV exposure does not apply",
-                     sprintf("VRP %s, RR %s",
-                             v5_row$vrp %||% "n/a",
-                             "see Phase C")),
-    source = c("placeholder", "placeholder"),
-    stringsAsFactors = FALSE
+    structure          = "FETCH FAILED",
+    expiry             = NA_character_,
+    debit              = NA_real_,
+    max_risk           = NA_real_,
+    max_reward         = NA_real_,
+    reward_risk_ratio  = NA_real_,
+    prob_success_delta = NA_real_,
+    within_cap         = NA,
+    surface_fact       = paste0("FETCH FAILED: ", reason),
+    source             = "fetch_failed",
+    stringsAsFactors   = FALSE
   )
 }

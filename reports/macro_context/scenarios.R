@@ -457,7 +457,7 @@ run_scenarios <- function(raw, vix_res, rates_res, breadth, comm_res, events, co
   results
 }
 
-#' Get sector flow map for final_filter.R
+#' Get sector flow map for swing_scanner sector_gate.R
 #' Returns the static regime flows + DXY/curve modifiers
 get_scenario_sector_map <- function() {
   REGIME_SECTOR_FLOWS

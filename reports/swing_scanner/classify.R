@@ -1,4 +1,4 @@
-# final_classify_v5.R — Phase E: Classification (Steps E.1 – E.2)
+# classify.R — Phase E: Classification (Steps E.1 – E.2)
 #
 # Entry interval state already computed in setup_chain_rr.R::classify_entry_state.
 # This module applies the TOP PICK / WATCH / SKIP gate (E.2) and Phase_Of_Drop
