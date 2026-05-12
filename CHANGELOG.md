@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-12] - analyze: outright option pricing grid in report
+
+### Problem
+When the vehicle rule picked `call` or `put` (outright single-leg), the report showed the spread enumeration but not the actual outright pricing grid. User had to read the entry framework's single-strike R:R but couldn't compare strikes or expiries for outrights.
+
+### Added
+- **reports/analyze/structures.R::enumerate_outrights()**: new helper. Mirrors `enumerate_structures()` but for single-leg long options. Enumerates a strike × expiry grid (4 strikes per direction × 2 expiries). For each: BS-prices entry at current spot + IV30, BS-prices forward at effective target + (DTE−5 theta buffer) + (IV+2pp bump). Returns rows with expiry/dte/strike/entry_premium/fwd_premium/max_loss/reward/rr.
+- **reports/analyze/report.R::.render_outright_table()**: renders the grid as a sortable HTML table above the spreads section. `$` suffix for currency, 2-decimal rounding, expiry with DTE annotation.
+- `run_phase_d` always invokes `enumerate_outrights()` when TWS reachable; result stored in `phase_d$outrights` and rendered above the spreads. Visible regardless of vehicle rule's preference (informational).
+
+### Validated on UPS short
+Outrights grid surfaced 8 rows (4 puts × 2 expiries):
+- Best R:R: $90 put / 45d → entry $60, fwd@$99 = $76.10, R:R 0.27.
+- ATM $100 put / 31d → entry $305.60 (max loss), fwd $351.90, R:R 0.15.
+
 ## [2026-05-12] - analyze: direction-aware vehicle rule, always-open structures, fix entry framework strike-picker
 
 ### Problem

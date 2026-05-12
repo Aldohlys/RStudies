@@ -285,11 +285,14 @@ render_analyze_html <- function(ctx, out_dir) {
     .row_class(pd$result), pd$result,
     .row_class(pe$classification), pe$classification, pe$phase_of_drop)
 
-  # Structures table — vehicle-aware (shared/vehicle_rule.R)
+  # Structures section — outrights table (when computed) + spreads table.
+  # Vehicle banner sits above both. Both rendered always when data available.
   sec_struct <- .render_structures(pd$structures, ctx$config,
                                    vehicle = pd$vehicle,
                                    vehicle_reason = pd$vehicle_reason,
-                                   structures_retrieved_at = pd$structures_retrieved_at)
+                                   structures_retrieved_at = pd$structures_retrieved_at,
+                                   outrights = pd$outrights,
+                                   direction = direction)
 
   # Data summary
   sec_summary <- .render_summary(ctx)
@@ -603,7 +606,9 @@ render_analyze_html <- function(ctx, out_dir) {
 # available) collapse to <details> the user can expand on demand.
 .render_structures <- function(structures, config, vehicle = "spread",
                                vehicle_reason = NULL,
-                               structures_retrieved_at = NULL) {
+                               structures_retrieved_at = NULL,
+                               outrights = NULL,
+                               direction = "long") {
   cap <- config$risk_cap_lot_usd
 
   vehicle_banner <- sprintf(
@@ -617,6 +622,7 @@ render_analyze_html <- function(ctx, out_dir) {
 
   retrieved_html <- .retrieved_caption(`live pricer` = structures_retrieved_at)
 
+  outright_table <- .render_outright_table(outrights, direction)
   spread_table <- .render_structures_table(structures, cap)
 
   # Always-open structures section. Vehicle rule is informational, not gating
@@ -631,10 +637,59 @@ render_analyze_html <- function(ctx, out_dir) {
 
   body <- paste0(
     hint,
+    outright_table,
     sprintf('<h3>Vertical spreads — DEBIT only, within $%d/lot cap</h3>', cap),
     retrieved_html, spread_table)
 
   paste0(vehicle_banner, body)
+}
+
+#' Render the outright-option strike × expiry grid. Returns "" when outrights
+#' is NULL/empty (e.g. TWS down, or vehicle = stock).
+.render_outright_table <- function(outrights, direction) {
+  if (is.null(outrights) || nrow(outrights) == 0) return("")
+  right_label <- if (identical(direction, "short")) "Put" else "Call"
+
+  fmt_money <- function(v) if (is.na(v)) "&mdash;" else sprintf("$%.2f", v)
+  fmt_strike <- function(v) if (is.na(v)) "&mdash;" else sprintf("$%g", v)
+  fmt_ratio <- function(v) if (is.na(v)) "&mdash;" else sprintf("%.2f", v)
+  fmt_expiry <- function(v, d) if (is.na(v)) "&mdash;"
+                                else sprintf("%s <span class='crit-info'>(%dd)</span>",
+                                             as.character(as.Date(as.character(v), format="%Y%m%d")), d)
+
+  hdr_cells <- c(
+    '<th><span title="Expiration date and DTE.">Expiry</span></th>',
+    sprintf('<th><span title="Strike of the long %s.">Strike</span></th>', tolower(right_label)),
+    '<th><span title="Black-Scholes premium at current spot, current IV30. Per lot (×100).">Entry premium</span></th>',
+    '<th><span title="Maximum loss per lot if option expires worthless. Equals entry premium.">Max loss</span></th>',
+    '<th><span title="Black-Scholes premium at the effective target (DTE − 5d theta buffer, IV bumped +2pp).">Fwd @ target</span></th>',
+    '<th><span title="Fwd premium − entry premium per lot.">Reward</span></th>',
+    '<th><span title="Reward / risk on the move to effective target.">R:R</span></th>')
+
+  rows <- vapply(seq_len(nrow(outrights)), function(i) {
+    r <- outrights[i, , drop = FALSE]
+    cells <- c(
+      sprintf('<td>%s</td>', fmt_expiry(r$expiry, r$dte)),
+      sprintf('<td>%s</td>', fmt_strike(r$strike)),
+      sprintf('<td>%s</td>', fmt_money(r$entry_premium)),
+      sprintf('<td>%s</td>', fmt_money(r$max_loss)),
+      sprintf('<td>%s</td>', fmt_money(r$fwd_premium)),
+      sprintf('<td>%s</td>', fmt_money(r$reward)),
+      sprintf('<td>%s</td>', fmt_ratio(r$rr)))
+    sprintf('<tr class="row-pass">%s</tr>', paste0(cells, collapse = ""))
+  }, character(1))
+
+  paste0(
+    sprintf('<h3>Outright %s grid (single-leg long-option pricing)</h3>',
+            tolower(right_label)),
+    '<table class="sortable"><thead><tr>',
+    paste0(hdr_cells, collapse = ""),
+    '</tr></thead><tbody>',
+    paste(rows, collapse = "\n"),
+    '</tbody></table>',
+    '<p class="sub">Strike × expiry grid. Entry priced at current spot/IV30. ',
+    'Forward priced at effective target with theta buffer (DTE − 5d) and IV +2pp. ',
+    'Sorted by R:R desc.</p>')
 }
 
 #' Inner spread enumeration table (no h2, no banner).

@@ -81,6 +81,16 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   rr_obj <- .live_entry_framework(ticker, direction, vehicle, spot, expiry,
                                    targets, chain, phase_c, config)
 
+  # Outright option grid (single-leg long-option pricing across strikes ×
+  # expiries). Always enumerated when TWS is reachable — the user reads it
+  # as informational regardless of vehicle rule's preference.
+  iv_outright <- if (!is.null(phase_c$funnel) && !is.na(phase_c$funnel$iv30))
+                   phase_c$funnel$iv30 else 0.30
+  outrights <- tryCatch(enumerate_outrights(
+    direction, spot, expiries, rr_obj$effective_target %||% targets$spot_target_low,
+    iv_outright, config),
+    error = function(e) { message("outrights enum failed: ", conditionMessage(e)); NULL })
+
   d_pass <- !is.na(targets$targets_agreeing) &&
             targets$targets_agreeing >= 2L &&
             isTRUE(rr_obj$rr >= config$rr_min) &&
@@ -117,6 +127,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     structures        = structures,
     n_structures_within_cap = n_within,
     any_within_cap    = n_within > 0,
+    outrights         = outrights,
     spot              = spot
   )
 }
@@ -279,6 +290,74 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     source        = "live",
     reason        = NULL
   )
+}
+
+# ── Outright option enumeration ──────────────────────────────────────────
+#
+# For vehicle ∈ {"call","put"}, enumerate a strike × expiry grid of single-leg
+# long-option pricing. Mirrors enumerate_structures() but for outrights.
+# Step "outrights" rewrite 2026-05-12 (project_analyze_redesign_2026_05.md).
+#
+# Each row: expiry, dte, strike, entry_premium, fwd_premium_at_target,
+# max_loss (=entry_premium), reward, rr.
+# Strikes: $5 grid spanning [spot-20%, spot+10%] for puts (short),
+# [spot-10%, spot+20%] for calls (long). 5 strikes typical.
+enumerate_outrights <- function(direction, spot, expiries, eff_target, iv_now,
+                                 config) {
+  if (is.null(direction) || !direction %in% c("long", "short"))
+    return(NULL)
+  if (is.na(spot) || is.na(eff_target) || is.na(iv_now))
+    return(NULL)
+  expiries <- expiries[!is.na(expiries) & nzchar(expiries)]
+  if (length(expiries) == 0) return(NULL)
+
+  bs_type <- if (direction == "short") "Put" else "Call"
+  # Strike grid: 5 strikes on $5 increments around ATM, biased toward the
+  # direction of the move (puts skew OTM-toward-target for shorts; calls
+  # skew OTM-toward-target for longs).
+  if (direction == "short") {
+    atm <- floor(spot / 5) * 5
+    strikes <- atm + c(-10, -5, 0, 5)  # OTM to slightly-ITM puts
+  } else {
+    atm <- ceiling(spot / 5) * 5
+    strikes <- atm + c(-5, 0, 5, 10)   # slightly-ITM to OTM calls
+  }
+  strikes <- strikes[strikes > 0]
+
+  rows <- list()
+  for (exp in expiries) {
+    exp_dt <- tryCatch(as.Date(as.character(exp), format = "%Y%m%d"),
+                       error = function(e) NA)
+    dte <- if (inherits(exp_dt, "Date") && !is.na(exp_dt))
+             as.integer(exp_dt - Sys.Date()) else NA_integer_
+    if (is.na(dte) || dte <= 0) next
+    fwd_dte <- max(dte - 5, 1)  # theta buffer
+    fwd_iv  <- iv_now + 0.02
+    for (K in strikes) {
+      entry_prem <- tryCatch(Tbasics::getOptPrice(
+        type = bs_type, S = spot, K = K,
+        r = 0.045, DTE = dte, sig = iv_now),
+        error = function(e) NA_real_)
+      fwd_prem <- tryCatch(Tbasics::getOptPrice(
+        type = bs_type, S = eff_target, K = K,
+        r = 0.045, DTE = fwd_dte, sig = fwd_iv),
+        error = function(e) NA_real_)
+      if (is.na(entry_prem) || entry_prem <= 0) next
+      reward <- if (is.na(fwd_prem)) NA_real_ else fwd_prem - entry_prem
+      rr <- if (!is.na(reward) && entry_prem > 0) reward / entry_prem else NA_real_
+      rows[[length(rows) + 1]] <- data.frame(
+        expiry = exp, dte = dte, strike = K,
+        entry_premium = round(entry_prem * 100, 2),    # per-lot $ cost
+        fwd_premium = if (is.na(fwd_prem)) NA_real_ else round(fwd_prem * 100, 2),
+        max_loss = round(entry_prem * 100, 2),
+        reward = if (is.na(reward)) NA_real_ else round(reward * 100, 2),
+        rr = if (is.na(rr)) NA_real_ else round(rr, 2),
+        stringsAsFactors = FALSE)
+    }
+  }
+  if (length(rows) == 0) return(NULL)
+  df <- do.call(rbind, rows)
+  df[order(-df$rr), , drop = FALSE]
 }
 
 # ── Structure enumeration (live spread pricer; FETCH FAILED row otherwise) ──
