@@ -55,6 +55,7 @@ calc_ind <- function(d) {
   d$updn_ratio <- ifelse(!is.na(d$dnvol10) & d$dnvol10 > 0, d$upvol10 / d$dnvol10, NA)
 
   d$ret20 <- (d$Close / dplyr::lag(d$Close, 20) - 1) * 100
+  d$ret60 <- (d$Close / dplyr::lag(d$Close, 60) - 1) * 100
 
   # ── BOT breakout indicators ────────────────────────────────────────────
   d$high40  <- zoo::rollapply(d$High, width = 40, FUN = max, fill = NA, align = "right")

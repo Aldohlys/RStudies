@@ -28,6 +28,8 @@ source(file.path(SCRIPT_DIR, "..", "shared", "html_helpers.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "cache.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "freshness.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "indicators.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "universe.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "live_sources.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "vehicle_rule.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "setup_chain_rr.R"))
 source(file.path(SCRIPT_DIR, "defaults.R"))
@@ -99,17 +101,24 @@ if (!TWS_REACHABLE) {
 }
 CONFIG$tws_reachable <- TWS_REACHABLE
 
-# ── Phase A: Rich universe gate ───────────────────────────────────────────
-message("Phase A: Universe rich-options gate...")
+# ── Phase A: option liquidity (informational only) ────────────────────────
+message("Phase A: Option liquidity probe (informational)...")
 phase_a <- run_phase_a(args$ticker, freshness = freshness)
-message(sprintf("  A: %s (%s)", phase_a$result, phase_a$reason))
+message(sprintf("  A: %s | %s expiries (%s tradeable in 14-90 DTE) | src=%s",
+                phase_a$result,
+                phase_a$n_expiries %||% "n/a",
+                phase_a$tradeable_expiries %||% "n/a",
+                phase_a$source %||% "n/a"))
 
-# ── Phase B: Pull score ───────────────────────────────────────────────────
-message("Phase B: Pull score...")
+# ── Phase B: Trend + sector RS context ────────────────────────────────────
+message("Phase B: Trend + sector RS context...")
 phase_b <- run_phase_b(args$ticker, args$direction, freshness = freshness)
-message(sprintf("  B: %s | pull_score=%s direction=%s sector_rs_rank=%s",
-                phase_b$result, phase_b$pull_score, phase_b$pull_direction,
-                phase_b$sector_rs_rank))
+message(sprintf("  B: %s | stage=%s align=%s sector=%s rank=%s/%s",
+                phase_b$result, phase_b$stage %||% "n/a",
+                phase_b$direction_match,
+                phase_b$sector %||% "n/a",
+                phase_b$sector_rs_rank %||% "n/a",
+                phase_b$n_sectors %||% "n/a"))
 
 # ── Phase C: Cheap score + Vol Funnel ─────────────────────────────────────
 message("Phase C: Cheap score + Vol Funnel...")
@@ -175,9 +184,11 @@ cat(sprintf("  Sector: %s | Spot: $%s\n",
 cat(sprintf("  classification: %s | phase_of_drop: %s\n",
             phase_e$classification, phase_e$phase_of_drop))
 cat(sprintf("  Phase A: %s\n", phase_a$result))
-cat(sprintf("  Phase B: %s  pull_score=%s direction=%s alignment=%s\n",
-            phase_b$result, phase_b$pull_score, phase_b$pull_direction,
-            phase_b$direction_match))
+cat(sprintf("  Phase B: %s  stage=%s align=%s sector_rank=%s/%s\n",
+            phase_b$result, phase_b$stage %||% "n/a",
+            phase_b$direction_match,
+            phase_b$sector_rs_rank %||% "n/a",
+            phase_b$n_sectors %||% "n/a"))
 cat(sprintf("  Phase C: %s  cheap_score=%s side=%s\n",
             phase_c$result, phase_c$cheap_score, phase_c$cheap_side))
 if (!is.null(phase_c$funnel)) {

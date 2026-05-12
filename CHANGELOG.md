@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-12] - analyze: full per-phase redesign — live-first sourcing, direction-aware targets, filtered structures
+
+### Problem
+`/analyze UPS short` on 2026-05-11 surfaced wrong-direction structural targets ($109/$110 above a $100 spot), IVP=`FETCH FAILED` despite a Tdata helper existing, LONG-only `sector_rs_rank`, and a 25-row structures table mixing CREDIT/DEBIT with phantom rows (RR=32x from BS pricing rounding both legs to zero). The data-only neutralization (April 2026) had stripped synthesis but kept stale data paths and direction-blind logic.
+
+### Added
+- **reports/shared/live_sources.R** (new, ~450 lines): per-field resolver module with uniform `list(value, source, retrieved_at, reason)` shape. Resolvers: `resolve_spot`, `resolve_sector`, `resolve_sector_etf`, `resolve_expiry`, `resolve_iv30`, `resolve_iv90`, `resolve_rv30`, `resolve_ivp` (closes the IVP gap via `Tdata::getIVPercentileLevels` + linear-interp), `resolve_skew_25d`, `resolve_chain_oi`, `resolve_earnings`, `resolve_returns`, `compute_sector_rs_context`. Escalation: live IBKR / yfinance primary → DB-cache-if-fresh → scanner CSV last-resort.
+- **reports/shared/indicators.R**: `ret60` column in `calc_ind` (for stock-vs-sector RS at 60d).
+- **reports/shared/setup_chain_rr.R**: `compute_structural_target()` now accepts `direction`. Long path unchanged; short path mirrors with prior swing **lows**, 52w **low**, round number **below**, fib retracement **down**. New `.structural_target_short()` and `.nearest_round_below()`.
+
+### Changed
+- **reports/analyze/phases.R**:
+  - **Phase A** demoted from gate to INFO-only — never SKIPs downstream. Live IBKR `getExpirationDates` probe → DB `scanner_rich_universe` → scanner CSV.
+  - **Phase B** rewritten: `pull_score` / `stage_pts` / `sector_pts` / `footprint_pts` dropped (triple-counted the per-indicator breakdown). New output: stage label (mechanical, MA50-based) + direction alignment + sector + sector ETF + stock-vs-sector RS 20d/60d + sector-vs-SPY RS + **direction-aware** `sector_rs_rank` (long descending = strongest, short ascending = weakest).
+  - **Phase C** rewritten: cheap_score always live from funnel, max corrected `/10 → /9`. All 4 components (IVP/4 + VRP/2 + Term/2 + RR/1) surfaced with points / max / value / band. New `.compute_cheap_components()`.
+  - **Phase E** no longer gates on Phase A; `phase_of_drop` ∈ {B, C, D, none}.
+- **reports/analyze/funnel.R**: entirely rewritten around resolvers. IVP cell now renders `47.8% (live interp) | mid` instead of `FETCH FAILED`.
+- **reports/analyze/structures.R**:
+  - Scanner CSV reads removed (CSV was LONG-only and can't be reused for shorts).
+  - `.live_targets()` direction-aware.
+  - `effective_target` switches to `oi_cap_put` for shorts (was always `oi_cap_call`).
+  - `enumerate_structures()` accepts `expiries` vector — two expiries enumerated side-by-side (~30 DTE and ~55 DTE). Each row carries explicit `expiry` column.
+  - Post-filter: DEBIT-only for direction + within_cap=TRUE + max_risk ≥ $5 (drops phantom rows). Sort by `expected_value` desc.
+- **reports/analyze/report.R**:
+  - Phase A renders as informational (n_expiries + tradeable_expiries). No badge. Not in Phase E summary table.
+  - Phase B aggregate table replaced by direction-aware trend + sector RS context.
+  - Phase C.1 shows the 4-component breakdown with bands.
+  - Structures table fully reformatted: drop `spread_type` column, `$` suffix for currency, `%` for prob/edge, 2-decimal rounding, expiry column with DTE annotation.
+  - Data Summary updated for new field shape.
+- **reports/analyze/main.R**: sources new module; log messages match new shape.
+
+### Validated (UPS short, 2026-05-12)
+| Field | Before (2026-05-11) | After |
+|---|---|---|
+| Phase A | STALE (CSV 6d old, SKIPped pipeline) | INFO (live IBKR probe) |
+| IV Rank 1Y | `FETCH FAILED: DB Prices.ivp NA` | `47.8% (live interp)` |
+| cheap_score | `5/10` (IVP missing) | `7/9` (all four components surfaced) |
+| Funnel tally | 4 fav / 0 unfav / 2 unav | 4 fav / 1 unfav / 1 unav |
+| sector_rs_rank | LONG-only (n/a for short) | 12/19 (direction-aware) |
+| Stock vs Sector ETF 20d | (not surfaced) | −3.32% (laggard) |
+| Stock vs Sector ETF 60d | (not surfaced) | −16.63% (deep laggard) |
+| spot_target_low / high | $109.84 / $110.00 (wrong-side bug) | $94.06 / $90.00 (downside) ✓ |
+| Structures table | 25 rows, CREDIT+DEBIT, phantom RR=32x | Pre-filtered DEBIT-only, within-cap, EV-sorted |
+
 ## [2026-05-05] - analyze: click-to-sort headers on spread structures table
 
 ### Changed

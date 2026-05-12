@@ -43,79 +43,175 @@
 }
 
 # ── PHASE A ──────────────────────────────────────────────────────────────
+# Step 5 rewrite 2026-05-12: Phase A is INFORMATIONAL only — never SKIPs the
+# downstream phases. Live IBKR probe (getExpirationDates + ATM strikes). DB
+# scanner_rich_universe cache and scanner CSV are last-resort fallbacks.
 run_phase_a <- function(ticker, freshness = NULL) {
+  tws_ok <- TRUE  # reachability is checked at module level (CONFIG$tws_reachable),
+                  # but the probe call below has its own try/error guards.
+
+  # Live probe — try to fetch expiries
+  py <- tryCatch(Tdata:::tdata_py, error = function(e) NULL)
+  if (!is.null(py)) {
+    expiries <- tryCatch(py$getExpirationDates(ticker),
+                         error = function(e) NULL)
+    if (is.list(expiries) || (is.character(expiries) && length(expiries) > 1)) {
+      n_exp <- length(expiries)
+      # Find expiries in the 14-90 DTE window
+      exp_dates <- tryCatch(as.Date(as.character(expiries), format = "%Y%m%d"),
+                            error = function(e) as.Date(NA))
+      dtes <- as.integer(exp_dates - Sys.Date())
+      tradeable <- sum(!is.na(dtes) & dtes >= 14 & dtes <= 90, na.rm = TRUE)
+      return(list(
+        result = "INFO",
+        n_expiries = n_exp,
+        tradeable_expiries = tradeable,
+        source = "live IBKR",
+        reason = NULL,
+        retrieved_at = Sys.time()
+      ))
+    }
+  }
+
+  # Fallback: DB scanner_rich_universe (recent end-of-day verdict)
+  conn <- tryCatch(Tdata::safe_db_connect(), error = function(e) NULL)
+  if (!is.null(conn)) {
+    db_row <- tryCatch(DBI::dbGetQuery(conn,
+      "SELECT cache_date, reason FROM scanner_rich_universe
+       WHERE sym = ? ORDER BY cache_date DESC LIMIT 1",
+      params = list(ticker)), error = function(e) NULL)
+    DBI::dbDisconnect(conn)
+    if (!is.null(db_row) && nrow(db_row) > 0) {
+      return(list(
+        result = "INFO",
+        n_expiries = NA_integer_,
+        tradeable_expiries = NA_integer_,
+        source = "DB scanner_rich_universe",
+        reason = paste("DB:", db_row$reason),
+        retrieved_at = db_row$cache_date
+      ))
+    }
+  }
+
+  # Last resort: scanner CSV
   scan <- .read_scanner_row(ticker, freshness)
   if (!is.null(scan$row)) {
-    rich <- as.logical(scan$row$rich_pass)
-    # Scanner emits TRUE permissively when end-of-day chain wasn't fetched. Confirm
-    # against scanner_rich_universe.reason if available.
-    permissive <- FALSE
-    conn <- tryCatch(Tdata::safe_db_connect(), error = function(e) NULL)
-    if (!is.null(conn)) {
-      reason <- tryCatch(DBI::dbGetQuery(conn,
-        "SELECT reason FROM scanner_rich_universe WHERE sym = ?
-         ORDER BY cache_date DESC LIMIT 1",
-        params = list(ticker))$reason, error = function(e) character(0))
-      DBI::dbDisconnect(conn)
-      permissive <- length(reason) > 0 && grepl("default|no expiry", reason, ignore.case = TRUE)
-    }
     return(list(
-      result      = if (isTRUE(rich)) "PASS" else "SKIP",
-      reason      = if (permissive) "permissive default" else "scanner CSV",
-      permissive  = permissive,
-      source      = "scanner CSV",
-      csv_path    = scan$csv_path,
+      result = "INFO",
+      n_expiries = NA_integer_,
+      tradeable_expiries = NA_integer_,
+      source = "scanner CSV",
+      reason = "live + DB unavailable; using scanner CSV",
       retrieved_at = scan$mtime
     ))
   }
-  # Fallback: no scanner row — rely on Tdata helpers if reachable
-  reason <- if (isTRUE(scan$stale))
-              sprintf("scanner CSV stale (mtime %s) — live check skipped",
-                      format(scan$mtime, "%Y-%m-%d %H:%M"))
-            else "ticker not in scanner CSV; live check skipped"
-  list(result = "STALE", reason = reason,
-       permissive = FALSE, source = "live", csv_path = scan$csv_path)
+
+  list(result = "INFO",
+       n_expiries = NA_integer_,
+       tradeable_expiries = NA_integer_,
+       source = "unavailable",
+       reason = "live IBKR, DB, and scanner CSV all unavailable",
+       retrieved_at = NA)
 }
 
 # ── PHASE B ──────────────────────────────────────────────────────────────
+# Step 2 rewrite (2026-05-12): scanner CSV demoted. Pull score / stage_pts /
+# sector_pts / footprint_pts all dropped — they triple-counted the per-
+# indicator breakdown. Output is now: per-indicator breakdown + direction-aware
+# sector RS context (sector, ETF, stock-vs-sector RS @ 20d/60d, sector-vs-SPY
+# RS, sector rank) + stage label + direction alignment.
+#
+# Stage label is recomputed locally from breakdown setup/breakout counts +
+# MA50 position; no dependency on isTrendContinuation.
 run_phase_b <- function(ticker, direction, freshness = NULL) {
-  scan <- .read_scanner_row(ticker, freshness)
   spot <- .live_price(ticker)
   breakdown <- .compute_phase_b_breakdown(ticker, spot, direction)
 
-  empty <- list(
-    result = "STALE", pull_score = NA_integer_, pull_direction = NA_character_,
-    sector = NA_character_, sector_rs_rank = NA_integer_, stage = NA_character_,
-    stage_pts = NA_integer_, sector_pts = NA_integer_, footprint_pts = NA_integer_,
-    direction_match = NA_character_, price = spot, breakdown = breakdown)
-  if (is.null(scan$row)) return(empty)
+  # Per-indicator counts from breakdown attrs (set by compute_breakdown)
+  setup_n <- if (!is.null(breakdown)) attr(breakdown, "setup_count") %||% 0L else NA_integer_
+  bk_n    <- if (!is.null(breakdown)) attr(breakdown, "breakout_count") %||% 0L else NA_integer_
 
-  r <- scan$row
-  pull_dir <- r$pull_direction %||% "neutral"
-  user_dir <- direction
-  align <- if (pull_dir == "neutral") "NEUTRAL"
-           else if ((user_dir == "long"  && pull_dir == "up") ||
-                    (user_dir == "short" && pull_dir == "down")) "ALIGNED"
+  # MA50 position from the last indicator row (for stage + direction alignment)
+  ind_last <- .phase_b_last_indicators(ticker)
+  ma50 <- if (!is.null(ind_last)) as.numeric(ind_last$ma50) else NA_real_
+  ma50_slope <- if (!is.null(ind_last)) as.numeric(ind_last$ma50_slope) else NA_real_
+
+  # Direction alignment: long ALIGNED iff price > MA50; short ALIGNED iff price < MA50.
+  align <- if (is.na(spot) || is.na(ma50)) "n/a"
+           else if (direction == "long"  && spot > ma50) "ALIGNED"
+           else if (direction == "short" && spot < ma50) "ALIGNED"
            else "MISMATCH"
 
-  pull_pass <- isTRUE(as.logical(r$pull_pass))
+  # Stage label (mechanical, direction-aware)
+  stage <- .compute_stage_label(spot, ma50, ma50_slope, setup_n, bk_n, direction)
+
+  # Sector RS context (heavy: walks all sector ETFs)
+  stock_ret20 <- if (!is.null(ind_last)) as.numeric(ind_last$ret20) else NA_real_
+  stock_ret60 <- if (!is.null(ind_last)) as.numeric(ind_last$ret60) else NA_real_
+  sector_ctx <- tryCatch(
+    compute_sector_rs_context(ticker, direction, stock_ret20, stock_ret60),
+    error = function(e) {
+      message("Sector RS context failed: ", conditionMessage(e)); NULL
+    })
+
+  # Phase B result: PASS if direction aligns AND sector is in the favorable
+  # half by direction-aware rank. SKIP otherwise. STALE only if breakdown
+  # itself failed (no live OHLC).
+  result <- if (is.null(breakdown) || nrow(breakdown) == 0) "STALE"
+            else if (align == "ALIGNED" &&
+                     !is.null(sector_ctx) &&
+                     !is.na(sector_ctx$sector_rank) &&
+                     !is.na(sector_ctx$n_sectors) &&
+                     sector_ctx$sector_rank <= ceiling(sector_ctx$n_sectors / 2)) "PASS"
+            else "SKIP"
+
   list(
-    result          = if (pull_pass) "PASS" else "SKIP",
-    pull_pass       = pull_pass,
-    pull_score      = as.integer(r$pull_score),
-    pull_direction  = pull_dir,
-    sector          = r$sector,
-    sector_rs_rank  = as.integer(r$sector_rs_rank),
-    stage           = r$stage,
-    stage_pts       = as.integer(r$stage_pts),
-    sector_pts      = as.integer(r$sector_pts),
-    footprint_pts   = as.integer(r$footprint_pts),
-    direction_match = align,
-    price           = spot,
-    breakdown       = breakdown,
-    scanner_csv_mtime = scan$mtime,
+    result           = result,
+    stage            = stage,
+    direction_match  = align,
+    sector           = if (!is.null(sector_ctx)) sector_ctx$sector else NA_character_,
+    sector_etf       = if (!is.null(sector_ctx)) sector_ctx$etf_sym else NA_character_,
+    sector_rs_rank   = if (!is.null(sector_ctx)) sector_ctx$sector_rank else NA_integer_,
+    n_sectors        = if (!is.null(sector_ctx)) sector_ctx$n_sectors else NA_integer_,
+    sector_context   = sector_ctx,
+    setup_count      = setup_n,
+    breakout_count   = bk_n,
+    price            = spot,
+    breakdown        = breakdown,
     breakdown_retrieved_at = if (!is.null(breakdown)) Sys.time() else NULL
   )
+}
+
+#' Compute stage label from breakdown counts + MA50 position, direction-aware.
+.compute_stage_label <- function(spot, ma50, ma50_slope,
+                                  setup_n, bk_n, direction) {
+  if (is.na(spot) || is.na(ma50)) return(NA_character_)
+  setup_n <- if (is.na(setup_n)) 0L else as.integer(setup_n)
+  bk_n    <- if (is.na(bk_n))    0L else as.integer(bk_n)
+  if (direction == "long") {
+    if (spot > ma50 * 1.15) return("extended")
+    if (setup_n >= 4L && bk_n >= 3L) return("early")
+    if (!is.na(ma50_slope) && ma50_slope > 0 && spot > ma50) return("continuation")
+    return("none")
+  } else {  # short
+    if (spot < ma50 * 0.85) return("extended")
+    if (setup_n >= 4L && bk_n >= 3L) return("early")
+    if (!is.na(ma50_slope) && ma50_slope < 0 && spot < ma50) return("continuation")
+    return("none")
+  }
+}
+
+#' Fetch the latest indicator row for the ticker (for stage + sector RS).
+.phase_b_last_indicators <- function(ticker) {
+  tryCatch({
+    raw <- fetch_single_ohlcv(ticker)
+    if (is.null(raw) || nrow(raw) == 0) return(NULL)
+    ind <- calc_ind(raw)
+    if (is.null(ind) || nrow(ind) == 0) return(NULL)
+    tail(ind, 1)
+  }, error = function(e) {
+    message("Phase B indicators failed: ", conditionMessage(e)); NULL
+  })
 }
 
 #' Compute the per-criterion technical breakdown for /analyze Phase B.
@@ -159,44 +255,27 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
 # a cheap_score (the most common case after a Phase B SKIP), we recompute it
 # from the live funnel using the same ivp_pts / vrp_pts / term_pts thresholds
 # the scanner uses. cheap_side is derived from funnel.rr_vp sign.
+# Step 3 rewrite (2026-05-12): cheap_score always computed live from the
+# funnel. Components (ivp_pts/4 + vrp_pts/2 + term_pts/2 + rr_pts/1, max=9)
+# always exposed in the output for transparency. Scanner CSV no longer read.
+# PASS cutoff = >=6 of 9.
 run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
                         spot = NA_real_, freshness = NULL) {
-  scan <- .read_scanner_row(ticker, freshness)
-  r <- if (!is.null(scan$row)) scan$row else NULL
-
   funnel <- if (run_funnel)
-    run_funnel_deep_dive(ticker, direction,
-                         if (is.null(r)) NULL else r, config, spot = spot,
+    run_funnel_deep_dive(ticker, direction, NULL, config, spot = spot,
                          freshness = freshness)
   else NULL
 
-  cached_cheap_pass  <- if (!is.null(r)) isTRUE(as.logical(r$cheap_pass)) else FALSE
-  cached_cheap_score <- if (!is.null(r)) suppressWarnings(as.integer(r$cheap_score))
-                        else NA_integer_
-  cached_cheap_side  <- if (!is.null(r)) r$cheap_side else NA_character_
-  cached_ivp_used    <- if (!is.null(r)) suppressWarnings(as.numeric(r$ivp_used))
-                        else NA_real_
-  cached_ivp_2y      <- if (!is.null(r)) suppressWarnings(as.numeric(r$ivp_2y))
-                        else NA_real_
-  cached_vrp         <- if (!is.null(r)) suppressWarnings(as.numeric(r$vrp))
-                        else NA_real_
+  components <- if (!is.null(funnel))
+    .compute_cheap_components(funnel, direction, config)
+  else NULL
 
-  recomputed <- if (is.na(cached_cheap_score) && !is.null(funnel))
-    .recompute_cheap_score(funnel, direction, config) else NULL
+  cheap_score <- if (!is.null(components)) components$score else NA_integer_
+  cheap_side  <- if (!is.null(components)) components$side  else NA_character_
+  ivp_used    <- if (!is.null(funnel)) funnel$ivp_used else NA_real_
+  vrp_value   <- if (!is.null(funnel)) funnel$vrp_log  else NA_real_
 
-  cheap_score <- if (!is.na(cached_cheap_score)) cached_cheap_score
-                 else if (!is.null(recomputed)) recomputed$score
-                 else NA_integer_
-  cheap_side  <- if (!is.na(cached_cheap_side) && nzchar(cached_cheap_side)) cached_cheap_side
-                 else if (!is.null(recomputed)) recomputed$side
-                 else NA_character_
-  ivp_used    <- if (!is.na(cached_ivp_used)) cached_ivp_used
-                 else if (!is.null(funnel)) funnel$ivp_used else NA_real_
-  vrp_value   <- if (!is.na(cached_vrp)) cached_vrp
-                 else if (!is.null(funnel)) funnel$vrp_log else NA_real_
-
-  cheap_pass <- if (!is.na(cached_cheap_score)) cached_cheap_pass
-                else if (!is.na(cheap_score)) cheap_score >= 6L else FALSE
+  cheap_pass <- !is.na(cheap_score) && cheap_score >= 6L
 
   result <- if (!is.na(cheap_score)) {
     if (cheap_pass) "PASS" else "SKIP"
@@ -206,24 +285,23 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
     result      = result,
     cheap_pass  = cheap_pass,
     cheap_score = cheap_score,
+    cheap_max   = 9L,
     cheap_side  = cheap_side,
+    components  = components,
     ivp_used    = ivp_used,
-    ivp_2y      = cached_ivp_2y,
     vrp         = vrp_value,
     funnel      = funnel,
-    source      = if (!is.na(cached_cheap_score)) "scanner CSV"
-                  else if (!is.null(recomputed)) "live funnel"
-                  else "unavailable"
+    source      = if (!is.null(components)) "live funnel" else "unavailable"
   )
 }
 
-#' Recompute cheap_score from funnel data when scanner CSV row is NA.
-#' Mirrors the swing scanner's points scheme (config$ivp_pts, vrp_pts, term_pts)
-#' and adds a +1 RR-aligned bonus for direction agreement.
-.recompute_cheap_score <- function(funnel, direction, config) {
+#' Compute cheap_score components from funnel data.
+#' Components: ivp_pts (max 4) + vrp_pts (max 2) + term_pts (max 2) +
+#' rr_pts (max 1) = score in [0, 9]. Each component's threshold is
+#' surfaced so the report can show "47.8% → 2 pts (≤60 band)".
+.compute_cheap_components <- function(funnel, direction, config) {
   ivp <- funnel$ivp_used; vrp <- funnel$vrp_log
   term <- funnel$term_pct; rr <- funnel$rr_vp
-  pts <- 0L
 
   ivp_pts <- if (is.na(ivp)) 0L
              else if (ivp <= config$ivp_pts$pt4_max) 4L
@@ -231,53 +309,74 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
              else if (ivp <= config$ivp_pts$pt2_max) 2L
              else if (ivp <= config$ivp_pts$pt1_max) 1L
              else 0L
+  ivp_band <- if (is.na(ivp)) "n/a"
+              else if (ivp <= config$ivp_pts$pt4_max) sprintf("&le;%g", config$ivp_pts$pt4_max)
+              else if (ivp <= config$ivp_pts$pt3_max) sprintf("&le;%g", config$ivp_pts$pt3_max)
+              else if (ivp <= config$ivp_pts$pt2_max) sprintf("&le;%g", config$ivp_pts$pt2_max)
+              else if (ivp <= config$ivp_pts$pt1_max) sprintf("&le;%g", config$ivp_pts$pt1_max)
+              else sprintf(">%g", config$ivp_pts$pt1_max)
+
   vrp_pts <- if (is.na(vrp)) 0L
              else if (vrp <= config$vrp_pts$pt2_max) 2L
              else if (vrp <= config$vrp_pts$pt1_max) 1L
              else 0L
+  vrp_band <- if (is.na(vrp)) "n/a"
+              else if (vrp <= config$vrp_pts$pt2_max) sprintf("&le;%g", config$vrp_pts$pt2_max)
+              else if (vrp <= config$vrp_pts$pt1_max) sprintf("&le;%g", config$vrp_pts$pt1_max)
+              else sprintf(">%g", config$vrp_pts$pt1_max)
+
   term_pts <- if (is.na(term)) 0L
               else if (term <= config$term_pts$pt2_max) 2L
               else if (term <= config$term_pts$pt1_max) 1L
               else 0L
+  term_band <- if (is.na(term)) "n/a"
+               else if (term <= config$term_pts$pt2_max) sprintf("&le;%g%%", config$term_pts$pt2_max)
+               else if (term <= config$term_pts$pt1_max) sprintf("&le;%g%%", config$term_pts$pt1_max)
+               else sprintf(">%g%%", config$term_pts$pt1_max)
+
   rr_pts <- if (is.na(rr)) 0L
             else if ((direction == "long"  && rr > 0) ||
                      (direction == "short" && rr < 0)) 1L
             else 0L
+  rr_band <- if (is.na(rr)) "n/a"
+             else if (rr_pts == 1L) sprintf("RR aligned with %s", direction)
+             else sprintf("RR mismatched %s", direction)
 
-  pts <- ivp_pts + vrp_pts + term_pts + rr_pts
-
+  score <- ivp_pts + vrp_pts + term_pts + rr_pts
   side <- if (is.na(rr) || abs(rr) < 1) "neutral"
           else if (rr > 0) "long" else "short"
 
-  list(score = pts, side = side,
-       components = list(ivp_pts = ivp_pts, vrp_pts = vrp_pts,
-                         term_pts = term_pts, rr_pts = rr_pts))
+  list(
+    score = score, side = side,
+    ivp_pts = ivp_pts, ivp_max = 4L, ivp_value = ivp, ivp_band = ivp_band,
+    vrp_pts = vrp_pts, vrp_max = 2L, vrp_value = vrp, vrp_band = vrp_band,
+    term_pts = term_pts, term_max = 2L, term_value = funnel$term_pct, term_band = term_band,
+    rr_pts = rr_pts, rr_max = 1L, rr_value = rr, rr_band = rr_band
+  )
 }
 
 # ── PHASE E ──────────────────────────────────────────────────────────────
+# Step 5 rewrite 2026-05-12: Phase A is informational, no longer gates Phase E.
+# Classification driven by B / C / D outcomes.
 run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config) {
-  # Mechanical classification per template rules
-  pass_a <- phase_a$result == "PASS"
   pass_b <- phase_b$result == "PASS"
   pass_c <- phase_c$result == "PASS"
   pass_d <- phase_d$result == "PASS"
 
-  # phase_of_drop: A / B / C / D / none
-  drop <- if (!pass_a) "A"
-          else if (!pass_b) "B"
+  # phase_of_drop: B / C / D / none. Phase A no longer participates.
+  drop <- if (!pass_b) "B"
           else if (!pass_c) "C"
           else if (!pass_d) "D"
           else "none"
 
-  # Classification label
-  label <- if (pass_a && pass_b && pass_c && pass_d &&
+  label <- if (pass_b && pass_c && pass_d &&
                isTRUE(phase_d$any_within_cap)) "TOP PICK"
-           else if (pass_a && pass_b && pass_c) "WATCH"
+           else if (pass_b && pass_c) "WATCH"
            else "SKIP"
 
   list(
     classification = label,
     phase_of_drop  = drop,
-    pass_a = pass_a, pass_b = pass_b, pass_c = pass_c, pass_d = pass_d
+    pass_a = TRUE, pass_b = pass_b, pass_c = pass_c, pass_d = pass_d
   )
 }

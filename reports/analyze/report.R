@@ -63,11 +63,7 @@ td.note{color:#555;font-size:13px}
   "classification"       = "TOP PICK = passes A,B,C,D and at least one structure within $/lot cap. WATCH = passes A,B,C only. SKIP = drops earlier.",
   "phase_of_drop"        = "Which phase the ticker dropped at (A/B/C/D), or 'none' if all passed.",
   # Phase B aggregate
-  "Stage"                = "Stage classification from the Pull screen: extended (>15% above MA50), early (BOT setup+breakout fired), continuation (Tdata::isTrendContinuation), or none.",
-  "Sector RS rank"       = "Rank of this ticker's sector among LONG-passing sectors by 20-day relative strength vs SPY.",
-  "Footprint"            = "Confirmation footprint points (0-3): OBV slope, volume surge, up/down ratio.",
-  "pull_direction"       = "Implied direction of the Pull setup: up / down / neutral.",
-  "pull_score"           = "0-10 composite of stage (4) + sector (3) + footprint (3). Cutoff for PASS is >=6 (>=8 if extended).",
+  "Sector x-rank"        = "Cross-sectional context (see Phase B sector_rs_rank).",
   # Phase C aggregate
   "cheap_score"          = "0-10 composite from IVP / VRP / term shape / RR alignment. Cutoff for PASS is >=6.",
   "cheap_side"           = "Implied directional bias from skew: long (calls bid), short (puts bid), neutral.",
@@ -79,7 +75,6 @@ td.note{color:#555;font-size:13px}
   "Term IV30/IV90"       = "Front-vs-back-month IV term structure. Negative = contango (back > front). Positive = backwardation.",
   "Skew (RR 25Δ)"   = "Risk-reversal at 25-delta in vol-points: (call25 IV - put25 IV) * 100. Positive = calls bid.",
   "Earnings"             = "Days until next earnings (from yfinance). Negative = past, 0-14 = inside event window.",
-  "Sector x-rank"        = "Cross-sectional rank passthrough (handled by Phase B sector_rs_rank).",
   # Phase D
   "spot_target_low"      = "Lower bound of the structural-target consensus from prior swing high / 52w high / round number.",
   "spot_target_high"     = "Upper bound of the structural-target consensus.",
@@ -106,9 +101,11 @@ td.note{color:#555;font-size:13px}
   "BK4"                  = "Breakout BK4: today's volume >= 1.2x of 20d average."
 )
 
-#' Wrap a label in a tooltip span if a glossary entry exists.
-.tt <- function(label) {
-  desc <- .TOOLTIPS[[label]]
+#' Wrap a label in a tooltip span. If `override` is supplied, use it as the
+#' tooltip text; otherwise fall back to the .TOOLTIPS glossary entry.
+.tt <- function(label, override = NULL) {
+  desc <- if (!is.null(override) && nzchar(override)) override
+          else .TOOLTIPS[[label]]
   if (is.null(desc)) return(label)
   sprintf('<span title="%s">%s</span>',
           gsub('"', '&quot;', desc, fixed = TRUE),
@@ -234,53 +231,38 @@ render_analyze_html <- function(ctx, out_dir) {
     .tt("classification"), pe$classification,
     .tt("phase_of_drop"), pe$phase_of_drop)
 
+  # Phase A is informational only — no badge.
   badges <- sprintf(paste0(
     '<div class="badges">',
-    '<span class="badge %s">A · %s</span>',
     '<span class="badge %s">B · %s</span>',
     '<span class="badge %s">C · %s</span>',
     '<span class="badge %s">D · %s</span>',
     '<span class="badge %s">E · %s</span>',
     '</div>'),
-    .badge_class(pa$result), pa$result,
     .badge_class(pb$result), pb$result,
     .badge_class(pc$result), pc$result,
     .badge_class(pd$result), pd$result,
     .badge_class(pe$classification), pe$classification)
 
-  # Phase A
+  # Phase A — informational only. Never SKIPs downstream phases.
   sec_a <- paste0(
-    '<h2>Phase A — Universe Rich-Options Gate</h2>',
-    .retrieved_caption(`scanner CSV` = pa$retrieved_at),
+    '<h2>Phase A — Universe Option Liquidity (informational)</h2>',
+    .retrieved_caption(`source` = pa$retrieved_at),
     sprintf(paste0(
-      '<table><tr><th>Result</th><th>Source</th><th>Note</th></tr>',
-      '<tr class="%s"><td class="value">%s</td><td>%s</td><td class="note">%s</td></tr>',
+      '<table><tr><th>Field</th><th>Value</th><th>Note</th></tr>',
+      '<tr><td>Expiries available</td><td class="value">%s</td><td class="note">total expiration count from IBKR/cache</td></tr>',
+      '<tr><td>Tradeable (14-90 DTE)</td><td class="value">%s</td><td class="note">expirations in the swing window</td></tr>',
+      '<tr><td>Source</td><td class="value">%s</td><td class="note">%s</td></tr>',
       '</table>'),
-      .row_class(pa$result), pa$result, pa$source %||% "n/a", pa$reason %||% ""))
+      .fmt_num(pa$n_expiries, 0),
+      .fmt_num(pa$tradeable_expiries, 0),
+      pa$source %||% "n/a",
+      pa$reason %||% "live IBKR probe"))
 
-  # Phase B — aggregate table + collapsible per-indicator breakdown
-  sec_b_aggregate <- paste0(
-    '<h2>Phase B — Pull Score</h2>',
-    .retrieved_caption(`scanner CSV` = pb$scanner_csv_mtime,
-                       `OHLC live`   = pb$breakdown_retrieved_at),
-    sprintf(paste0(
-      '<table>',
-      '<tr><th>Component</th><th>Value</th><th>Pts</th><th>Note</th></tr>',
-      '<tr class="%s"><td>%s</td><td class="value">%s</td><td>%s</td><td class="note"></td></tr>',
-      '<tr class="%s"><td>%s</td><td class="value">%s</td><td>%s</td><td class="note">sector: %s</td></tr>',
-      '<tr class="%s"><td>%s</td><td class="value">%s/3</td><td></td><td class="note"></td></tr>',
-      '<tr class="%s"><td>%s</td><td class="value">%s</td><td></td><td class="note">user direction <code>%s</code> alignment: <b>%s</b></td></tr>',
-      '<tr class="%s"><td><b>%s</b></td><td class="value">%s/10</td><td></td><td class="note">cutoff &ge; 6 (extended &ge; 8)</td></tr>',
-      '</table>'),
-      .row_class(pb$result), .tt("Stage"), pb$stage %||% "n/a", .fmt_num(pb$stage_pts, 0),
-      .row_class(pb$result), .tt("Sector RS rank"), .fmt_num(pb$sector_rs_rank, 0),
-        .fmt_num(pb$sector_pts, 0), pb$sector %||% "n/a",
-      .row_class(pb$result), .tt("Footprint"), .fmt_num(pb$footprint_pts, 0),
-      .row_class(pb$result), .tt("pull_direction"), pb$pull_direction %||% "n/a", direction,
-        pb$direction_match %||% "n/a",
-      .row_class(pb$result), .tt("pull_score"), .fmt_num(pb$pull_score, 0)))
-
-  sec_b <- paste0(sec_b_aggregate, .render_phase_b_breakdown(pb$breakdown))
+  # Phase B — direction-aware trend + sector RS context + collapsible breakdown
+  sec_b <- paste0(
+    .render_phase_b_context(pb, direction),
+    .render_phase_b_breakdown(pb$breakdown))
 
   # Phase C — cheap score components + funnel grid
   sec_c <- .render_phase_c(pc, direction, ctx$config)
@@ -288,18 +270,16 @@ render_analyze_html <- function(ctx, out_dir) {
   # Phase D
   sec_d <- .render_phase_d(pd, direction)
 
-  # Phase E result table
+  # Phase E result table — Phase A is informational, not in the classification.
   sec_e <- sprintf(paste0(
     '<h2>Phase E — Classification (mechanical)</h2>',
     '<table>',
     '<tr><th>Phase</th><th>Result</th></tr>',
-    '<tr class="%s"><td>A &mdash; Universe rich-options</td><td class="value">%s</td></tr>',
-    '<tr class="%s"><td>B &mdash; Pull</td><td class="value">%s</td></tr>',
+    '<tr class="%s"><td>B &mdash; Trend &amp; sector RS</td><td class="value">%s</td></tr>',
     '<tr class="%s"><td>C &mdash; Cheap + Vol Funnel</td><td class="value">%s</td></tr>',
     '<tr class="%s"><td>D &mdash; Setup / Chain / R:R</td><td class="value">%s</td></tr>',
     '<tr class="%s"><td>E &mdash; classification</td><td class="value">%s &nbsp; <span class="sub">phase_of_drop=%s</span></td></tr>',
     '</table>'),
-    .row_class(pa$result), pa$result,
     .row_class(pb$result), pb$result,
     .row_class(pc$result), pc$result,
     .row_class(pd$result), pd$result,
@@ -334,6 +314,109 @@ render_analyze_html <- function(ctx, out_dir) {
                                           ticker, format(date, "%Y%m%d")))
   writeLines(html, out_file, useBytes = TRUE)
   out_file
+}
+
+# ── Phase B trend + sector-RS context (top table) ────────────────────────
+#
+# Direction-aware rendering of:
+#   - stage label (early/continuation/extended/none)
+#   - direction alignment (ALIGNED / MISMATCH / n/a)
+#   - sector, sector ETF
+#   - stock-vs-sector RS at 20d + 60d (leader/laggard within sector)
+#   - sector-vs-SPY RS at 20d (strong/weak sector)
+#   - sector rank — direction-aware: long ranks descending (rank 1 = strongest),
+#     short ranks ascending (rank 1 = weakest). Cutoff = top half of sectors.
+.render_phase_b_context <- function(pb, direction) {
+  ctx <- pb$sector_context
+  hdr <- paste0(
+    '<h2>Phase B — Trend &amp; Sector RS Context</h2>',
+    .retrieved_caption(`OHLC live` = pb$breakdown_retrieved_at))
+
+  if (is.null(ctx)) {
+    return(paste0(hdr,
+      '<table>',
+      '<tr><th>Field</th><th>Value</th><th>Note</th></tr>',
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+              .row_class(pb$result), .tt("Result"), pb$result,
+              "no sector context (live fetch failed)"),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">user direction <code>%s</code></td></tr>',
+              .row_class(pb$result), .tt("Direction alignment"),
+              pb$direction_match %||% "n/a", direction),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">setup %s/6 · breakout %s/4</td></tr>',
+              .row_class(pb$result), .tt("Stage"), pb$stage %||% "n/a",
+              .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0)),
+      '</table>'))
+  }
+
+  # Rank cutoff: top half of sectors (PASS-eligible)
+  rank_cutoff <- if (!is.na(ctx$n_sectors)) as.integer(ceiling(ctx$n_sectors / 2)) else NA_integer_
+  rank_note <- if (!is.na(ctx$sector_rank) && !is.na(ctx$n_sectors)) {
+    sprintf("%s/%d sectors %s — cutoff &le; %d for %s",
+            ctx$sector_rank, ctx$n_sectors,
+            if (direction == "long") "(rank 1 = strongest vs SPY)" else "(rank 1 = weakest vs SPY)",
+            rank_cutoff, direction)
+  } else "rank unavailable"
+
+  .fmt_pct <- function(x) if (is.na(x)) "<span class='crit-fail'>n/a</span>" else
+    sprintf("%s%.2f%%", if (x > 0) "+" else "", x)
+  .row <- function(label, value, note, tooltip = NULL,
+                    row_class = .row_class(pb$result)) {
+    lbl <- if (!is.null(tooltip)) .tt(label, tooltip) else label
+    sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+            row_class, lbl, value, note)
+  }
+
+  rs_sec_20_note <- if (!is.na(ctx$rs_vs_sector_20d)) {
+    sign_label <- if (ctx$rs_vs_sector_20d > 0) "leader" else "laggard"
+    sprintf("stock %s · ETF %s · sector %s",
+            .fmt_pct(ctx$stock_ret20), .fmt_pct(ctx$etf_ret20), sign_label)
+  } else "live OHLC unavailable"
+
+  rs_sec_60_note <- if (!is.na(ctx$rs_vs_sector_60d)) {
+    sign_label <- if (ctx$rs_vs_sector_60d > 0) "leader" else "laggard"
+    sprintf("stock %s · ETF %s · sector %s",
+            .fmt_pct(ctx$stock_ret60), .fmt_pct(ctx$etf_ret60), sign_label)
+  } else "live OHLC unavailable"
+
+  rs_spy_20_note <- if (!is.na(ctx$sector_rs_vs_spy_20d)) {
+    sprintf("ETF %s vs SPY %s",
+            .fmt_pct(ctx$etf_ret20), .fmt_pct(ctx$spy_ret20))
+  } else "live OHLC unavailable"
+
+  tbl <- paste0(
+    '<table>',
+    '<tr><th>Field</th><th>Value</th><th>Note</th></tr>',
+    .row(.tt("Stage", "Mechanical label from MA50 position + setup/breakout counts. extended = stock >15% above MA50 (long) or <-15% below (short). early = setup count >=4/6 AND breakout >=3/4. continuation = MA50 sloping with you. none = otherwise."),
+         pb$stage %||% "n/a",
+         sprintf("setup %s/6 · breakout %s/4",
+                 .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0))),
+    .row(.tt("Direction alignment", "Long ALIGNED iff price > MA50; short ALIGNED iff price < MA50."),
+         pb$direction_match %||% "n/a",
+         sprintf("user direction <code>%s</code>", direction)),
+    .row(.tt("Sector", "GICS sector from ScannerUniverse."),
+         ctx$sector %||% "n/a",
+         sprintf("ETF: <code>%s</code>", ctx$etf_sym %||% "n/a")),
+    .row(.tt("Stock vs Sector ETF (20d)", "Stock 20d return minus sector ETF 20d return. Positive = leader within sector; negative = laggard."),
+         .fmt_pct(ctx$rs_vs_sector_20d),
+         rs_sec_20_note),
+    .row(.tt("Stock vs Sector ETF (60d)", "Stock 60d return minus sector ETF 60d return. Captures slower rotation than 20d."),
+         .fmt_pct(ctx$rs_vs_sector_60d),
+         rs_sec_60_note),
+    .row(.tt("Sector vs SPY (20d)", "Sector ETF 20d return minus SPY 20d return. Positive = strong sector; negative = weak."),
+         .fmt_pct(ctx$sector_rs_vs_spy_20d),
+         rs_spy_20_note),
+    .row(.tt("Sector rank (direction-aware)",
+              if (direction == "long")
+                "Rank among all sectors by (etf_ret20 - spy_ret20), descending. Rank 1 = strongest sector."
+              else
+                "Rank among all sectors by (etf_ret20 - spy_ret20), ascending. Rank 1 = weakest sector."),
+         if (!is.na(ctx$sector_rank))
+           sprintf("%d / %d", ctx$sector_rank, ctx$n_sectors)
+         else "n/a",
+         rank_note),
+    '</table>')
+
+  paste0(hdr, tbl)
 }
 
 # ── Phase B per-indicator breakdown (collapsible) ────────────────────────
@@ -381,19 +464,53 @@ render_analyze_html <- function(ctx, out_dir) {
 
 # ── Phase C section ──────────────────────────────────────────────────────
 .render_phase_c <- function(pc, direction, config) {
-  rows_c1 <- sprintf(paste0(
-    '<tr class="%s"><td>%s</td><td class="value">%s/10</td><td class="note">cutoff &ge; 6</td></tr>',
-    '<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">user direction: %s</td></tr>',
-    '<tr class="%s"><td>%s</td><td class="value">%s%%</td><td class="note"></td></tr>',
-    '<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note"></td></tr>'),
-    .row_class(pc$result), .tt("cheap_score"), .fmt_num(pc$cheap_score, 0),
-    .row_class(pc$result), .tt("cheap_side"), pc$cheap_side %||% "n/a", direction,
-    .row_class(pc$result), .tt("IVP (used)"), .fmt_num(pc$ivp_used, 1),
-    .row_class(pc$result), .tt("VRP (log-ratio, persisted)"), .fmt_num(pc$vrp, 2))
+  cm <- pc$components
+  rc <- .row_class(pc$result)
+  max_score <- pc$cheap_max %||% 9L
+  .fmt_band <- function(value, max, band, fmt = "%s") {
+    if (is.na(value)) "<span class='crit-fail'>n/a</span>"
+    else sprintf("%s pts <span class='crit-info'>(%s)</span>", value, band)
+  }
+  rows_c1 <- if (!is.null(cm)) {
+    paste0(
+      sprintf('<tr class="%s"><td><b>%s</b></td><td class="value">%s/%d</td><td class="note">cutoff &ge; 6. PASS if all four components total &ge; 6.</td></tr>',
+              rc, .tt("cheap_score",
+                       "Composite from IVP (max 4) + VRP (max 2) + Term (max 2) + RR alignment (max 1). Max 9."),
+              .fmt_num(pc$cheap_score, 0), max_score),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">implied directional bias from skew · user direction: %s</td></tr>',
+              rc, .tt("cheap_side"), pc$cheap_side %||% "n/a", direction),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">IVP=%s (band %s)</td></tr>',
+              rc, .tt("IVP component",
+                       "Lower IVP = options cheaper (better for buying premium). Bands: <=25→4, <=40→3, <=60→2, <=75→1, else 0."),
+              sprintf("%d / %d", cm$ivp_pts, cm$ivp_max),
+              if (is.na(cm$ivp_value)) "n/a" else sprintf("%.1f%%", cm$ivp_value),
+              cm$ivp_band),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">VRP_log=%s (band %s) · negative = IV below RV (cheap)</td></tr>',
+              rc, .tt("VRP component",
+                       "Vol Risk Premium = log(IV30/RV30)*100. Negative = options cheap vs realised. Bands: <=0→2, <=10→1, else 0."),
+              sprintf("%d / %d", cm$vrp_pts, cm$vrp_max),
+              if (is.na(cm$vrp_value)) "n/a" else sprintf("%+.1f", cm$vrp_value),
+              cm$vrp_band),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">term_pct=%s (band %s) · contango supports buy-premium</td></tr>',
+              rc, .tt("Term component",
+                       "Front-vs-back IV term. Negative = contango (back > front; useful when buying short-dated). Bands: <=-5→2, <=0→1, else 0."),
+              sprintf("%d / %d", cm$term_pts, cm$term_max),
+              if (is.na(cm$term_value)) "n/a" else sprintf("%+.1f%%", cm$term_value),
+              cm$term_band),
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">RR_25Δ=%s · %s</td></tr>',
+              rc, .tt("RR alignment",
+                       "Risk-reversal 25Δ sign aligning with trade direction (long: calls bid; short: puts bid). 1 pt if aligned, 0 otherwise."),
+              sprintf("%d / %d", cm$rr_pts, cm$rr_max),
+              if (is.na(cm$rr_value)) "n/a" else sprintf("%+.1f vp", cm$rr_value),
+              cm$rr_band))
+  } else {
+    sprintf('<tr class="%s"><td>%s</td><td class="value">n/a</td><td class="note">funnel data unavailable</td></tr>',
+            rc, .tt("cheap_score"))
+  }
 
   c1 <- sprintf(paste0(
-    '<h3>C.1 Cheap Score</h3>',
-    '<table><tr><th>Component</th><th>Value</th><th>Note</th></tr>',
+    '<h3>C.1 Cheap Score (components)</h3>',
+    '<table><tr><th>Component</th><th>Points</th><th>Note</th></tr>',
     '%s</table>'), rows_c1)
 
   if (is.null(pc$funnel)) {
@@ -528,32 +645,98 @@ render_analyze_html <- function(ctx, out_dir) {
   paste0(vehicle_banner, body)
 }
 
-#' Inner spread enumeration table (no h2, no banner). Returns "&mdash; none &mdash;" placeholder when empty.
+#' Inner spread enumeration table (no h2, no banner).
+#' Step 4 rewrite 2026-05-12: DEBIT-only, within-cap-only rows arrive
+#' pre-filtered from enumerate_structures. spread_type column dropped.
+#' Currency amounts formatted with $ suffix, probabilities with % suffix.
+#' Rounded to 2 decimals.
 .render_structures_table <- function(structures, cap) {
   if (is.null(structures) || nrow(structures) == 0) {
-    return(paste0('<p class="sub">No structures enumerated (live pricer unavailable; ',
-                  'no DB cache hit). Run when TWS is reachable to populate this table.</p>'))
+    return(paste0('<p class="sub">No DEBIT spreads enumerated within $', cap,
+                  ' per lot. (Live pricer unavailable, or no qualifying ',
+                  'structures after the filter.)</p>'))
   }
-  cols <- intersect(c("structure", "spread_type", "short_strike", "long_strike",
-                      "width", "expiry", "net_premium", "debit", "max_risk",
-                      "max_reward", "reward_risk_ratio", "prob_success_delta",
-                      "edge", "expected_value", "within_cap", "surface_fact",
-                      "source"), names(structures))
-  hdr <- paste0(sprintf('<th>%s</th>', cols), collapse = "")
+  # If a FETCH FAILED placeholder row sneaks through, render the surface_fact.
+  if (any(structures$structure == "FETCH FAILED", na.rm = TRUE)) {
+    msgs <- structures$surface_fact[structures$structure == "FETCH FAILED"]
+    return(paste0('<p class="sub">', paste(msgs, collapse = "<br>"), '</p>'))
+  }
+
+  fmt_money <- function(v) {
+    if (is.null(v) || length(v) == 0 || is.na(v)) "&mdash;"
+    else sprintf("$%.2f", as.numeric(v))
+  }
+  fmt_strike <- function(v) {
+    if (is.null(v) || length(v) == 0 || is.na(v)) "&mdash;"
+    else sprintf("$%g", as.numeric(v))
+  }
+  fmt_pct <- function(v) {
+    if (is.null(v) || length(v) == 0 || is.na(v)) "&mdash;"
+    else sprintf("%.1f%%", as.numeric(v) * 100)
+  }
+  fmt_ratio <- function(v) {
+    if (is.null(v) || length(v) == 0 || is.na(v)) "&mdash;"
+    else sprintf("%.2f", as.numeric(v))
+  }
+  fmt_expiry <- function(v) {
+    if (is.null(v) || length(v) == 0 || is.na(v) || !nzchar(v)) "&mdash;"
+    else {
+      dt <- tryCatch(as.Date(as.character(v), format = "%Y%m%d"),
+                     error = function(e) NA)
+      if (inherits(dt, "Date") && !is.na(dt)) {
+        dte <- as.integer(dt - Sys.Date())
+        sprintf("%s <span class='crit-info'>(%dd)</span>", as.character(dt), dte)
+      } else as.character(v)
+    }
+  }
+
+  has <- function(cc) cc %in% names(structures)
+
+  # Column spec: (header, value-getter)
+  col_spec <- list(
+    list("Expiry",       function(r) fmt_expiry(r$expiry),
+         "Expiration date (and DTE)."),
+    list("Long strike",  function(r) fmt_strike(r$long_strike),
+         "Strike of the long leg (the leg you buy)."),
+    list("Short strike", function(r) fmt_strike(r$short_strike),
+         "Strike of the short leg (the leg you sell)."),
+    list("Width",        function(r) fmt_money(r$width),
+         "Difference between the two strikes ($ value)."),
+    list("Debit",        function(r) fmt_money(abs(r$net_premium %||% NA)),
+         "Net premium paid up-front (always positive for a debit spread)."),
+    list("Max risk",     function(r) fmt_money(r$max_risk),
+         "Maximum dollar loss per lot. Equal to debit for a debit spread."),
+    list("Max reward",   function(r) fmt_money(r$max_reward),
+         "Maximum dollar gain per lot (width × 100 − debit)."),
+    list("R:R",          function(r) fmt_ratio(r$reward_risk_ratio),
+         "max_reward / max_risk."),
+    list("P(success)",   function(r) fmt_pct(r$prob_success_delta),
+         "Probability the spread expires fully ITM (from delta)."),
+    list("Edge",         function(r) fmt_pct(r$edge),
+         "Excess probability vs market-implied (edge in probability-points)."),
+    list("EV",           function(r) fmt_money(r$expected_value),
+         "Expected dollar value per lot. Table sorted by this descending.")
+  )
+
+  hdr <- paste0(vapply(col_spec, function(cs) {
+    sprintf('<th><span title="%s">%s</span></th>',
+            gsub('"', '&quot;', cs[[3]], fixed = TRUE), cs[[1]])
+  }, character(1)), collapse = "")
+
   rows <- vapply(seq_len(nrow(structures)), function(i) {
-    r <- structures[i, cols, drop = FALSE]
-    cells <- paste0(vapply(cols, function(cc) {
-      v <- r[[cc]]
-      sprintf('<td>%s</td>',
-              if (is.null(v) || length(v) == 0 || is.na(v)) "&mdash;" else as.character(v))
+    r <- structures[i, , drop = FALSE]
+    cells <- paste0(vapply(col_spec, function(cs) {
+      sprintf('<td>%s</td>', cs[[2]](r))
     }, character(1)), collapse = "")
-    sprintf('<tr class="row-warn">%s</tr>', cells)
+    sprintf('<tr class="row-pass">%s</tr>', cells)
   }, character(1))
+
   paste0('<table class="sortable"><thead><tr>', hdr, '</tr></thead><tbody>',
          paste(rows, collapse = "\n"), '</tbody></table>',
-         sprintf(paste0('<p class="sub">Click any column header to sort. ',
-                        'Neutral enumeration — rows are not ranked or recommended. ',
-                        '<code>within_cap</code> indicates max_risk &le; $%d per lot.</p>'),
+         sprintf(paste0('<p class="sub">DEBIT spreads within $%d-per-lot cap, ',
+                        'sorted by Expected Value descending. ',
+                        'Click any column header to re-sort. ',
+                        'CREDIT spreads and phantom/zero-priced legs filtered out.</p>'),
                  cap))
 }
 
@@ -566,12 +749,23 @@ render_analyze_html <- function(ctx, out_dir) {
   e_reason <- pd$entry_reason
   t_reason <- pd$targets$reason
 
+  ctx <- pb$sector_context
+  rs_sec_str <- if (!is.null(ctx) && !is.na(ctx$rs_vs_sector_20d))
+                  sprintf("%+.2f%% (20d) / %s (60d)",
+                          ctx$rs_vs_sector_20d,
+                          if (!is.na(ctx$rs_vs_sector_60d))
+                            sprintf("%+.2f%%", ctx$rs_vs_sector_60d) else "n/a")
+                else "n/a"
   rows <- list(
     c("classification", pe$classification),
     c("phase_of_drop", pe$phase_of_drop),
-    c("pull_score / direction",
-      sprintf("%s / %s", .fmt_num(pb$pull_score, 0), pb$pull_direction %||% "n/a")),
-    c("sector_rs_rank", .fmt_num(pb$sector_rs_rank, 0)),
+    c("stage / direction alignment",
+      sprintf("%s / %s", pb$stage %||% "n/a", pb$direction_match %||% "n/a")),
+    c("sector_rs_rank",
+      if (!is.null(ctx) && !is.na(ctx$sector_rank))
+        sprintf("%d/%d", ctx$sector_rank, ctx$n_sectors)
+      else "n/a"),
+    c("stock vs sector RS", rs_sec_str),
     c("cheap_score / side",
       sprintf("%s / %s", .fmt_num(pc$cheap_score, 0), pc$cheap_side %||% "n/a")),
     c("IVP / VRP (log)",
