@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-12] - analyze: direction-aware vehicle rule, always-open structures, fix entry framework strike-picker
+
+### Problem
+First live UPS-short run after the redesign exposed three carry-forward bugs from the long-only era:
+1. Vehicle rule labelled `call` for shorts (should be `put`).
+2. When vehicle ≠ `spread`, structures table was wrapped in a collapsed `<details>` — friction for users who want to see the spread enumeration regardless.
+3. `.live_entry_framework` picked an ATM **call** strike for shorts and BS-priced it as a long call — produced nonsense R:R = −0.07 (vs the correctly-priced bear-put spread that came back at R:R = 0.16).
+
+### Changed
+- **reports/shared/vehicle_rule.R**: `pick_vehicle_expiry()` accepts `direction = "long" | "short"`. Outright-option vehicle now labelled `put` for short, `call` for long. Default `"long"` preserves swing_scanner caller behavior.
+- **reports/shared/setup_chain_rr.R**: `compute_rr_entry()` accepts `direction`. BS forward pricing uses `type="Put"` for short outrights and bear-put debit spreads, `type="Call"` otherwise. Bear-put `max_payoff = long_strike − short_strike` (vs bull-call `short_strike − long_strike`).
+- **reports/analyze/structures.R**:
+  - `pick_vehicle_expiry` called with `direction`. Scanner-CSV vehicle override removed (long-only).
+  - `.live_entry_framework` strike picker direction-aware: short outright = put rounded DOWN to $5 grid; spread for short = long_put > short_put (bear-put). BS pricing uses `type="Put"` for shorts.
+- **reports/analyze/report.R**: `.render_structures()` no longer wraps the spread table in `<details>` when vehicle ∈ {`call`, `put`, `stock`}. Vehicle rule is informational, not gating. Heading now reads "Vertical spreads — DEBIT only, within $N/lot cap" with a one-line hint when vehicle is non-spread.
+
+### Validated on UPS short
+| | Before | After |
+|---|---|---|
+| Vehicle label | `call` | `put` ✓ |
+| Structures table visibility | collapsed `<details>` | always open ✓ |
+| Entry framework R:R | −0.07 (mispriced call) | 0.16 (bear-put debit) ✓ |
+| Top spread by EV | $93/$88 31d, EV=−$11.50 | $93/$88 31d, EV=−$13.00 (unchanged shape) |
+
 ## [2026-05-12] - analyze: full per-phase redesign — live-first sourcing, direction-aware targets, filtered structures
 
 ### Problem

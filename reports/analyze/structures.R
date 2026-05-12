@@ -38,9 +38,9 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   stage_for_rule <- if (!is.null(phase_b) && !is.null(phase_b$stage)) phase_b$stage else NA_character_
   vehicle_pick <- pick_vehicle_expiry(spot,
                                        cheap_score = cheap_score_for_rule,
-                                       stage       = stage_for_rule)
-  vehicle <- if (!is.null(r) && !is.na(r$vehicle) && nzchar(r$vehicle)) r$vehicle
-             else vehicle_pick$vehicle %||% "spread"
+                                       stage       = stage_for_rule,
+                                       direction   = direction)
+  vehicle <- vehicle_pick$vehicle %||% "spread"
   vehicle_reason <- vehicle_pick$reason
 
   # Targets: ALWAYS live-compute (direction-aware). Scanner CSV is LONG-only
@@ -195,16 +195,25 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   if (!is.null(phase_c$funnel) && !is.na(phase_c$funnel$iv30)) iv_now <- phase_c$funnel$iv30
   if (is.na(iv_now)) iv_now <- 0.30
 
-  # Strike picks. Long: round up to $5 grid (call) or down (put).
-  right_C <- direction == "long"
+  # Strike picks — direction-aware.
+  # Long outright (call): ATM strike rounded UP to $5 grid (slight OTM call).
+  # Short outright (put): ATM strike rounded DOWN to $5 grid (slight OTM put).
+  # Spread (long debit / bear-put debit):
+  #   long leg = ATM rounded to $5 grid; short leg = at eff_target rounded.
+  #   Constraint: for long debit call, long < short. For bear-put debit,
+  #   long > short (you buy the higher put and sell the lower).
+  bs_right <- if (direction == "long") "Call" else "Put"
   strike_long <- NA_real_; strike_short <- NA_real_
-  if (vehicle == "call") {
-    strike_long <- if (right_C) ceiling(spot / 5) * 5 else floor(spot / 5) * 5
+  if (vehicle %in% c("call", "put")) {
+    strike_long <- if (direction == "long") ceiling(spot / 5) * 5
+                   else                       floor(spot / 5) * 5
   } else if (vehicle == "spread") {
     strike_long  <- round(spot / 5) * 5
     strike_short <- round(eff_target / 5) * 5
-    if (!is.na(strike_short) && strike_short <= strike_long)
+    if (direction == "long" && !is.na(strike_short) && strike_short <= strike_long)
       strike_short <- strike_long + 5
+    if (direction == "short" && !is.na(strike_short) && strike_short >= strike_long)
+      strike_short <- strike_long - 5
   }
 
   # Entry premium via BS at current spot/strike with iv_now.
@@ -217,17 +226,17 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 
   entry_prem <- if (vehicle == "stock") {
     spot * 0.05  # 5%-of-spot stop-distance proxy
-  } else if (vehicle == "call" && !is.na(strike_long)) {
+  } else if (vehicle %in% c("call", "put") && !is.na(strike_long)) {
     tryCatch(Tbasics::getOptPrice(
-      type = if (right_C) "Call" else "Put",
+      type = bs_right,
       S = spot, K = strike_long, r = 0.045, DTE = dte, sig = iv_now),
       error = function(e) NA_real_)
   } else if (vehicle == "spread" && !is.na(strike_long) && !is.na(strike_short)) {
     long_p  <- tryCatch(Tbasics::getOptPrice(
-      type = "Call", S = spot, K = strike_long,  r = 0.045, DTE = dte, sig = iv_now),
+      type = bs_right, S = spot, K = strike_long,  r = 0.045, DTE = dte, sig = iv_now),
       error = function(e) NA_real_)
     short_p <- tryCatch(Tbasics::getOptPrice(
-      type = "Call", S = spot, K = strike_short, r = 0.045, DTE = dte, sig = iv_now),
+      type = bs_right, S = spot, K = strike_short, r = 0.045, DTE = dte, sig = iv_now),
       error = function(e) NA_real_)
     if (!is.na(long_p) && !is.na(short_p)) max(long_p - short_p, 0.05) else NA_real_
   } else NA_real_
@@ -243,7 +252,8 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     iv_now = iv_now, entry_premium = entry_prem,
     spread_short_strike = strike_short,
     spot_target_high = spot_target_high,
-    rr_min = config$rr_min),
+    rr_min = config$rr_min,
+    direction = direction),
     error = function(e) NULL)
   if (is.null(rr_obj)) return(modifyList(empty,
     list(strike = strike_long, spread_short_strike = strike_short,

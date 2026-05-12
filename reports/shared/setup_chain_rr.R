@@ -284,20 +284,31 @@ walk_chain_oi <- function(sym, expiry, spot_target_low, spot_target_high,
        chain_walk_status = status)
 }
 
-#' Compute Risk:Reward and entry interval (Step D.4).
+#' Compute Risk:Reward and entry interval (Step D.4). Direction-aware.
+#'
+#' @param vehicle "stock" | "call" | "put" | "spread"
+#' @param direction "long" or "short". For "put" vehicle or short spreads,
+#'   forward pricing uses type="Put". For "long" + "call" vehicle, type="Call".
+#'   Default "long" preserves swing_scanner caller behavior.
+#' @param spread_short_strike — for a bear-put debit (short direction spread),
+#'   this is the LOWER strike (the one you sell). long_strike > short_strike.
+#'   For a bull-call debit (long direction spread), long_strike < short_strike.
 compute_rr_entry <- function(vehicle, strike, expiry, current_price,
                              effective_target, iv_now, entry_premium,
                              spread_short_strike = NA, spot_target_high = NA,
                              risk_free = 0.045, iv_bump = 0.02, theta_buffer = 5,
-                             rr_min = 0.5) {
+                             rr_min = 0.5, direction = "long") {
   if (vehicle == "stock") {
     risk <- entry_premium
-    reward <- effective_target - current_price
+    reward <- if (direction == "long") effective_target - current_price
+              else                      current_price - effective_target
     rr <- if (risk > 0) reward / risk else NA_real_
     return(list(rr = round(rr, 2),
                 entry_floor = round(current_price, 2),
                 entry_ceiling = round(current_price, 2),
-                headroom_band = sprintf("+%.0f%%", reward / current_price * 100),
+                headroom_band = sprintf("%s%.0f%%",
+                                        if (direction == "long") "+" else "-",
+                                        abs(reward) / current_price * 100),
                 reward = round(reward, 2)))
   }
 
@@ -305,10 +316,12 @@ compute_rr_entry <- function(vehicle, strike, expiry, current_price,
   dte <- as.integer(expiry_dt - Sys.Date())
   fwd_dte <- max(dte - theta_buffer, 1)
   fwd_iv <- iv_now + iv_bump
+  bs_type <- if (vehicle == "put" ||
+                  (vehicle == "spread" && direction == "short")) "Put" else "Call"
 
-  if (vehicle == "call") {
+  if (vehicle %in% c("call", "put")) {
     fwd_price <- tryCatch(
-      Tbasics::getOptPrice(type = "Call", S = effective_target, K = strike,
+      Tbasics::getOptPrice(type = bs_type, S = effective_target, K = strike,
                            r = risk_free, DTE = fwd_dte, sig = fwd_iv),
       error = function(e) NA_real_)
     risk <- entry_premium
@@ -316,9 +329,10 @@ compute_rr_entry <- function(vehicle, strike, expiry, current_price,
     rr <- if (!is.na(reward) && risk > 0) reward / risk else NA_real_
     entry_ceiling <- if (!is.na(fwd_price)) fwd_price / (1 + rr_min) else NA_real_
     headroom_band <- if (!is.na(spot_target_high) && !is.na(fwd_price) &&
-                          spot_target_high > effective_target) {
+                          ((direction == "long"  && spot_target_high > effective_target) ||
+                           (direction == "short" && spot_target_high < effective_target))) {
       fwd_price_high <- tryCatch(
-        Tbasics::getOptPrice(type = "Call", S = spot_target_high, K = strike,
+        Tbasics::getOptPrice(type = bs_type, S = spot_target_high, K = strike,
                              r = risk_free, DTE = fwd_dte, sig = fwd_iv),
         error = function(e) NA_real_)
       if (!is.na(fwd_price_high))
@@ -344,11 +358,11 @@ compute_rr_entry <- function(vehicle, strike, expiry, current_price,
                   reward = NA_real_))
     }
     fwd_long <- tryCatch(
-      Tbasics::getOptPrice(type = "Call", S = effective_target, K = strike,
+      Tbasics::getOptPrice(type = bs_type, S = effective_target, K = strike,
                            r = risk_free, DTE = fwd_dte, sig = fwd_iv),
       error = function(e) NA_real_)
     fwd_short <- tryCatch(
-      Tbasics::getOptPrice(type = "Call", S = effective_target,
+      Tbasics::getOptPrice(type = bs_type, S = effective_target,
                            K = spread_short_strike,
                            r = risk_free, DTE = fwd_dte, sig = fwd_iv),
       error = function(e) NA_real_)
@@ -357,7 +371,15 @@ compute_rr_entry <- function(vehicle, strike, expiry, current_price,
                   entry_ceiling = NA_real_, headroom_band = "n/a",
                   reward = NA_real_))
     fwd_spread <- max(fwd_long - fwd_short, 0)
-    max_payoff <- spread_short_strike - strike
+    # Max payoff depends on direction:
+    # Long debit call: max = (short_strike - long_strike), short > long.
+    # Bear debit put:  max = (long_strike - short_strike), long > short.
+    max_payoff <- if (direction == "short") strike - spread_short_strike
+                  else                       spread_short_strike - strike
+    if (is.na(max_payoff) || max_payoff <= 0)
+      return(list(rr = NA_real_, entry_floor = round(entry_premium, 3),
+                  entry_ceiling = NA_real_, headroom_band = "n/a",
+                  reward = NA_real_))
     fwd_spread <- min(fwd_spread, max_payoff)
     risk <- entry_premium
     reward <- fwd_spread - entry_premium

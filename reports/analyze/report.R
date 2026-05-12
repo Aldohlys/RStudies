@@ -619,28 +619,20 @@ render_analyze_html <- function(ctx, out_dir) {
 
   spread_table <- .render_structures_table(structures, cap)
 
-  # Conditional rendering by vehicle
-  body <- if (identical(vehicle, "spread")) {
-    paste0(
-      sprintf('<details open><summary>Vertical spreads ($%d/lot cap) — applicable</summary>',
-              cap),
-      retrieved_html, spread_table, '</details>')
-  } else if (identical(vehicle, "call")) {
-    paste0(
-      '<p class="sub"><b>Outright call</b> selected by vehicle rule. ',
-      'A single-leg long call is the recommended structure for this name; ',
-      'no spread tabulation is needed.</p>',
-      sprintf('<details><summary>Spread enumeration (not applicable per vehicle rule) — click to expand</summary>'),
-      retrieved_html, spread_table, '</details>')
-  } else if (identical(vehicle, "stock")) {
-    paste0(
-      '<p class="sub"><b>Stock</b> selected by vehicle rule (price &lt; $10 ',
-      'or option spread too wide). Option structures not applicable.</p>',
-      sprintf('<details><summary>Spread enumeration (not applicable per vehicle rule) — click to expand</summary>'),
-      retrieved_html, spread_table, '</details>')
-  } else {
-    paste0(retrieved_html, spread_table)
-  }
+  # Always-open structures section. Vehicle rule is informational, not gating
+  # (Step 4 follow-up 2026-05-12). Only the heading hint changes by vehicle.
+  hint <- if (identical(vehicle, "spread")) ""
+          else if (vehicle %in% c("call", "put"))
+            sprintf('<p class="sub"><b>Outright %s</b> preferred by vehicle rule (cheap IV). Spread enumeration below is shown for reference.</p>',
+                    vehicle)
+          else if (identical(vehicle, "stock"))
+            '<p class="sub"><b>Stock</b> preferred by vehicle rule (price &lt; $10 or option spread too wide). Spread enumeration below is shown for reference.</p>'
+          else ""
+
+  body <- paste0(
+    hint,
+    sprintf('<h3>Vertical spreads — DEBIT only, within $%d/lot cap</h3>', cap),
+    retrieved_html, spread_table)
 
   paste0(vehicle_banner, body)
 }
