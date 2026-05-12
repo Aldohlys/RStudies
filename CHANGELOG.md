@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-12] - analyze: surface IV30+IVP and RV30+RVP in cheap-score table
+
+### Why
+The C.1 cheap-score table showed only IVP (percentile). To judge vol attractiveness the user also needs to compare with RV30/RVP — realized vol and where it sits in its own 1y history.
+
+### Changed
+- **reports/shared/live_sources.R**: new `resolve_rvp()` — mirrors `resolve_ivp`. DB Prices.rvp first if fresh → live via `Tdata::getVolMetrics`.
+- **reports/analyze/funnel.R**: funnel pulls rvp via the new resolver; exposed as `funnel$rvp`.
+- **reports/analyze/phases.R**: `.compute_cheap_components` carries iv30/rv30/rvp through to the report.
+- **reports/analyze/report.R**: C.1 table:
+  - Renamed `IVP component` row to `IV30 / IVP component` — now shows both numbers side by side (IV30 as %, IVP as percentile). Scoring still based on IVP alone.
+  - New `RV30 / RVP (info)` row — informational, no points. Shows current RV30 and its 1y percentile rank.
+
+### Validated on GM short
+- IV30 / IVP: `IV30=32.9% · IVP=52.9%` → 2/4 pts
+- RV30 / RVP: `RV30=34.0% · RVP=64.9%` — realized leading implied; elevated vs its own history.
+
 ## [2026-05-12] - analyze: outright option pricing grid in report
 
 ### Problem

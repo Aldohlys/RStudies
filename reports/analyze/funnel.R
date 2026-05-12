@@ -52,20 +52,23 @@ run_funnel_deep_dive <- function(ticker, direction, scanner_row, config,
     spot <- s$value
   }
 
-  # IV30 / IV90 / RV30 / IVP / skew via resolvers
+  # IV30 / IV90 / RV30 / IVP / RVP / skew via resolvers
   iv30_r <- resolve_iv30(ticker, spot, freshness, tws_ok = tws_ok, conn = conn)
   iv90_r <- resolve_iv90(ticker, spot, freshness, tws_ok = tws_ok, conn = conn)
   rv30_r <- resolve_rv30(ticker, freshness, conn = conn)
   ivp_r  <- resolve_ivp(ticker, freshness, tws_ok = tws_ok, conn = conn)
+  rvp_r  <- resolve_rvp(ticker, freshness, tws_ok = tws_ok, conn = conn)
   skew_r <- resolve_skew_25d(ticker, spot, freshness,
                               tws_ok = tws_ok, conn = conn)
   earn_r <- resolve_earnings(ticker)
 
   iv30 <- iv30_r$value; iv90 <- iv90_r$value
   rv30 <- rv30_r$value; ivp_used <- ivp_r$value
+  rvp  <- rvp_r$value
 
   iv30_reason <- iv30_r$reason; iv90_reason <- iv90_r$reason
   rv30_reason <- rv30_r$reason; ivp_reason  <- ivp_r$reason
+  rvp_reason  <- rvp_r$reason
 
   # VRP — both forms
   vrp_log <- if (!is.na(iv30) && !is.na(rv30) && rv30 > 0)
@@ -180,6 +183,7 @@ run_funnel_deep_dive <- function(ticker, direction, scanner_row, config,
   list(
     grid = rows,
     iv30 = iv30, iv90 = iv90, rv30 = rv30, ivp_used = ivp_used,
+    rvp = rvp, rvp_reason = rvp_reason,
     vrp_log = vrp_log, vrp_vp = vrp_vp,
     term_pct = term_pct, term_shape = term_shape_label,
     rr_vp = rr_vp,

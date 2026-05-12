@@ -326,6 +326,40 @@ resolve_ivp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
                        res$current * 100, res$p50 * 100))
 }
 
+# ── RVP (Realized Vol Percentile) ───────────────────────────────────────
+
+#' Resolve RVP — where current RV30 sits in its 1y history (0-100).
+#' Priority: DB Prices.rvp if fresh → live via Tdata::getVolMetrics.
+#' Mirrors resolve_ivp() but for realized vol.
+resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
+  own_conn <- is.null(conn)
+  if (own_conn) conn <- tryCatch(Tdata::safe_db_connect(),
+                                  error = function(e) NULL)
+  on.exit(if (own_conn && !is.null(conn)) DBI::dbDisconnect(conn), add = TRUE)
+  if (!is.null(conn)) {
+    row <- tryCatch(DBI::dbGetQuery(conn,
+      "SELECT datetime, rvp FROM Prices WHERE sym = ?
+       ORDER BY ROWID DESC LIMIT 1",
+      params = list(ticker)), error = function(e) NULL)
+    if (!is.null(row) && nrow(row) > 0 && !is.na(row$rvp) &&
+        is_fresh(row$datetime, freshness)) {
+      return(.ok(as.numeric(row$rvp), source = "db",
+                 retrieved_at = row$datetime))
+    }
+  }
+  if (!isTRUE(tws_ok))
+    return(.miss("DB Prices.rvp NA/stale; TWS not reachable for live"))
+  res <- tryCatch(Tdata::getVolMetrics(ticker),
+                  error = function(e) NULL)
+  if (is.null(res) || !is.data.frame(res) || nrow(res) == 0)
+    return(.miss("getVolMetrics returned empty"))
+  rvp <- suppressWarnings(as.numeric(res$rvp[1]))
+  if (is.na(rvp)) return(.miss("getVolMetrics: rvp is NA"))
+  .ok(round(rvp, 1), source = "live",
+      reason = sprintf("from getVolMetrics (RV30=%.1f%%)",
+                       suppressWarnings(as.numeric(res$rv30[1])) * 100))
+}
+
 # ── 25-delta skew (RR_25) ────────────────────────────────────────────────
 
 #' Live 25-delta call/put IV, returning the RR in vol-points: (call25 - put25)*100.

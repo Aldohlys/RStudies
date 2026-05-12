@@ -302,6 +302,7 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
 .compute_cheap_components <- function(funnel, direction, config) {
   ivp <- funnel$ivp_used; vrp <- funnel$vrp_log
   term <- funnel$term_pct; rr <- funnel$rr_vp
+  iv30 <- funnel$iv30; rv30 <- funnel$rv30; rvp <- funnel$rvp
 
   ivp_pts <- if (is.na(ivp)) 0L
              else if (ivp <= config$ivp_pts$pt4_max) 4L
@@ -349,6 +350,8 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   list(
     score = score, side = side,
     ivp_pts = ivp_pts, ivp_max = 4L, ivp_value = ivp, ivp_band = ivp_band,
+    iv30_value = iv30,
+    rv30_value = rv30, rvp_value = rvp,
     vrp_pts = vrp_pts, vrp_max = 2L, vrp_value = vrp, vrp_band = vrp_band,
     term_pts = term_pts, term_max = 2L, term_value = funnel$term_pct, term_band = term_band,
     rr_pts = rr_pts, rr_max = 1L, rr_value = rr, rr_band = rr_band
