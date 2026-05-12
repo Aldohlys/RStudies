@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-05-12] - analyze: drop redundant columns, make structures collapsible
+
+### Changed
+- **reports/analyze/report.R**:
+  - Outright table: removed `Max loss` column (always equals Entry premium for an outright long option).
+  - Spreads table: removed `Max risk` column (always equals Debit for a DEBIT spread).
+  - Both outright and spreads tables now wrapped in `<details open><summary>...</summary>...</details>` — default open, click summary to collapse. Matches Phase B per-indicator-breakdown UX.
+
 ## [2026-05-12] - analyze: surface IV30+IVP and RV30+RVP in cheap-score table
 
 ### Why

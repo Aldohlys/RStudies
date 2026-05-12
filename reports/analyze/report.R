@@ -645,13 +645,21 @@ render_analyze_html <- function(ctx, out_dir) {
             '<p class="sub"><b>Stock</b> preferred by vehicle rule (price &lt; $10 or option spread too wide). Spread enumeration below is shown for reference.</p>'
           else ""
 
-  body <- paste0(
-    hint,
-    outright_table,
-    sprintf('<h3>Vertical spreads — DEBIT only, within $%d/lot cap</h3>', cap),
-    retrieved_html, spread_table)
+  # Both tables are collapsible (default open). Click summary to toggle.
+  right_label <- if (identical(direction, "short")) "put" else "call"
+  outright_wrapped <- if (nzchar(outright_table)) {
+    sprintf(paste0(
+      '<details open><summary>Outright %s grid — strike × expiry (single-leg long-option pricing) — click to collapse</summary>',
+      '%s</details>'),
+      right_label, outright_table)
+  } else ""
 
-  paste0(vehicle_banner, body)
+  spread_wrapped <- sprintf(paste0(
+    '<details open><summary>Vertical spreads — DEBIT only, within $%d/lot cap — click to collapse</summary>',
+    '%s%s</details>'),
+    cap, retrieved_html, spread_table)
+
+  paste0(vehicle_banner, hint, outright_wrapped, spread_wrapped)
 }
 
 #' Render the outright-option strike × expiry grid. Returns "" when outrights
@@ -670,8 +678,7 @@ render_analyze_html <- function(ctx, out_dir) {
   hdr_cells <- c(
     '<th><span title="Expiration date and DTE.">Expiry</span></th>',
     sprintf('<th><span title="Strike of the long %s.">Strike</span></th>', tolower(right_label)),
-    '<th><span title="Black-Scholes premium at current spot, current IV30. Per lot (×100).">Entry premium</span></th>',
-    '<th><span title="Maximum loss per lot if option expires worthless. Equals entry premium.">Max loss</span></th>',
+    '<th><span title="Black-Scholes premium at current spot, current IV30. Per lot (×100). Equal to maximum loss for an outright long option.">Entry premium</span></th>',
     '<th><span title="Black-Scholes premium at the effective target (DTE − 5d theta buffer, IV bumped +2pp).">Fwd @ target</span></th>',
     '<th><span title="Fwd premium − entry premium per lot.">Reward</span></th>',
     '<th><span title="Reward / risk on the move to effective target.">R:R</span></th>')
@@ -682,16 +689,14 @@ render_analyze_html <- function(ctx, out_dir) {
       sprintf('<td>%s</td>', fmt_expiry(r$expiry, r$dte)),
       sprintf('<td>%s</td>', fmt_strike(r$strike)),
       sprintf('<td>%s</td>', fmt_money(r$entry_premium)),
-      sprintf('<td>%s</td>', fmt_money(r$max_loss)),
       sprintf('<td>%s</td>', fmt_money(r$fwd_premium)),
       sprintf('<td>%s</td>', fmt_money(r$reward)),
       sprintf('<td>%s</td>', fmt_ratio(r$rr)))
     sprintf('<tr class="row-pass">%s</tr>', paste0(cells, collapse = ""))
   }, character(1))
 
+  # h3 removed — caller wraps in <details>/<summary>.
   paste0(
-    sprintf('<h3>Outright %s grid (single-leg long-option pricing)</h3>',
-            tolower(right_label)),
     '<table class="sortable"><thead><tr>',
     paste0(hdr_cells, collapse = ""),
     '</tr></thead><tbody>',
@@ -749,7 +754,7 @@ render_analyze_html <- function(ctx, out_dir) {
 
   has <- function(cc) cc %in% names(structures)
 
-  # Column spec: (header, value-getter)
+  # Column spec: (header, value-getter, tooltip)
   col_spec <- list(
     list("Expiry",       function(r) fmt_expiry(r$expiry),
          "Expiration date (and DTE)."),
@@ -760,13 +765,11 @@ render_analyze_html <- function(ctx, out_dir) {
     list("Width",        function(r) fmt_money(r$width),
          "Difference between the two strikes ($ value)."),
     list("Debit",        function(r) fmt_money(abs(r$net_premium %||% NA)),
-         "Net premium paid up-front (always positive for a debit spread)."),
-    list("Max risk",     function(r) fmt_money(r$max_risk),
-         "Maximum dollar loss per lot. Equal to debit for a debit spread."),
+         "Net premium paid up-front. Also equals maximum loss per lot."),
     list("Max reward",   function(r) fmt_money(r$max_reward),
          "Maximum dollar gain per lot (width × 100 − debit)."),
     list("R:R",          function(r) fmt_ratio(r$reward_risk_ratio),
-         "max_reward / max_risk."),
+         "max_reward / debit."),
     list("P(success)",   function(r) fmt_pct(r$prob_success_delta),
          "Probability the spread expires fully ITM (from delta)."),
     list("Edge",         function(r) fmt_pct(r$edge),
