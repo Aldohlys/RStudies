@@ -84,6 +84,10 @@ default:
     # Maximum vertical-spread width to enumerate
     spread_widths: [5, 10]
     moneyness_pct: 0.20
+    # Thin-chain bypass — minimum OTM OI on a single strike before that side's
+    # cap is considered usable. Below this, oi_cap_call/put = NA and the
+    # structural target is used instead. ETFs and small-caps run thin.
+    thin_oi_threshold: 100
     # Earnings event window (days)
     earnings_window_days: 14
     # Skew-history table lookback for Phase C.2.d

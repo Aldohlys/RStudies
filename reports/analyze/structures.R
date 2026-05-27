@@ -49,7 +49,9 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 
   # Chain / OI: resolver (DB-fresh → live get_chain_oi). CSV oi_cap_call/_put
   # in scanner row are last-resort fallback if both DB and live fail.
-  chain_r <- resolve_chain_oi(ticker, expiry, spot, freshness, tws_ok = tws_ok)
+  thin_oi_threshold <- as.integer(config$thin_oi_threshold %||% 100L)
+  chain_r <- resolve_chain_oi(ticker, expiry, spot, freshness, tws_ok = tws_ok,
+                              thin_oi_threshold = thin_oi_threshold)
   chain <- if (is.list(chain_r$value)) {
     list(oi_cap_call = chain_r$value$oi_cap_call,
          oi_cap_put  = chain_r$value$oi_cap_put,

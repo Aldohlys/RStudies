@@ -452,21 +452,42 @@ resolve_skew_25d <- function(ticker, spot, freshness, tws_ok = TRUE,
 
 #' Reduce a per-strike/per-right OI table into oi_cap_call, oi_cap_put,
 #' and a chain_state label.
-.summarize_oi <- function(oi_rows, source = "db") {
+#'
+#' OTM-only filter: oi_cap_call is the max-OI strike *above* spot (real
+#' resistance from dealer hedging); ITM call OI is stock-replacement /
+#' covered-call cover with no pin dynamic. Mirror for puts below spot.
+#'
+#' Thin-chain bypass: if the max OTM OI on a side falls below
+#' thin_oi_threshold, that side's cap is NA — too sparse to read as
+#' resistance/support. chain_state = "thin" when both sides bypass.
+.summarize_oi <- function(oi_rows, spot, source = "db",
+                           thin_oi_threshold = 100L) {
   oi_rows$open_interest <- suppressWarnings(as.numeric(oi_rows$open_interest))
   oi_rows <- oi_rows[!is.na(oi_rows$open_interest) & oi_rows$open_interest > 0, ]
   if (nrow(oi_rows) == 0)
     return(.miss(sprintf("%s: all OI rows empty/zero", source)))
-  calls <- oi_rows[oi_rows$right == "C", , drop = FALSE]
-  puts  <- oi_rows[oi_rows$right == "P", , drop = FALSE]
-  oi_cap_call <- if (nrow(calls) > 0)
+  if (is.na(spot) || !is.finite(spot)) {
+    calls <- oi_rows[FALSE, , drop = FALSE]
+    puts  <- oi_rows[FALSE, , drop = FALSE]
+  } else {
+    calls <- oi_rows[oi_rows$right == "C" & oi_rows$strike > spot, , drop = FALSE]
+    puts  <- oi_rows[oi_rows$right == "P" & oi_rows$strike < spot, , drop = FALSE]
+  }
+  oi_cap_call <- if (nrow(calls) > 0 &&
+                     max(calls$open_interest, na.rm = TRUE) >= thin_oi_threshold)
     calls$strike[which.max(calls$open_interest)] else NA_real_
-  oi_cap_put  <- if (nrow(puts)  > 0)
-    puts$strike[which.max(puts$open_interest)]   else NA_real_
-  total_oi <- sum(oi_rows$open_interest)
-  top3 <- sum(sort(oi_rows$open_interest, decreasing = TRUE)[1:3], na.rm = TRUE)
+  oi_cap_put  <- if (nrow(puts) > 0 &&
+                     max(puts$open_interest, na.rm = TRUE) >= thin_oi_threshold)
+    puts$strike[which.max(puts$open_interest)] else NA_real_
+  otm_oi <- rbind(calls, puts)
+  total_oi <- if (nrow(otm_oi) > 0) sum(otm_oi$open_interest) else 0
+  top_n <- min(3L, nrow(otm_oi))
+  top3 <- if (top_n > 0)
+    sum(sort(otm_oi$open_interest, decreasing = TRUE)[1:top_n], na.rm = TRUE)
+    else 0
   conc <- if (total_oi > 0) top3 / total_oi else NA_real_
-  state <- if (is.na(conc)) "open"
+  state <- if (is.na(oi_cap_call) && is.na(oi_cap_put)) "thin"
+           else if (is.na(conc)) "open"
            else if (conc >= 0.6) "chain-capped"
            else if (conc >= 0.4) "crowded"
            else "open"
@@ -477,7 +498,7 @@ resolve_skew_25d <- function(ticker, spot, freshness, tws_ok = TRUE,
 #' Resolve chain OI cap + state for one expiry. DB option_chain_oi_history
 #' first if fresh; else live get_chain_oi.
 resolve_chain_oi <- function(ticker, expiry, spot, freshness, tws_ok = TRUE,
-                              conn = NULL) {
+                              conn = NULL, thin_oi_threshold = 100L) {
   own_conn <- is.null(conn)
   if (own_conn) conn <- tryCatch(Tdata::safe_db_connect(),
                                   error = function(e) NULL)
@@ -493,7 +514,8 @@ resolve_chain_oi <- function(ticker, expiry, spot, freshness, tws_ok = TRUE,
     if (!is.null(oi_rows) && nrow(oi_rows) > 0) {
       latest <- max(oi_rows$cache_date, na.rm = TRUE)
       if (is_fresh(latest, freshness)) {
-        return(.summarize_oi(oi_rows, source = "db"))
+        return(.summarize_oi(oi_rows, spot = spot, source = "db",
+                              thin_oi_threshold = thin_oi_threshold))
       }
     }
   }
@@ -511,7 +533,8 @@ resolve_chain_oi <- function(ticker, expiry, spot, freshness, tws_ok = TRUE,
     return(.miss(paste("get_chain_oi:", live_oi)))
   if (is.null(live_oi) || !is.data.frame(live_oi) || nrow(live_oi) == 0)
     return(.miss(sprintf("get_chain_oi: no rows for %s @ %s", ticker, expiry)))
-  .summarize_oi(live_oi, source = "live")
+  .summarize_oi(live_oi, spot = spot, source = "live",
+                 thin_oi_threshold = thin_oi_threshold)
 }
 
 # ── Earnings ─────────────────────────────────────────────────────────────
