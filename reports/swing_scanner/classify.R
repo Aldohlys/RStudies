@@ -20,7 +20,7 @@ classify_final <- function(df, rr_min = 0.5) {
       next
     }
     # Phase B
-    if (isTRUE(df$pull_pass[i]) == FALSE) {
+    if (isTRUE(df$flow_pass[i]) == FALSE) {
       df$phase_of_drop[i] <- "B"
       next
     }

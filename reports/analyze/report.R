@@ -60,12 +60,10 @@ td.note{color:#555;font-size:13px}
   # Header / classification
   "Spot"                 = "Latest IBKR last-trade price for the underlying.",
   "Sector"               = "GICS-style sector membership from the ScannerUniverse table.",
-  "classification"       = "TOP PICK = passes A,B,C,D and at least one structure within $/lot cap. WATCH = passes A,B,C only. SKIP = drops earlier.",
-  "phase_of_drop"        = "Which phase the ticker dropped at (A/B/C/D), or 'none' if all passed.",
   # Phase B aggregate
   "Sector x-rank"        = "Cross-sectional context (see Phase B sector_rs_rank).",
   # Phase C aggregate
-  "cheap_score"          = "0-10 composite from IVP / VRP / term shape / RR alignment. Cutoff for PASS is >=6.",
+  "cheap_score"          = "0-9 composite from IVP / VRP / term shape / RR alignment. Higher = options structurally cheaper for buying premium (informational, not a gate).",
   "cheap_side"           = "Implied directional bias from skew: long (calls bid), short (puts bid), neutral.",
   "IVP (used)"           = "Implied Volatility Percentile actually used (1y native if present, else 2y fallback). Lower = options cheaper.",
   "VRP (log-ratio, persisted)" = "Volatility Risk Premium = log(IV30/RV30)*100. Negative = IV below realised, options cheap. Positive = IV rich.",
@@ -78,14 +76,14 @@ td.note{color:#555;font-size:13px}
   # Phase D
   "spot_target_low"      = "Lower bound of the structural-target consensus from prior swing high / 52w high / round number.",
   "spot_target_high"     = "Upper bound of the structural-target consensus.",
-  "targets_agreeing"     = "Count of consensus sources agreeing within ±2% (range 0-3). Cutoff for PASS is >=2.",
+  "targets_agreeing"     = "Count of consensus sources agreeing within ±2% (range 0-3). More agreement = a sharper structural target.",
   "fib_confirms"         = "TRUE if Fibonacci 1.272/1.618 lands within ±2% of the structural target.",
   "expiry"               = "Selected expiration (YYYYMMDD). Picked live from IBKR ~45 DTE if scanner CSV is silent.",
   "oi_cap_call"          = "Strike with the largest call open interest in [-25%, +25%] of spot — magnetic resistance.",
   "oi_cap_put"           = "Strike with the largest put open interest in [-25%, +25%] of spot — magnetic support.",
   "chain_state"          = "open (top-3 OI < 40% of total), crowded (40-60%), or chain-capped (>=60%, expect price pinning).",
   "effective_target"     = "Lower of structural target and OI cap — whichever the chain says is reachable.",
-  "R:R"                  = "Reward / risk on the proposed entry. Cutoff for PASS is rr_min (default 0.5).",
+  "R:R"                  = "Reward / risk on the proposed entry (rr_min reference default 0.5).",
   "entry_floor / entry_ceiling" = "Acceptable entry-price band that yields R:R >= rr_min.",
   "headroom_band"        = "Mechanical label: tight / moderate / wide based on entry-band width.",
   "entry_state"          = "IN BAND (current premium fits) / ABOVE / BELOW / FAILED.",
@@ -178,8 +176,9 @@ td.note{color:#555;font-size:13px}
 
 .row_class <- function(result) {
   switch(result %||% "STALE",
-         PASS = "row-pass",
-         SKIP = "row-fail",
+         PASS = "row-pass", LIVE = "row-pass", CACHED = "row-pass",
+         SKIP = "row-fail", `FETCH FAILED` = "row-fail",
+         `NO DATA` = "row-warn",
          `NO SIGNAL` = "row-skip",
          STALE = "row-warn",
          "row-warn")
@@ -200,16 +199,31 @@ td.note{color:#555;font-size:13px}
 }
 
 #' Like .fmt_num but, when the value is NA and `reason` is non-empty, returns
-#' "FETCH FAILED: <reason>" instead of "n/a". Surfaces the cause directly in
-#' the report (see feedback_analyze_live_data_fallback.md).
-.fmt_cell <- function(x, reason = NULL, digits = 2) {
+#' "<status>: <reason>" instead of "n/a". `status` (TODO #60) distinguishes
+#' NO DATA (request OK, response empty/NaN) from FETCH FAILED (no response).
+#' Surfaces the cause directly in the report
+#' (see feedback_analyze_live_data_fallback.md).
+.fmt_cell <- function(x, reason = NULL, digits = 2, status = "FETCH FAILED") {
   if (!is.null(x) && !all(is.na(x))) {
     if (is.numeric(x)) return(sprintf(paste0("%.", digits, "f"), x))
     return(as.character(x))
   }
   if (!is.null(reason) && length(reason) > 0 && nzchar(reason))
-    return(paste0("FETCH FAILED: ", reason))
+    return(paste0(status %||% "FETCH FAILED", ": ", reason))
   "n/a"
+}
+
+#' Map a provenance status to a row/badge CSS class. Neutral palette:
+#' LIVE/CACHED read as informational-good, NO DATA as warn, FETCH FAILED as fail.
+.status_class <- function(status, kind = c("row", "badge")) {
+  kind <- match.arg(kind)
+  base <- switch(status %||% "FETCH FAILED",
+                 LIVE = "pass", CACHED = "pass",
+                 `NO DATA` = "warn",
+                 `FETCH FAILED` = "fail",
+                 SKIPPED = "skip", `SKIPPED (--no-vol-funnel)` = "skip",
+                 "skip")
+  paste0(kind, "-", base)
 }
 
 # ── Main render entry ────────────────────────────────────────────────────
@@ -218,7 +232,7 @@ render_analyze_html <- function(ctx, out_dir) {
   pa <- ctx$phase_a; pb <- ctx$phase_b; pc <- ctx$phase_c
   pd <- ctx$phase_d; pe <- ctx$phase_e
 
-  # Header strip
+  # Header strip — neutral facts only (no classification/verdict). TODO #60.
   meta <- sprintf(paste0(
     '<div class="meta-grid">',
     '<div class="cell"><div class="lbl">%s</div><div class="val">$%s</div></div>',
@@ -228,21 +242,17 @@ render_analyze_html <- function(ctx, out_dir) {
     '</div>'),
     .tt("Spot"), .fmt_num(pb$price),
     .tt("Sector"), pb$sector %||% "n/a",
-    .tt("classification"), pe$classification,
-    .tt("phase_of_drop"), pe$phase_of_drop)
+    .tt("Stage"), pb$stage %||% "n/a",
+    "Direction", direction)
 
-  # Phase A is informational only — no badge.
-  badges <- sprintf(paste0(
-    '<div class="badges">',
-    '<span class="badge %s">B · %s</span>',
-    '<span class="badge %s">C · %s</span>',
-    '<span class="badge %s">D · %s</span>',
-    '<span class="badge %s">E · %s</span>',
-    '</div>'),
-    .badge_class(pb$result), pb$result,
-    .badge_class(pc$result), pc$result,
-    .badge_class(pd$result), pd$result,
-    .badge_class(pe$classification), pe$classification)
+  # Coverage strip — one badge per dimension showing data provenance, NOT a
+  # verdict. Replaces the old B/C/D/E PASS-SKIP-classification badges.
+  badges <- paste0('<div class="badges">',
+    paste0(vapply(pe$coverage, function(cv)
+      sprintf('<span class="badge %s">%s · %s</span>',
+              .status_class(cv$status, "badge"), cv$dimension, cv$status),
+      character(1)), collapse = ""),
+    '</div>')
 
   # Phase A — informational only. Never SKIPs downstream phases.
   sec_a <- paste0(
@@ -270,20 +280,18 @@ render_analyze_html <- function(ctx, out_dir) {
   # Phase D
   sec_d <- .render_phase_d(pd, direction)
 
-  # Phase E result table — Phase A is informational, not in the classification.
-  sec_e <- sprintf(paste0(
-    '<h2>Phase E — Classification (mechanical)</h2>',
-    '<table>',
-    '<tr><th>Phase</th><th>Result</th></tr>',
-    '<tr class="%s"><td>B &mdash; Trend &amp; sector RS</td><td class="value">%s</td></tr>',
-    '<tr class="%s"><td>C &mdash; Cheap + Vol Funnel</td><td class="value">%s</td></tr>',
-    '<tr class="%s"><td>D &mdash; Setup / Chain / R:R</td><td class="value">%s</td></tr>',
-    '<tr class="%s"><td>E &mdash; classification</td><td class="value">%s &nbsp; <span class="sub">phase_of_drop=%s</span></td></tr>',
-    '</table>'),
-    .row_class(pb$result), pb$result,
-    .row_class(pc$result), pc$result,
-    .row_class(pd$result), pd$result,
-    .row_class(pe$classification), pe$classification, pe$phase_of_drop)
+  # Phase E — data-coverage summary (TODO #60 de-gate). One row per dimension
+  # reporting provenance (LIVE / CACHED / NO DATA / FETCH FAILED). NO verdict.
+  cov_rows <- paste0(vapply(pe$coverage, function(cv)
+    sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+            .status_class(cv$status, "row"), cv$dimension, cv$status, cv$detail),
+    character(1)), collapse = "")
+  sec_e <- paste0(
+    '<h2>Data Coverage (per dimension)</h2>',
+    '<p class="sub">How much of this report is live vs cached vs unavailable. ',
+    'This is provenance, not a verdict — /analyze never ranks or scores a single name.</p>',
+    '<table><tr><th>Dimension</th><th>Provenance</th><th>Detail</th></tr>',
+    cov_rows, '</table>')
 
   # Structures section — outrights table (when computed) + spreads table.
   # Vehicle banner sits above both. Both rendered always when data available.
@@ -292,6 +300,7 @@ render_analyze_html <- function(ctx, out_dir) {
                                    vehicle_reason = pd$vehicle_reason,
                                    structures_retrieved_at = pd$structures_retrieved_at,
                                    outrights = pd$outrights,
+                                   stock_struct = pd$stock_struct,
                                    direction = direction)
 
   # Data summary
@@ -584,6 +593,8 @@ render_analyze_html <- function(ctx, out_dir) {
 
   c_reason <- pd$chain_reason
   e_reason <- pd$entry_reason
+  cs <- pd$chain_status_prov %||% "FETCH FAILED"
+  es <- pd$entry_status_prov %||% "FETCH FAILED"
   chain_html <- sprintf(paste0(
     '<h3>Chain</h3>',
     '<table><tr><th>Field</th><th>Value</th></tr>',
@@ -596,15 +607,16 @@ render_analyze_html <- function(ctx, out_dir) {
     '<tr><td>%s</td><td class="value">%s</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td></tr>',
     '</table>'),
-    .tt("oi_cap_call"), .fmt_cell(pd$oi_cap_call, c_reason),
-    .tt("oi_cap_put"),  .fmt_cell(pd$oi_cap_put,  c_reason),
-    .tt("chain_state"), .fmt_cell(pd$chain_state, c_reason),
-    .tt("effective_target"), .fmt_cell(pd$effective_target, e_reason),
-    .tt("R:R"), .fmt_cell(pd$rr, e_reason),
+    .tt("oi_cap_call"), .fmt_cell(pd$oi_cap_call, c_reason, status = cs),
+    .tt("oi_cap_put"),  .fmt_cell(pd$oi_cap_put,  c_reason, status = cs),
+    .tt("chain_state"), .fmt_cell(pd$chain_state, c_reason, status = cs),
+    .tt("effective_target"), .fmt_cell(pd$effective_target, e_reason, status = es),
+    .tt("R:R"), .fmt_cell(pd$rr, e_reason, status = es),
     .tt("entry_floor / entry_ceiling"),
-      .fmt_cell(pd$entry_floor, e_reason), .fmt_cell(pd$entry_ceiling, e_reason),
-    .tt("headroom_band"), .fmt_cell(pd$headroom_band, e_reason),
-    .tt("entry_state"), .fmt_cell(pd$entry_state, e_reason))
+      .fmt_cell(pd$entry_floor, e_reason, status = es),
+      .fmt_cell(pd$entry_ceiling, e_reason, status = es),
+    .tt("headroom_band"), .fmt_cell(pd$headroom_band, e_reason, status = es),
+    .tt("entry_state"), .fmt_cell(pd$entry_state, e_reason, status = es))
 
   paste0('<h2>Phase D — Setup, Chain, R:R</h2>', targets_html, chain_html)
 }
@@ -618,6 +630,7 @@ render_analyze_html <- function(ctx, out_dir) {
                                vehicle_reason = NULL,
                                structures_retrieved_at = NULL,
                                outrights = NULL,
+                               stock_struct = NULL,
                                direction = "long") {
   cap <- config$risk_cap_lot_usd
 
@@ -633,33 +646,61 @@ render_analyze_html <- function(ctx, out_dir) {
   retrieved_html <- .retrieved_caption(`live pricer` = structures_retrieved_at)
 
   outright_table <- .render_outright_table(outrights, direction)
-  spread_table <- .render_structures_table(structures, cap)
+  spread_table   <- .render_structures_table(structures, cap)
+  stock_table    <- .render_stock_table(stock_struct, direction)
 
-  # Always-open structures section. Vehicle rule is informational, not gating
-  # (Step 4 follow-up 2026-05-12). Only the heading hint changes by vehicle.
-  hint <- if (identical(vehicle, "spread")) ""
-          else if (vehicle %in% c("call", "put"))
-            sprintf('<p class="sub"><b>Outright %s</b> preferred by vehicle rule (cheap IV). Spread enumeration below is shown for reference.</p>',
+  # The vehicle-preferred table renders OPEN; the others collapse (TODO #60
+  # fold-in of former sub-task 2). Vehicle rule is informational, not gating.
+  open_outright <- vehicle %in% c("call", "put")
+  open_stock    <- identical(vehicle, "stock")
+  open_spread   <- identical(vehicle, "spread")
+
+  hint <- if (open_spread) ""
+          else if (open_outright)
+            sprintf('<p class="sub"><b>Outright %s</b> preferred by vehicle rule (cheap IV). Spreads/stock shown below for reference.</p>',
                     vehicle)
-          else if (identical(vehicle, "stock"))
-            '<p class="sub"><b>Stock</b> preferred by vehicle rule (price &lt; $10 or option spread too wide). Spread enumeration below is shown for reference.</p>'
+          else if (open_stock)
+            '<p class="sub"><b>Stock</b> preferred by vehicle rule (price &lt; $10 or option spread too wide). Spreads shown below for reference.</p>'
           else ""
 
-  # Both tables are collapsible (default open). Click summary to toggle.
+  .wrap <- function(open, summary, body) {
+    if (!nzchar(body)) return("")
+    sprintf('<details%s><summary>%s — click to toggle</summary>%s</details>',
+            if (open) " open" else "", summary, body)
+  }
+
   right_label <- if (identical(direction, "short")) "put" else "call"
-  outright_wrapped <- if (nzchar(outright_table)) {
-    sprintf(paste0(
-      '<details open><summary>Outright %s grid — strike × expiry (single-leg long-option pricing) — click to collapse</summary>',
-      '%s</details>'),
-      right_label, outright_table)
-  } else ""
+  outright_wrapped <- .wrap(open_outright,
+    sprintf("Outright %s grid — strike × expiry (single-leg long-option pricing)",
+            right_label),
+    outright_table)
+  stock_wrapped <- .wrap(open_stock, "Stock-only structure (R:R off stop band)",
+                         stock_table)
+  spread_wrapped <- .wrap(open_spread,
+    sprintf("Vertical spreads — DEBIT only, within $%d/lot cap", cap),
+    paste0(retrieved_html, spread_table))
 
-  spread_wrapped <- sprintf(paste0(
-    '<details open><summary>Vertical spreads — DEBIT only, within $%d/lot cap — click to collapse</summary>',
-    '%s%s</details>'),
-    cap, retrieved_html, spread_table)
+  paste0(vehicle_banner, hint, outright_wrapped, stock_wrapped, spread_wrapped)
+}
 
-  paste0(vehicle_banner, hint, outright_wrapped, spread_wrapped)
+#' Render the stock-only structure as a one-row table. Returns "" when NULL.
+.render_stock_table <- function(stock_struct, direction) {
+  if (is.null(stock_struct) || nrow(stock_struct) == 0) return("")
+  r <- stock_struct[1, , drop = FALSE]
+  fmt <- function(v) if (is.null(v) || is.na(v)) "&mdash;" else sprintf("$%.2f", v)
+  rr  <- if (is.na(r$rr)) "&mdash;" else sprintf("%.2f", r$rr)
+  paste0(
+    '<table><tr><th>Entry</th><th>Stop</th><th>Target (low/high)</th>',
+    '<th>Risk/sh</th><th>Reward/sh</th><th>R:R</th></tr>',
+    sprintf(paste0('<tr class="row-pass"><td>%s</td><td>%s</td>',
+                   '<td>%s / %s</td><td>%s</td><td>%s</td><td class="value">%s</td></tr>'),
+            fmt(r$entry), fmt(r$stop), fmt(r$target_low), fmt(r$target_high),
+            fmt(r$risk_per_share), fmt(r$reward_per_share), rr),
+    '</table>',
+    sprintf('<p class="sub">Stock entry at spot; mechanical stop %s of spot; ',
+            "5%"),
+    sprintf('reward to the structural target (%s tail). R:R = reward/risk per share.</p>',
+            direction))
 }
 
 #' Render the outright-option strike × expiry grid. Returns "" when outrights
@@ -718,9 +759,12 @@ render_analyze_html <- function(ctx, out_dir) {
                   ' per lot. (Live pricer unavailable, or no qualifying ',
                   'structures after the filter.)</p>'))
   }
-  # If a FETCH FAILED placeholder row sneaks through, render the surface_fact.
-  if (any(structures$structure == "FETCH FAILED", na.rm = TRUE)) {
-    msgs <- structures$surface_fact[structures$structure == "FETCH FAILED"]
+  # If an unavailable-structures placeholder row sneaks through (FETCH FAILED
+  # or NO DATA), render its surface_fact rather than an empty table.
+  ph <- !is.na(structures$structure) &
+        structures$structure %in% c("FETCH FAILED", "NO DATA")
+  if (any(ph)) {
+    msgs <- structures$surface_fact[ph]
     return(paste0('<p class="sub">', paste(msgs, collapse = "<br>"), '</p>'))
   }
 
@@ -817,8 +861,6 @@ render_analyze_html <- function(ctx, out_dir) {
                             sprintf("%+.2f%%", ctx$rs_vs_sector_60d) else "n/a")
                 else "n/a"
   rows <- list(
-    c("classification", pe$classification),
-    c("phase_of_drop", pe$phase_of_drop),
     c("stage / direction alignment",
       sprintf("%s / %s", pb$stage %||% "n/a", pb$direction_match %||% "n/a")),
     c("sector_rs_rank",

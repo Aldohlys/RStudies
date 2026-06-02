@@ -154,16 +154,12 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
       message("Sector RS context failed: ", conditionMessage(e)); NULL
     })
 
-  # Phase B result: PASS if direction aligns AND sector is in the favorable
-  # half by direction-aware rank. SKIP otherwise. STALE only if breakdown
-  # itself failed (no live OHLC).
-  result <- if (is.null(breakdown) || nrow(breakdown) == 0) "STALE"
-            else if (align == "ALIGNED" &&
-                     !is.null(sector_ctx) &&
-                     !is.na(sector_ctx$sector_rank) &&
-                     !is.na(sector_ctx$n_sectors) &&
-                     sector_ctx$sector_rank <= ceiling(sector_ctx$n_sectors / 2)) "PASS"
-            else "SKIP"
+  # Phase B is no longer a gate (TODO #60 de-gate). `result` is now a neutral
+  # PROVENANCE status, not a PASS/SKIP verdict: LIVE when the live-OHLC
+  # breakdown computed, FETCH FAILED when it didn't. The analytical facts
+  # (direction_match, sector_rank, stage) are reported on their own merits.
+  result <- if (is.null(breakdown) || nrow(breakdown) == 0) "FETCH FAILED"
+            else "LIVE"
 
   list(
     result           = result,
@@ -275,11 +271,15 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   ivp_used    <- if (!is.null(funnel)) funnel$ivp_used else NA_real_
   vrp_value   <- if (!is.null(funnel)) funnel$vrp_log  else NA_real_
 
+  # cheap_pass is kept as an analytical FACT (score >= 6 of 9), not a gate.
   cheap_pass <- !is.na(cheap_score) && cheap_score >= 6L
 
-  result <- if (!is.na(cheap_score)) {
-    if (cheap_pass) "PASS" else "SKIP"
-  } else "STALE"
+  # `result` is now a neutral PROVENANCE status (TODO #60 de-gate), not
+  # PASS/SKIP: LIVE when the funnel produced cheap-score components, a SKIPPED
+  # note when the funnel was switched off, FETCH FAILED otherwise.
+  result <- if (!is.null(components)) "LIVE"
+            else if (!run_funnel) "SKIPPED (--no-vol-funnel)"
+            else "FETCH FAILED"
 
   list(
     result      = result,
@@ -358,28 +358,59 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   )
 }
 
-# ── PHASE E ──────────────────────────────────────────────────────────────
-# Step 5 rewrite 2026-05-12: Phase A is informational, no longer gates Phase E.
-# Classification driven by B / C / D outcomes.
+# ── PHASE E — Data-coverage summary (TODO #60 de-gate) ────────────────────
+# /analyze runs on ONE ticker the user already chose to study, so there is no
+# gate to drop it at and no verdict to render. Phase E is now a NEUTRAL
+# coverage summary: one row per dimension, reporting how much of the report is
+# real (LIVE / CACHED / NO DATA / FETCH FAILED). NO TOP PICK/WATCH/SKIP, NO
+# phase_of_drop.
 run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config) {
-  pass_b <- phase_b$result == "PASS"
-  pass_c <- phase_c$result == "PASS"
-  pass_d <- phase_d$result == "PASS"
+  # Fold the vol-funnel's per-signal statuses into one funnel-level status:
+  # the worst (most-degraded) of its parts, so a single FETCH FAILED isn't
+  # hidden behind five LIVE rows.
+  funnel_status <- "FETCH FAILED"
+  funnel_detail <- "vol funnel unavailable"
+  if (!is.null(phase_c$funnel) && !is.null(phase_c$funnel$statuses)) {
+    st <- unlist(phase_c$funnel$statuses)
+    worst <- Reduce(.worse_status, st, accumulate = FALSE)
+    funnel_status <- worst
+    t <- phase_c$funnel$tally
+    funnel_detail <- sprintf("%d favorable / %d unfavorable / %d unavailable",
+                             t$favorable, t$unfavorable, t$unavailable)
+  } else if (isTRUE(grepl("SKIPPED", phase_c$result %||% ""))) {
+    funnel_status <- "SKIPPED"; funnel_detail <- "--no-vol-funnel"
+  }
 
-  # phase_of_drop: B / C / D / none. Phase A no longer participates.
-  drop <- if (!pass_b) "B"
-          else if (!pass_c) "C"
-          else if (!pass_d) "D"
-          else "none"
-
-  label <- if (pass_b && pass_c && pass_d &&
-               isTRUE(phase_d$any_within_cap)) "TOP PICK"
-           else if (pass_b && pass_c) "WATCH"
-           else "SKIP"
-
-  list(
-    classification = label,
-    phase_of_drop  = drop,
-    pass_a = TRUE, pass_b = pass_b, pass_c = pass_c, pass_d = pass_d
+  coverage <- list(
+    list(dimension = "Trend &amp; sector RS (B)",
+         status = phase_b$result %||% "FETCH FAILED",
+         detail = sprintf("stage=%s · alignment=%s",
+                          phase_b$stage %||% "n/a",
+                          phase_b$direction_match %||% "n/a")),
+    list(dimension = "Cheap score (C.1)",
+         status = if (!is.na(phase_c$cheap_score)) "LIVE"
+                  else if (isTRUE(grepl("SKIPPED", phase_c$result %||% ""))) "SKIPPED"
+                  else "FETCH FAILED",
+         detail = sprintf("cheap_score=%s/%s",
+                          phase_c$cheap_score %||% "n/a", phase_c$cheap_max %||% 9L)),
+    list(dimension = "Vol funnel (C.2)",
+         status = funnel_status, detail = funnel_detail),
+    list(dimension = "Targets / R:R (D)",
+         status = phase_d$entry_status_prov %||% "FETCH FAILED",
+         detail = sprintf("targets_agreeing=%s · R:R=%s · entry=%s",
+                          phase_d$targets_agreeing %||% "n/a",
+                          if (is.null(phase_d$rr) || is.na(phase_d$rr)) "n/a"
+                            else sprintf("%.2f", phase_d$rr),
+                          phase_d$entry_state %||% "n/a")),
+    list(dimension = "Chain / OI (D)",
+         status = phase_d$chain_status_prov %||% "FETCH FAILED",
+         detail = sprintf("chain_state=%s", phase_d$chain_state %||% "n/a")),
+    list(dimension = "Structures (D)",
+         status = phase_d$structures_status_prov %||% "FETCH FAILED",
+         detail = sprintf("%s within $%s/lot cap",
+                          phase_d$n_structures_within_cap %||% 0L,
+                          config$risk_cap_lot_usd %||% "?"))
   )
+
+  list(coverage = coverage)
 }

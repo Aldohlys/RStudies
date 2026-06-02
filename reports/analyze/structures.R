@@ -68,6 +68,11 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     list(oi_cap_call = NA_real_, oi_cap_put = NA_real_,
          chain_state = NA_character_, reason = chain_r$reason)
   }
+  # Neutral provenance for the coverage summary (TODO #60): inherit the
+  # resolver status; CSV fallback is CACHED.
+  chain_status_prov <- if (is.list(chain_r$value)) (chain_r$status %||% "LIVE")
+                       else if (!is.na(chain$oi_cap_call) || !is.na(chain$oi_cap_put)) "CACHED"
+                       else (chain_r$status %||% "FETCH FAILED")
 
   # Structures: live pricer runs whenever TWS is reachable; otherwise we
   # surface FETCH FAILED instead of issuing a request that may hang. Two
@@ -93,15 +98,23 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     iv_outright, config),
     error = function(e) { message("outrights enum failed: ", conditionMessage(e)); NULL })
 
-  d_pass <- !is.na(targets$targets_agreeing) &&
-            targets$targets_agreeing >= 2L &&
-            isTRUE(rr_obj$rr >= config$rr_min) &&
-            (rr_obj$entry_state == "IN BAND") &&
-            !identical(chain$chain_state, "chain-capped") &&
-            n_within > 0
+  # TODO #60 de-gate: no d_pass verdict. Each sub-fact is reported on its own
+  # merits and the coverage summary reads the provenance fields below.
+  structures_status_prov <-
+    if (!is.null(structures) && "prov_status" %in% names(structures))
+      structures$prov_status[1]
+    else if (!is.null(structures) && nrow(structures) > 0) "LIVE"
+    else "FETCH FAILED"
+  entry_status_prov <-
+    if (!is.null(rr_obj$rr) && !is.na(rr_obj$rr)) "LIVE"
+    else if (is.na(spot) || is.na(expiry)) "FETCH FAILED"
+    else "NO DATA"
+
+  # Stock-only structure (vehicle == "stock"): single-row R:R off a stop band.
+  stock_struct <- if (identical(vehicle, "stock"))
+    .stock_structure(direction, spot, targets, config) else NULL
 
   list(
-    result            = if (d_pass) "PASS" else "SKIP",
     vehicle           = vehicle,
     vehicle_reason    = vehicle_reason,
     structures_retrieved_at = if (isTRUE(tws_ok) && !is.null(structures) &&
@@ -130,7 +143,39 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     n_structures_within_cap = n_within,
     any_within_cap    = n_within > 0,
     outrights         = outrights,
-    spot              = spot
+    stock_struct      = stock_struct,
+    spot              = spot,
+    # Neutral provenance for the coverage summary (Phase E)
+    chain_status_prov      = chain_status_prov,
+    entry_status_prov      = entry_status_prov,
+    structures_status_prov = structures_status_prov
+  )
+}
+
+#' Build a one-row stock-only structure (vehicle == "stock"). R:R is computed
+#' off a mechanical stop band: 5% adverse for the entry stop, structural target
+#' for the reward. Returns a data.frame or NULL when spot/targets are missing.
+.stock_structure <- function(direction, spot, targets, config) {
+  if (is.null(spot) || is.na(spot)) return(NULL)
+  tgt <- if (direction == "long") targets$spot_target_low
+         else targets$spot_target_low  # both tails use the closer level
+  if (is.null(tgt) || is.na(tgt)) return(NULL)
+  stop_pct <- as.numeric(config$stock_stop_pct %||% 0.05)
+  stop_lvl <- if (direction == "long") spot * (1 - stop_pct)
+              else                      spot * (1 + stop_pct)
+  risk_ps   <- abs(spot - stop_lvl)
+  reward_ps <- abs(tgt - spot)
+  rr <- if (risk_ps > 0) reward_ps / risk_ps else NA_real_
+  data.frame(
+    entry        = round(spot, 2),
+    stop         = round(stop_lvl, 2),
+    target_low   = round(targets$spot_target_low, 2),
+    target_high  = if (is.na(targets$spot_target_high)) NA_real_
+                   else round(targets$spot_target_high, 2),
+    risk_per_share   = round(risk_ps, 2),
+    reward_per_share = round(reward_ps, 2),
+    rr           = if (is.na(rr)) NA_real_ else round(rr, 2),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -421,7 +466,8 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
     if (length(failures) > 0)
       paste("compute_spread_risk_reward returned no rows;", paste(failures, collapse = "; "))
     else
-      "compute_spread_risk_reward returned no rows for any width"))
+      "compute_spread_risk_reward returned no rows for any width",
+    status = "NO DATA"))
 
   spreads_df <- do.call(rbind, rows)
 
@@ -441,7 +487,8 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
                             spreads_df$within_cap, , drop = FALSE]
 
   if (nrow(spreads_df) == 0) return(.fetch_failed_structures(
-    "no DEBIT spreads survived the within-cap + phantom filter"))
+    "no DEBIT spreads survived the within-cap + phantom filter",
+    status = "NO DATA"))
 
   # Sort by expected_value descending. Fall back to RR if EV missing.
   sort_key <- if ("expected_value" %in% names(spreads_df))
@@ -451,12 +498,13 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
   spreads_df
 }
 
-#' Single-row data frame surfacing a FETCH FAILED reason in the structures
-#' table. Numeric cells stay NA so report.R renders them as `n/a`, but the
-#' `reason` column carries the cause so the user is never silently misled.
-.fetch_failed_structures <- function(reason) {
+#' Single-row data frame surfacing an unavailable-structures reason. `status`
+#' (TODO #60) distinguishes FETCH FAILED (no response: TWS down, import failed)
+#' from NO DATA (pricer ran but returned/kept no rows). Numeric cells stay NA so
+#' report.R renders them as `n/a`; `surface_fact` carries the cause.
+.fetch_failed_structures <- function(reason, status = "FETCH FAILED") {
   data.frame(
-    structure          = "FETCH FAILED",
+    structure          = status,
     expiry             = NA_character_,
     debit              = NA_real_,
     max_risk           = NA_real_,
@@ -464,8 +512,9 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
     reward_risk_ratio  = NA_real_,
     prob_success_delta = NA_real_,
     within_cap         = NA,
-    surface_fact       = paste0("FETCH FAILED: ", reason),
+    surface_fact       = paste0(status, ": ", reason),
     source             = "fetch_failed",
+    prov_status        = status,
     stringsAsFactors   = FALSE
   )
 }

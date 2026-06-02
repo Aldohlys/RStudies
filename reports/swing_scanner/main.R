@@ -1,6 +1,6 @@
 # main.R — Swing Scanner entry point (front-run option flow)
 #
-# Pipeline: Phase A (Universe) → B (Pull) → C (Cheap) → D (Setup/Chain/R:R)
+# Pipeline: Phase A (Universe) → B (Flow) → C (Cheap) → D (Setup/Chain/R:R)
 #         → E (Classification + Display)
 #
 # Run: Rscript RStudies/reports/swing_scanner/main.R
@@ -30,13 +30,13 @@ source(file.path(SCRIPT_DIR, "fetch.R"))
 source(file.path(SCRIPT_DIR, "sector_gate.R"))
 source(file.path(SCRIPT_DIR, "vol_profile.R"))
 source(file.path(SCRIPT_DIR, "universe_filter.R"))
-source(file.path(SCRIPT_DIR, "pull_score.R"))
+source(file.path(SCRIPT_DIR, "flow_score.R"))
 source(file.path(SCRIPT_DIR, "cheap_score.R"))
 source(file.path(SCRIPT_DIR, "setup_chain_rr.R"))
 source(file.path(SCRIPT_DIR, "classify.R"))
 source(file.path(SCRIPT_DIR, "render_html.R"))
 
-SCANNER_SCHEMA_VERSION <- 5L
+SCANNER_SCHEMA_VERSION <- 6L  # 6: pull_score/pull_direction -> flow_score/flow_direction
 
 message("=== SWING SCANNER (front-run option flow) ===")
 message("Run date: ", format(Sys.Date()),
@@ -91,8 +91,8 @@ sector_rank_map <- setNames(rank(-sector_rs, ties.method = "first"), long_sector
 n_long <- length(long_sectors)
 message(sprintf("  LONG-passing sectors (RS-ranked): %d", n_long))
 
-# ── Phase B: Pull score on Phase-A survivors ──────────────────────────────
-message("Phase B: Pull screening...")
+# ── Phase B: Flow score on Phase-A survivors ──────────────────────────────
+message("Phase B: Flow screening...")
 rich_pass_set <- rich_eval$sym[rich_eval$passes_gate == 1]
 trend_cache <- list()
 results <- list()
@@ -112,7 +112,7 @@ for (sec in sectors) {
     trend_cache[[tk]] <- trend_res
 
     sec_rank <- sector_rank_map[sec]
-    pull <- score_pull(last, price, etf_ret,
+    flow <- score_flow(last, price, etf_ret,
                        sector_rs_rank = if (!is.na(sec_rank)) sec_rank else 99,
                        n_long_sectors = n_long,
                        sector_long_gate = isTRUE(sect_gate$long),
@@ -121,24 +121,24 @@ for (sec in sectors) {
                        rs_3m = trend_res$rs_vs_bench_3m)
     results[[paste0(sec, "_", tk)]] <- list(
       sym = tk, sector = sec, price = price, last = last,
-      rich_pass = TRUE, pull = pull)
+      rich_pass = TRUE, flow = flow)
   }
 }
 # Add Phase-A failures as SKIP rows (so funnel + filter chips work)
 for (tk in setdiff(all_stocks, rich_pass_set)) {
   results[[paste0("X_", tk)]] <- list(
     sym = tk, sector = NA_character_, price = NA_real_, last = NULL,
-    rich_pass = FALSE, pull = NULL)
+    rich_pass = FALSE, flow = NULL)
 }
 
 n_b_pass <- sum(sapply(results, function(r)
-  isTRUE(r$rich_pass) && isTRUE(r$pull$passes)))
+  isTRUE(r$rich_pass) && isTRUE(r$flow$passes)))
 message(sprintf("  Phase B pass: %d", n_b_pass))
 
 # ── Phase C: Cheap score on Phase-B survivors ─────────────────────────────
 message("Phase C: Cheap screening (option fetch)...")
 phase_b_syms <- as.character(sapply(Filter(function(r)
-  isTRUE(r$rich_pass) && isTRUE(r$pull$passes), results), function(r) r$sym))
+  isTRUE(r$rich_pass) && isTRUE(r$flow$passes), results), function(r) r$sym))
 
 if (length(phase_b_syms) > 0) {
   vol_data <- load_vol_profiles(phase_b_syms, conn)
@@ -166,7 +166,7 @@ for (sec in unique(unlist(lapply(results, `[[`, "sector"))[!is.na(unique(unlist(
 
 for (key in names(results)) {
   r <- results[[key]]
-  if (!isTRUE(r$rich_pass) || !isTRUE(r$pull$passes)) next
+  if (!isTRUE(r$rich_pass) || !isTRUE(r$flow$passes)) next
   vol_row <- gate3[gate3$Ticker == r$sym, ][1, , drop = FALSE]
   skew_history <- tryCatch(dbGetQuery(conn,
     "SELECT cache_date, skew_25d FROM option_skew_history
@@ -176,12 +176,12 @@ for (key in names(results)) {
     error = function(e) NULL)
   cheap <- score_cheap(vol_row, skew_history,
                        sector_iv_median = sector_ivp_median[[r$sector]],
-                       pull_direction = r$pull$pull_direction)
+                       flow_direction = r$flow$flow_direction)
   results[[key]]$cheap <- cheap
   results[[key]]$vol_row <- vol_row
 }
 n_c_pass <- sum(sapply(results, function(r) {
-  isTRUE(r$rich_pass) && isTRUE(r$pull$passes) && !is.null(r$cheap) && isTRUE(r$cheap$passes)
+  isTRUE(r$rich_pass) && isTRUE(r$flow$passes) && !is.null(r$cheap) && isTRUE(r$cheap$passes)
 }))
 message(sprintf("  Phase C pass: %d", n_c_pass))
 
@@ -189,13 +189,13 @@ message(sprintf("  Phase C pass: %d", n_c_pass))
 message("Phase D: Setup, Chain, R:R...")
 for (key in names(results)) {
   r <- results[[key]]
-  if (!isTRUE(r$rich_pass) || !isTRUE(r$pull$passes) ||
+  if (!isTRUE(r$rich_pass) || !isTRUE(r$flow$passes) ||
       is.null(r$cheap) || !isTRUE(r$cheap$passes)) next
 
   # ATM bid/ask % (placeholder — populated by daily option fetch)
   atm_pct <- NA_real_
 
-  vex <- pick_vehicle_expiry(r$price, r$cheap$cheap_score, r$pull$stage, atm_pct)
+  vex <- pick_vehicle_expiry(r$price, r$cheap$cheap_score, r$flow$stage, atm_pct)
 
   # Compute structural target from this ticker's price history
   hist <- raw[raw$ticker == r$sym, ] |> dplyr::arrange(date)
@@ -295,15 +295,15 @@ df <- do.call(rbind, lapply(results, function(r) {
     sym = r$sym,
     sector = ifelse(is.na(r$sector), "", r$sector),
     rich_pass = isTRUE(r$rich_pass),
-    pull_pass = !is.null(r$pull) && isTRUE(r$pull$passes),
+    flow_pass = !is.null(r$flow) && isTRUE(r$flow$passes),
     cheap_pass = !is.null(r$cheap) && isTRUE(r$cheap$passes),
-    stage = if (!is.null(r$pull)) r$pull$stage else NA_character_,
-    pull_score = if (!is.null(r$pull)) r$pull$pull_score else NA_integer_,
-    pull_direction = if (!is.null(r$pull)) r$pull$pull_direction else NA_character_,
-    sector_rs_rank = if (!is.null(r$pull)) r$pull$sector_rs_rank else NA_integer_,
-    stage_pts = if (!is.null(r$pull)) r$pull$stage_pts else NA_integer_,
-    sector_pts = if (!is.null(r$pull)) r$pull$sector_pts else NA_integer_,
-    footprint_pts = if (!is.null(r$pull)) r$pull$footprint_pts else NA_integer_,
+    stage = if (!is.null(r$flow)) r$flow$stage else NA_character_,
+    flow_score = if (!is.null(r$flow)) r$flow$flow_score else NA_integer_,
+    flow_direction = if (!is.null(r$flow)) r$flow$flow_direction else NA_character_,
+    sector_rs_rank = if (!is.null(r$flow)) r$flow$sector_rs_rank else NA_integer_,
+    stage_pts = if (!is.null(r$flow)) r$flow$stage_pts else NA_integer_,
+    sector_pts = if (!is.null(r$flow)) r$flow$sector_pts else NA_integer_,
+    footprint_pts = if (!is.null(r$flow)) r$flow$footprint_pts else NA_integer_,
     cheap_score = if (!is.null(r$cheap)) r$cheap$cheap_score else NA_integer_,
     cheap_side  = if (!is.null(r$cheap)) r$cheap$cheap_side else NA_character_,
     ivp_used = if (!is.null(r$cheap)) r$cheap$ivp_used else NA_real_,
@@ -340,7 +340,7 @@ message(sprintf("  TOP PICK: %d  WATCH: %d  SKIP: %d",
                 n_top, n_watch, sum(df$rank == "SKIP")))
 
 # ── Persist results to scanner_results ────────────────────────────────────
-keep_cols <- intersect(c("sym","sector","stage","pull_score","pull_direction",
+keep_cols <- intersect(c("sym","sector","stage","flow_score","flow_direction",
   "sector_rs_rank","cheap_score","cheap_side","ivp_2y","vrp","vehicle",
   "strike","expiry","spot_target_low","spot_target_high","targets_agreeing",
   "fib_confirms","oi_cap_call","oi_cap_put","chain_state","crowded_flag",
@@ -362,7 +362,7 @@ dbDisconnect(conn)
 # ── Funnel for HTML ─────────────────────────────────────────────────────────
 funnel <- c(
   "Universe"  = nrow(df),
-  "Pull"      = sum(df$pull_pass),
+  "Flow"      = sum(df$flow_pass),
   "Cheap"     = sum(df$cheap_pass),
   "Setup R:R" = sum(df$rank %in% c("TOP PICK", "WATCH")),
   "TOP PICK"  = n_top

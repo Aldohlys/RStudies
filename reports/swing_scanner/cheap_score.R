@@ -14,10 +14,10 @@
 #'                     across the last ~12 months. NULL → skew_pt = 0.
 #' @param sector_iv_median numeric — median IVP_2y across rich-universe peers
 #'                         in same sector (NA → cross-sectional_pt = 0)
-#' @param pull_direction "up", "down", or "neutral"
+#' @param flow_direction "up", "down", or "neutral"
 #' @return list: cheap_score, cheap_side, passes, components
 score_cheap <- function(vol_row, skew_history = NULL, sector_iv_median = NA,
-                        pull_direction = "neutral") {
+                        flow_direction = "neutral") {
   if (is.null(vol_row) || nrow(vol_row) == 0) {
     return(list(cheap_score = 0L, cheap_side = "neutral",
                 passes = FALSE, ivp_2y = NA, vrp = NA,
@@ -62,7 +62,7 @@ score_cheap <- function(vol_row, skew_history = NULL, sector_iv_median = NA,
 
   # ── Skew vs own history (1 pt) — call/put side bid up vs own median ────
   # Sign convention: skew_25d = call25_iv - put25_iv. Positive = call skew
-  # heavy (calls bid). When pull_direction = up, we want call skew NOT
+  # heavy (calls bid). When flow_direction = up, we want call skew NOT
   # already bid — so prefer skew below own historical median.
   skew_pt <- 0L
   if (!is.null(skew_history) && nrow(skew_history) >= 30 &&
@@ -70,8 +70,8 @@ score_cheap <- function(vol_row, skew_history = NULL, sector_iv_median = NA,
     median_skew <- median(skew_history$skew_25d, na.rm = TRUE)
     current_skew <- if ("skew_25d" %in% names(vol_row)) vol_row$skew_25d else NA
     if (!is.na(current_skew) && !is.na(median_skew)) {
-      if (pull_direction == "up" && current_skew < median_skew) skew_pt <- 1L
-      else if (pull_direction == "down" && current_skew > median_skew) skew_pt <- 1L
+      if (flow_direction == "up" && current_skew < median_skew) skew_pt <- 1L
+      else if (flow_direction == "down" && current_skew > median_skew) skew_pt <- 1L
     }
   }
 
@@ -96,9 +96,9 @@ score_cheap <- function(vol_row, skew_history = NULL, sector_iv_median = NA,
   }
 
   # ── C.3 Cutoff ────────────────────────────────────────────────────────
-  side_aligns <- (pull_direction == "up" && cheap_side != "put-cheap") ||
-                 (pull_direction == "down" && cheap_side != "call-cheap") ||
-                 (pull_direction == "neutral")
+  side_aligns <- (flow_direction == "up" && cheap_side != "put-cheap") ||
+                 (flow_direction == "down" && cheap_side != "call-cheap") ||
+                 (flow_direction == "neutral")
   passes <- cheap_score >= 6 && side_aligns
 
   list(

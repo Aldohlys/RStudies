@@ -1,7 +1,7 @@
 # render_html.R — Interactive HTML report with DataTables, per-day file
 #
 # Renders the scanner output as a single self-contained HTML file:
-#   - Funnel summary (Universe → Pull → Cheap → Setup → TOP PICK)
+#   - Funnel summary (Universe → Flow → Cheap → Setup → TOP PICK)
 #   - Filter chips (phase-of-drop, sector, vehicle, show SKIP)
 #   - DataTables-rendered master table with Tier 1 visible / Tier 2 hidden columns
 #
@@ -21,10 +21,10 @@ render_scanner_html <- function(df, funnel, out_dir, run_date = Sys.Date(),
 
   # Tier 1 visible columns and Tier 2 hidden — exact subset names must exist
   # in df. Missing columns rendered as empty strings.
-  tier1 <- c("sym", "sector", "stage", "pull_score", "cheap_score",
+  tier1 <- c("sym", "sector", "stage", "flow_score", "cheap_score",
              "vehicle", "spot_target_low", "rr",
              "entry_floor", "entry_ceiling", "entry_state", "chain_state")
-  tier2 <- c("pull_direction", "cheap_side", "targets_agreeing", "fib_confirms",
+  tier2 <- c("flow_direction", "cheap_side", "targets_agreeing", "fib_confirms",
              "oi_cap_call", "oi_concentration_pct", "crowded_flag",
              "headroom_band", "phase_of_drop", "sector_rs_rank",
              "ivp_2y", "vrp", "expiry", "strike",
@@ -98,13 +98,13 @@ table.dataTable thead th { background: #f0f0f0; }
 </style>
 </head><body>
 <h1>Swing Scanner — %s</h1>
-<div class="subtitle">Phases: A(Universe) → B(Pull) → C(Cheap) → D(Setup/Chain/R:R) → E(Classify). R:R_min = %.2f.</div>
+<div class="subtitle">Phases: A(Universe) → B(Flow) → C(Cheap) → D(Setup/Chain/R:R) → E(Classify). R:R_min = %.2f.</div>
 <div class="funnel">%s</div>
 <div class="chips">
   <select id="phaseChip" class="chip">
     <option value="">All phases</option>
     <option value="A">Dropped at A (Universe)</option>
-    <option value="B">Dropped at B (Pull)</option>
+    <option value="B">Dropped at B (Flow)</option>
     <option value="C">Dropped at C (Cheap)</option>
     <option value="D">Dropped at D (Setup/Chain/R:R)</option>
   </select>

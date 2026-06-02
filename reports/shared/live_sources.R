@@ -39,14 +39,31 @@ if (!exists("%||%", mode = "function")) {
   tryCatch(Tdata:::tdata_py, error = function(e) NULL)
 }
 
-#' Standard return-shape constructor.
-.ok <- function(value, source, retrieved_at = Sys.time(), reason = NULL) {
+#' Standard return-shape constructor. `status` is the neutral provenance label
+#' surfaced by /analyze (see TODO #60): LIVE / CACHED / NO DATA / FETCH FAILED.
+#' Defaults derive from `source` so existing call-sites need no change:
+#'   source "live"                         -> LIVE
+#'   source "db" / "csv" / "computed"      -> CACHED
+.ok <- function(value, source, retrieved_at = Sys.time(), reason = NULL,
+                status = NULL) {
+  if (is.null(status))
+    status <- if (identical(source, "live")) "LIVE" else "CACHED"
   list(value = value, source = source,
-       retrieved_at = retrieved_at, reason = reason)
+       retrieved_at = retrieved_at, reason = reason, status = status)
 }
-.miss <- function(reason, source = "unavailable") {
+
+#' FETCH FAILED: the request never produced a response (connect refused,
+#' timeout, exception, dependency unavailable). Default status.
+.miss <- function(reason, source = "unavailable", status = "FETCH FAILED") {
   list(value = NA, source = source,
-       retrieved_at = Sys.time(), reason = reason)
+       retrieved_at = Sys.time(), reason = reason, status = status)
+}
+
+#' NO DATA: the request SUCCEEDED but the response was empty / all-NaN / zero
+#' (illiquid strike, off-RTH, missing tick subscription). Distinct from
+#' FETCH FAILED — the pipe is up, the market just had nothing to say.
+.nodata <- function(reason, source = "empty") {
+  .miss(reason, source = source, status = "NO DATA")
 }
 
 #' Pick the IBKR expiration whose DTE is closest to `target_dte`. Filters out
@@ -175,8 +192,8 @@ resolve_expiry <- function(ticker, target_dte = 45, tws_ok = TRUE) {
   iv_c <- fetch("C"); iv_p <- fetch("P")
   ivs <- c(iv_c, iv_p); ivs <- ivs[!is.na(ivs)]
   if (length(ivs) == 0)
-    return(.miss(sprintf("getOptValue returned no IV for %s @ %s",
-                         atm_strike, expiration)))
+    return(.nodata(sprintf("getOptValue returned 0/NaN IV for %s @ %s",
+                           atm_strike, expiration)))
   .ok(mean(ivs), source = "live",
       reason = NULL)
 }
@@ -312,7 +329,7 @@ resolve_ivp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   if (is.null(res))
     return(.miss("getIVPercentileLevels returned NULL"))
   if (is.null(res$current) || is.na(res$current))
-    return(.miss("getIVPercentileLevels: no current_iv"))
+    return(.nodata("getIVPercentileLevels OK but no current_iv"))
   ivp <- .interp_ivp(res$current, res$p10, res$p25, res$p50, res$p75, res$p90)
   if (is.na(ivp))
     return(.miss(sprintf("interp failed: current=%.3f p10..p90=%s",
@@ -352,9 +369,9 @@ resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   res <- tryCatch(Tdata::getVolMetrics(ticker),
                   error = function(e) NULL)
   if (is.null(res) || !is.data.frame(res) || nrow(res) == 0)
-    return(.miss("getVolMetrics returned empty"))
+    return(.nodata("getVolMetrics request OK but returned empty"))
   rvp <- suppressWarnings(as.numeric(res$rvp[1]))
-  if (is.na(rvp)) return(.miss("getVolMetrics: rvp is NA"))
+  if (is.na(rvp)) return(.nodata("getVolMetrics returned NaN rvp"))
   .ok(round(rvp, 1), source = "live",
       reason = sprintf("from getVolMetrics (RV30=%.1f%%)",
                        suppressWarnings(as.numeric(res$rv30[1])) * 100))
@@ -400,7 +417,8 @@ resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   df_c <- fetch_df("C"); df_p <- fetch_df("P")
   if ((is.null(df_c) || nrow(df_c) == 0) &&
       (is.null(df_p) || nrow(df_p) == 0))
-    return(.miss(sprintf("getOptValue empty for both wings on %s", expiration)))
+    return(.nodata(sprintf("getOptValue OK but empty for both wings on %s",
+                           expiration)))
 
   pick_25d <- function(df, want_sign) {
     if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) return(NA_real_)
@@ -413,9 +431,9 @@ resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   c25 <- pick_25d(df_c,  1)
   p25 <- pick_25d(df_p, -1)
   if (is.na(c25) && is.na(p25))
-    return(.miss("no 25Δ strike with IV/delta from IBKR"))
+    return(.nodata("getOptValue OK but no 25Δ strike carried IV/delta"))
   if (is.na(c25) || is.na(p25))
-    return(.miss(sprintf("only one wing available (call25=%s, put25=%s)",
+    return(.nodata(sprintf("only one wing available (call25=%s, put25=%s)",
                           ifelse(is.na(c25), "n/a", sprintf("%.4f", c25)),
                           ifelse(is.na(p25), "n/a", sprintf("%.4f", p25)))))
   .ok(list(rr_vp = (c25 - p25) * 100, call25_iv = c25, put25_iv = p25,
@@ -465,7 +483,7 @@ resolve_skew_25d <- function(ticker, spot, freshness, tws_ok = TRUE,
   oi_rows$open_interest <- suppressWarnings(as.numeric(oi_rows$open_interest))
   oi_rows <- oi_rows[!is.na(oi_rows$open_interest) & oi_rows$open_interest > 0, ]
   if (nrow(oi_rows) == 0)
-    return(.miss(sprintf("%s: all OI rows empty/zero", source)))
+    return(.nodata(sprintf("%s: OI rows arrived but all 0/NaN", source)))
   if (is.na(spot) || !is.finite(spot)) {
     calls <- oi_rows[FALSE, , drop = FALSE]
     puts  <- oi_rows[FALSE, , drop = FALSE]
@@ -532,7 +550,8 @@ resolve_chain_oi <- function(ticker, expiry, spot, freshness, tws_ok = TRUE,
   if (is.character(live_oi) && length(live_oi) == 1)
     return(.miss(paste("get_chain_oi:", live_oi)))
   if (is.null(live_oi) || !is.data.frame(live_oi) || nrow(live_oi) == 0)
-    return(.miss(sprintf("get_chain_oi: no rows for %s @ %s", ticker, expiry)))
+    return(.nodata(sprintf("get_chain_oi: request OK but no rows for %s @ %s",
+                           ticker, expiry)))
   .summarize_oi(live_oi, spot = spot, source = "live",
                  thin_oi_threshold = thin_oi_threshold)
 }

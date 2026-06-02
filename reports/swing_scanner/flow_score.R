@@ -1,4 +1,12 @@
-# pull_score.R — Phase B: Pull screen (Steps B.1 – B.4)
+# flow_score.R — Phase B: Flow screen (Steps B.1 – B.4)
+#
+# Flow_Score is NOT the raw technical-breakout (BOT) score. It is a higher-level
+# flow/context composite: it consumes the BOT setup/breakout counts only through
+# the stage bucket (B.1), then layers sector-rotation context (B.2) and money
+# footprint (B.3) on top — i.e. "is this stock being pulled along by flow at a
+# tradeable point in its life", not "are the technicals breaking out right now".
+# The raw BOT synthesis lives in score_breakout() and is surfaced as
+# bot_setup / bot_breakout.
 #
 # All indicators reused from indicators.R — no new technical computation.
 
@@ -62,9 +70,9 @@ score_breakout <- function(last, price, etf_ret) {
   )
 }
 
-#' Score a stock for the Pull screen. Combines stage classification (B.1),
+#' Score a stock for the Flow screen. Combines stage classification (B.1),
 #' sector flow context (B.2), and footprint confirmation (B.3) into the 0–10
-#' Pull_Score. Survival to Phase C requires Pull_Score >= 6 AND
+#' Flow_Score. Survival to Phase C requires Flow_Score >= 6 AND
 #' Stage in {early, continuation}.
 #'
 #' @param last        single-row indicators data.frame
@@ -76,8 +84,8 @@ score_breakout <- function(last, price, etf_ret) {
 #' @param sector_short_gate logical — sector binary gate passes short
 #' @param trend_passes logical — Tdata::isTrendContinuation passes
 #' @param rs_3m       3-month RS vs benchmark (from isTrendContinuation)
-#' @return list with stage, pull_score, pull_direction, sub-component points
-score_pull <- function(last, price, etf_ret,
+#' @return list with stage, flow_score, flow_direction, sub-component points
+score_flow <- function(last, price, etf_ret,
                        sector_rs_rank = NA, n_long_sectors = 0,
                        sector_long_gate = FALSE, sector_short_gate = FALSE,
                        trend_passes = NA, rs_3m = NA) {
@@ -105,7 +113,7 @@ score_pull <- function(last, price, etf_ret,
     "early" = 4L, "continuation" = 3L, "extended" = 1L, 0L)
 
   # Direction inferred from price vs MA50 + sector gate
-  pull_direction <- if (!is.na(last$ma50) && price > last$ma50 && (sector_long_gate || sector_rs_rank <= 3))
+  flow_direction <- if (!is.na(last$ma50) && price > last$ma50 && (sector_long_gate || sector_rs_rank <= 3))
                       "up"
                     else if (!is.na(last$ma50) && price < last$ma50 && sector_short_gate)
                       "down"
@@ -124,26 +132,26 @@ score_pull <- function(last, price, etf_ret,
 
   # ── B.3 Footprint confirmation (3 pts) ────────────────────────────────────
   obv_aligned <- !is.na(last$obv_slope) &&
-    ((pull_direction == "up" && last$obv_slope > 0) ||
-     (pull_direction == "down" && last$obv_slope < 0))
+    ((flow_direction == "up" && last$obv_slope > 0) ||
+     (flow_direction == "down" && last$obv_slope < 0))
   updn_aligned <- !is.na(last$updn_ratio) &&
-    ((pull_direction == "up" && last$updn_ratio > 1.1) ||
-     (pull_direction == "down" && last$updn_ratio < 0.9))
+    ((flow_direction == "up" && last$updn_ratio > 1.1) ||
+     (flow_direction == "down" && last$updn_ratio < 0.9))
   rs3m_aligned <- !is.na(rs_3m) &&
-    ((pull_direction == "up" && rs_3m > 0) ||
-     (pull_direction == "down" && rs_3m < 0))
+    ((flow_direction == "up" && rs_3m > 0) ||
+     (flow_direction == "down" && rs_3m < 0))
   footprint_pts <- as.integer(sum(c(obv_aligned, updn_aligned, rs3m_aligned)))
 
   # ── B.4 Aggregate and cutoff ──────────────────────────────────────────────
-  pull_score <- max(0L, stage_pts + sector_pts + footprint_pts)
-  passes_phase_b <- pull_score >= 6 &&
+  flow_score <- max(0L, stage_pts + sector_pts + footprint_pts)
+  passes_phase_b <- flow_score >= 6 &&
                     stage %in% c("early", "continuation") ||
-                    (stage == "extended" && pull_score >= 8)
+                    (stage == "extended" && flow_score >= 8)
 
   list(
-    pull_score    = as.integer(pull_score),
+    flow_score    = as.integer(flow_score),
     stage         = stage,
-    pull_direction = pull_direction,
+    flow_direction = flow_direction,
     stage_pts     = stage_pts,
     sector_pts    = sector_pts,
     footprint_pts = footprint_pts,

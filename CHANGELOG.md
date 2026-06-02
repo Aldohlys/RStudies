@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-02] - scanner: rename Pull_Score → Flow_Score (clarity)
+
+### Changed
+- **swing_scanner/pull_score.R → flow_score.R** (file renamed). `score_pull()` → `score_flow()`; returned `pull_score`/`pull_direction` → `flow_score`/`flow_direction`.
+  - Rationale: the name "Pull" wrongly implied a raw technical-breakout score. Flow_Score is a higher-level flow/context composite (B.1 stage bucket + B.2 sector-rotation + B.3 footprint) that *consumes* the BOT setup/breakout counts only via the stage bucket. The raw technical synthesis stays in `score_breakout()` (`bot_setup`/`bot_breakout`). Added a header note documenting the distinction.
+- **swing_scanner/main.R**: source path, `score_flow()` call, result list key `r$pull`→`r$flow`, df columns `pull_pass`/`pull_score`/`pull_direction` → `flow_pass`/`flow_score`/`flow_direction`, `keep_cols`, funnel label "Pull"→"Flow", Phase-B messages/comments. `SCANNER_SCHEMA_VERSION` 5 → 6.
+- **swing_scanner/cheap_score.R**: `pull_direction` param → `flow_direction`.
+- **swing_scanner/classify.R**: `df$pull_pass` → `df$flow_pass`.
+- **swing_scanner/render_html.R**: tier1/tier2 column names + funnel/subtitle/filter text ("Pull"→"Flow").
+
+### Migration
+- `mydb.db`: `ALTER TABLE scanner_results RENAME COLUMN pull_score TO flow_score` + `pull_direction TO flow_direction` (SQLite 3.51.2). `data/mydb.sql` dump updated to match. The next scanner run writes `schema_version=6`.
+- **VM not yet synced** — push `mydb.db` schema (or run the same ALTER on the VM DB) before the VM scanner runs, else its `append` will mismatch.
+
+### Verified
+- `score_flow()` returns `flow_score`/`flow_direction`; `score_cheap()` arg renamed; all scanner R files parse; live DB columns renamed (pull_score gone).
+
 ## [2026-05-12] - analyze: drop redundant columns, make structures collapsible
 
 ### Changed

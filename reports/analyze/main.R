@@ -139,14 +139,16 @@ if (!is.null(phase_c$funnel)) {
 message("Phase D: Setup, chain, R:R, structures...")
 phase_d <- run_phase_d(args$ticker, args$direction, phase_b, phase_c,
                        config = CONFIG, freshness = freshness)
-message(sprintf("  D: %s | targets_agreeing=%s | structures-within-cap=%s",
-                phase_d$result, phase_d$targets_agreeing,
+message(sprintf("  D: structures=%s chain=%s entry=%s | targets_agreeing=%s | within-cap=%s",
+                phase_d$structures_status_prov, phase_d$chain_status_prov,
+                phase_d$entry_status_prov, phase_d$targets_agreeing,
                 phase_d$n_structures_within_cap))
 
-# ── Phase E: classification (mechanical label only) ───────────────────────
+# ── Phase E: data-coverage summary (neutral provenance, no verdict) ────────
 phase_e <- run_phase_e(phase_a, phase_b, phase_c, phase_d, config = CONFIG)
-message(sprintf("  E: classification=%s | phase_of_drop=%s",
-                phase_e$classification, phase_e$phase_of_drop))
+for (cv in phase_e$coverage)
+  message(sprintf("  E coverage | %-26s %s",
+                  gsub("&amp;", "&", cv$dimension), cv$status))
 
 # ── Render report ─────────────────────────────────────────────────────────
 ctx <- list(
@@ -181,8 +183,6 @@ cat(strrep("=", 64), "\n", sep = "")
 }
 cat(sprintf("  Sector: %s | Spot: $%s\n",
             phase_b$sector %||% "n/a", .spot_str))
-cat(sprintf("  classification: %s | phase_of_drop: %s\n",
-            phase_e$classification, phase_e$phase_of_drop))
 cat(sprintf("  Phase A: %s\n", phase_a$result))
 cat(sprintf("  Phase B: %s  stage=%s align=%s sector_rank=%s/%s\n",
             phase_b$result, phase_b$stage %||% "n/a",
@@ -196,7 +196,7 @@ if (!is.null(phase_c$funnel)) {
   cat(sprintf("    Funnel tally: %d favorable / %d unfavorable / %d unavailable\n",
               t$favorable, t$unfavorable, t$unavailable))
 }
-cat(sprintf("  Phase D: %s  targets_agreeing=%s within-cap=%s\n",
-            phase_d$result, phase_d$targets_agreeing,
+cat(sprintf("  Phase D: structures=%s  targets_agreeing=%s within-cap=%s\n",
+            phase_d$structures_status_prov, phase_d$targets_agreeing,
             phase_d$n_structures_within_cap))
 cat(strrep("=", 64), "\n", sep = "")
