@@ -52,8 +52,8 @@ render_scanner_html <- function(df, funnel, out_dir, run_date = Sys.Date(),
 
   funnel_html <- paste0(
     sapply(seq_along(funnel), function(i) {
-      sprintf('<div class="funnel-step"><div class="funnel-label">%s</div><div class="funnel-count">%d</div></div>',
-              names(funnel)[i], funnel[i])
+      sprintf('<div class="funnel-step" data-fkey="%s" title="Click to show the names that reached this stage"><div class="funnel-label">%s</div><div class="funnel-count">%d</div></div>',
+              names(funnel)[i], names(funnel)[i], funnel[i])
     }),
     collapse = '<div class="funnel-arrow">→</div>')
 
@@ -79,7 +79,10 @@ h1 { font-size: 18px; margin: 0 0 4px 0; }
 .funnel { display: flex; align-items: center; gap: 6px; margin: 12px 0 18px 0;
           padding: 10px; background: #f7f7f7; border-radius: 6px; }
 .funnel-step { padding: 8px 12px; background: white; border-radius: 4px;
-               border: 1px solid #ddd; min-width: 90px; text-align: center; }
+               border: 1px solid #ddd; min-width: 90px; text-align: center;
+               cursor: pointer; user-select: none; }
+.funnel-step:hover { border-color: #99a; background: #f4f4ff; }
+.funnel-step.active { border-color: #336; background: #eef; box-shadow: 0 0 0 2px #ccd inset; }
 .funnel-label { font-size: 10px; color: #888; text-transform: uppercase; }
 .funnel-count { font-size: 22px; font-weight: 600; color: #333; }
 .funnel-arrow { color: #999; font-size: 18px; }
@@ -116,7 +119,6 @@ table.dataTable thead th { background: #f0f0f0; }
     <option value="">All vehicles</option>
     %s
   </select>
-  <span id="showSkip" class="chip">Show SKIP</span>
 </div>
 <table id="scanner" class="display"></table>
 <div class="footer">Generated %s. R:R_min calibrated from BOT winners 25th pctile = %.2f. See <code>project_swing_scanner_redesign.md</code>.</div>
@@ -129,7 +131,6 @@ const SCANNER_DATA = %s;
 const COL_DEFS = %s;
 
 $(document).ready(function() {
-  const showSkip = { value: false };
   const table = new DataTable("#scanner", {
     data: SCANNER_DATA,
     columns: COL_DEFS,
@@ -145,24 +146,58 @@ $(document).ready(function() {
     }
   });
 
+  // Funnel-box view: clicking a funnel count shows exactly the names that
+  // REACHED that stage (survivors), including SKIP-ranked ones. This matches
+  // the funnel numbers — clicking "FLOW 8" shows those 8. Distinct from the
+  // "Dropped at X" dropdown, which shows names that FAILED at that phase.
+  const funnelStage = { value: "" };
+  function reachedStage(row, stage) {
+    const pod = row.phase_of_drop || "";
+    switch (stage) {
+      case "Universe":  return true;
+      case "Flow":      return pod !== "A" && pod !== "B";          // passed B
+      case "Cheap":     return pod !== "A" && pod !== "B" && pod !== "C"; // passed C
+      case "Setup R:R": return row.rank === "TOP PICK" || row.rank === "WATCH";
+      case "TOP PICK":  return row.rank === "TOP PICK";
+      default:          return true;
+    }
+  }
+
   $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
     const row = SCANNER_DATA[dataIndex];
-    if (!showSkip.value && row.rank === "SKIP") return false;
-    const phaseFilter = $("#phaseChip").val();
-    if (phaseFilter && (!row.phase_of_drop || !row.phase_of_drop.startsWith(phaseFilter))) return false;
     const sectorFilter = $("#sectorChip").val();
     if (sectorFilter && row.sector !== sectorFilter) return false;
     const vehFilter = $("#vehicleChip").val();
     if (vehFilter && row.vehicle !== vehFilter) return false;
+
+    // Funnel-box view: show names that REACHED that stage (survivors).
+    if (funnelStage.value) return reachedStage(row, funnelStage.value);
+
+    // "Dropped at X" dropdown: show names that FAILED at that phase.
+    const phaseFilter = $("#phaseChip").val();
+    if (phaseFilter && (!row.phase_of_drop || !row.phase_of_drop.startsWith(phaseFilter))) return false;
+
+    // No phase filter active → show everything (SKIP rows are styled grey,
+    // not hidden). The funnel boxes and the dropdown are the only filters.
     return true;
   });
 
-  $("#phaseChip, #sectorChip, #vehicleChip").on("change", () => table.draw());
-  $("#showSkip").on("click", function() {
-    showSkip.value = !showSkip.value;
-    $(this).toggleClass("active");
+  $(".funnel-step").on("click", function() {
+    const k = String($(this).data("fkey"));
+    funnelStage.value = (funnelStage.value === k) ? "" : k;   // toggle off on re-click
+    $(".funnel-step").removeClass("active");
+    if (funnelStage.value) $(this).addClass("active");
+    $("#phaseChip").val("");                                  // clear conflicting dropdown
     table.draw();
   });
+
+  // Selecting the "Dropped at X" dropdown clears any funnel-box selection.
+  $("#phaseChip").on("change", function() {
+    funnelStage.value = "";
+    $(".funnel-step").removeClass("active");
+    table.draw();
+  });
+  $("#sectorChip, #vehicleChip").on("change", () => table.draw());
 });
 </script>
 </body></html>',
