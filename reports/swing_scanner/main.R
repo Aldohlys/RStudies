@@ -36,7 +36,9 @@ source(file.path(SCRIPT_DIR, "setup_chain_rr.R"))
 source(file.path(SCRIPT_DIR, "classify.R"))
 source(file.path(SCRIPT_DIR, "render_html.R"))
 
-SCANNER_SCHEMA_VERSION <- 6L  # 6: pull_score/pull_direction -> flow_score/flow_direction
+SCANNER_SCHEMA_VERSION <- 7L  # 7: Flow scoring change (extended stage_pts 1->2 so
+                              #    the >=8 escape is reachable; closed-sector -2 -> 0).
+                              # 6: pull_score/pull_direction -> flow_score/flow_direction.
 
 message("=== SWING SCANNER (front-run option flow) ===")
 message("Run date: ", format(Sys.Date()),
@@ -338,6 +340,29 @@ df <- classify_final(df, rr_min = RR_MIN)
 n_top <- sum(df$rank == "TOP PICK"); n_watch <- sum(df$rank == "WATCH")
 message(sprintf("  TOP PICK: %d  WATCH: %d  SKIP: %d",
                 n_top, n_watch, sum(df$rank == "SKIP")))
+
+# ── Funnel breakdown (diagnostic: shows where names die each stage) ─────────
+{
+  .scnt <- function(x) sum(x, na.rm = TRUE)
+  st <- table(factor(df$stage,
+                     levels = c("early", "continuation", "extended", "none")))
+  pod <- function(p) .scnt(df$phase_of_drop == p)
+  message("── Funnel breakdown ──")
+  message(sprintf("  Universe:                 %d", nrow(df)))
+  message(sprintf("  Phase A pass (rich opts): %d", .scnt(df$rich_pass)))
+  message(sprintf("  In trending sector:       %d",
+                  .scnt(!is.na(df$sector_rs_rank) & df$sector_rs_rank != 99)))
+  message(sprintf("  Stage early/continuation: %d  (early=%d continuation=%d extended=%d none=%d)",
+                  .scnt(df$stage %in% c("early", "continuation")),
+                  st[["early"]], st[["continuation"]], st[["extended"]], st[["none"]]))
+  message(sprintf("  flow_score >= 6:          %d", .scnt(df$flow_score >= 6)))
+  message(sprintf("  Phase B pass (Flow):      %d", .scnt(df$flow_pass)))
+  message(sprintf("  Phase C pass (Cheap):     %d", .scnt(df$cheap_pass)))
+  message(sprintf("  Dropped at:               A=%d  B=%d  C=%d  later/none=%d",
+                  pod("A"), pod("B"), pod("C"),
+                  .scnt(!is.na(df$phase_of_drop) &
+                          !df$phase_of_drop %in% c("A", "B", "C"))))
+}
 
 # ── Persist results to scanner_results ────────────────────────────────────
 keep_cols <- intersect(c("sym","sector","stage","flow_score","flow_direction",

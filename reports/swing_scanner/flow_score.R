@@ -97,6 +97,13 @@ score_flow <- function(last, price, etf_ret,
   # MA50*1.15) is a demotion: even if breakout signals fire, the trade is
   # "late, headroom collapses fast" (per spec D.2 design). Don't be tricked
   # by a strong-looking signal on an exhausted move.
+  #
+  # extended stage_pts = 2 (2026-06-02): the Phase-B escape hatch for extended
+  # names is `flow_score >= 8` (see B.4). With the old stage_pts=1 the max an
+  # extended name could reach was 1+3+3=7, so the clause was DEAD — extended
+  # names could never pass even when exceptional. stage_pts=2 makes the ceiling
+  # exactly 8, so an extended name escapes ONLY with a top-3 sector (+3) AND a
+  # full 3/3 footprint — i.e. the rare "leader still being accumulated" case.
   bot_obj <- score_breakout(last, price, etf_ret)
   is_extended       <- !is.na(last$ma50) && last$ma50 > 0 &&
                       price > last$ma50 * 1.15
@@ -110,7 +117,7 @@ score_flow <- function(last, price, etf_ret,
            else if (is_continuation)   "continuation"
            else                        "none"
   stage_pts <- switch(stage,
-    "early" = 4L, "continuation" = 3L, "extended" = 1L, 0L)
+    "early" = 4L, "continuation" = 3L, "extended" = 2L, 0L)
 
   # Direction inferred from price vs MA50 + sector gate
   flow_direction <- if (!is.na(last$ma50) && price > last$ma50 && (sector_long_gate || sector_rs_rank <= 3))
@@ -119,16 +126,21 @@ score_flow <- function(last, price, etf_ret,
                       "down"
                     else "neutral"
 
-  # ── B.2 Sector flow context (3 pts) ────────────────────────────────────────
+  # ── B.2 Sector flow context (0..3 pts) ─────────────────────────────────────
+  # Soft BONUS, not a hard cap (2026-06-02). Being in a top-ranked trending
+  # sector ADDS points; being in a non-trending sector is now NEUTRAL (0), not
+  # a -2 penalty. The old -2 capped any non-top-sector stock at stage(<=4) - 2 +
+  # footprint(<=3) = <=5, i.e. below the 6 cutoff REGARDLESS of how strong the
+  # name itself was — so a genuine Stage-2 continuation in the #4+ sector could
+  # never surface. Now such a name passes on its own merit (continuation 3 +
+  # footprint 3 + sector 0 = 6); top-sector membership is upside, not a gate.
   sector_pts <- if (sector_long_gate || sector_short_gate) {
     if (!is.na(sector_rs_rank)) {
       if (sector_rs_rank <= 3) 3L
       else if (sector_rs_rank <= 6) 2L
       else 0L
     } else 0L
-  } else if (!sector_long_gate && !sector_short_gate) {
-    -2L  # counter-trend stock, both gates closed
-  } else 0L
+  } else 0L  # sector not trending (both gates closed): neutral, no penalty
 
   # ── B.3 Footprint confirmation (3 pts) ────────────────────────────────────
   obv_aligned <- !is.na(last$obv_slope) &&
@@ -143,9 +155,11 @@ score_flow <- function(last, price, etf_ret,
   footprint_pts <- as.integer(sum(c(obv_aligned, updn_aligned, rs3m_aligned)))
 
   # ── B.4 Aggregate and cutoff ──────────────────────────────────────────────
+  # Pass if a non-extended setup clears 6, OR an extended name is exceptional
+  # (>=8, only reachable with top-3 sector + full footprint — see B.1). Explicit
+  # parens: && binds tighter than ||, but spell it out to avoid future confusion.
   flow_score <- max(0L, stage_pts + sector_pts + footprint_pts)
-  passes_phase_b <- flow_score >= 6 &&
-                    stage %in% c("early", "continuation") ||
+  passes_phase_b <- (flow_score >= 6 && stage %in% c("early", "continuation")) ||
                     (stage == "extended" && flow_score >= 8)
 
   list(

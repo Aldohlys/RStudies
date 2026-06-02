@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-02] - scanner: Flow Phase-B scoring fixes + funnel diagnostics
+
+Investigated a 0-candidate run (2026-06-02). Empirical funnel: 202 names → 71 dropped at A (no weekly), 130 at B, 1 at C (AAPL, rich IV). Root causes were two Phase-B issues, now fixed.
+
+### Fixed
+- **flow_score.R — dead `extended ≥ 8` escape clause**. Extended `stage_pts` was 1, so the max an extended name could reach was `1 + 3(sector) + 3(footprint) = 7 < 8` — the clause could *never* fire, categorically excluding every extended leader. Bumped extended `stage_pts` 1 → 2 so the ceiling is exactly 8; an extended name now escapes only with a top-3 sector AND full 3/3 footprint (the rare "leader still being accumulated"). Simulated on the 2026-06-02 run: Phase-B passers 1 → 8 (the 7 new are extended Tech leaders at flow 8).
+- **flow_score.R — sector context was a hard cap, not a bonus**. Closed-gate (non-trending sector) scored `−2`, capping any non-top-sector stock at `stage(≤4) − 2 + footprint(≤3) ≤ 5` — below the 6 cutoff regardless of the name's own strength, so a genuine Stage-2 continuation in the #4+ sector could never surface. Changed closed-gate `−2 → 0` (neutral): top-sector membership is now upside, not a gate; strong continuation/early names pass on their own merit (`3 + 0 + 3 = 6`).
+
+### Added
+- **main.R — funnel breakdown log** after Phase E: Universe → Phase A pass → in-trending-sector → stage(early/continuation, with full stage histogram) → flow_score≥6 → Phase B pass → Phase C pass → dropped-at A/B/C counts. Makes every run self-diagnosing.
+
+### Changed
+- `SCANNER_SCHEMA_VERSION` 6 → 7 (marks the scoring change; persisted column schema unchanged).
+- Note: Phase-B passers still face Phase C (cheap IV) and D (R:R); surfacing extended leaders routes them to the real economic filter rather than pre-killing them at B.
+
 ## [2026-06-02] - scanner: rename Pull_Score → Flow_Score (clarity)
 
 ### Changed
