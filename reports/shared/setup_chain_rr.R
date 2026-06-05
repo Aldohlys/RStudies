@@ -46,22 +46,27 @@
 #'   For shorts, spot_target_low/high are still labelled "low/high" but
 #'   represent the *closer/farther* downside levels (low = closer to spot).
 compute_structural_target <- function(price, hist_close, hist_high,
-                                       hist_low = NULL, direction = "long") {
+                                       hist_low = NULL, direction = "long",
+                                       move_lookback = 40) {
   if (direction == "long") {
-    .structural_target_long(price, hist_close, hist_high)
+    .structural_target_long(price, hist_close, hist_high, move_lookback)
   } else if (direction == "short") {
     .structural_target_short(price, hist_close,
-                              if (is.null(hist_low)) hist_high else hist_low)
+                              if (is.null(hist_low)) hist_high else hist_low,
+                              move_lookback)
   } else {
     stop(sprintf("compute_structural_target: unknown direction '%s'", direction))
   }
 }
 
-.structural_target_long <- function(price, hist_close, hist_high) {
+.structural_target_long <- function(price, hist_close, hist_high,
+                                     move_lookback = 40) {
   if (length(hist_high) < 60) {
     return(list(spot_target_low = NA_real_, spot_target_high = NA_real_,
                 targets_agreeing = 0L, fib_confirms = FALSE,
-                source_levels = c(), direction = "long"))
+                source_levels = c(), direction = "long",
+                move_base = NA_real_, move_pct = NA_real_,
+                move_fib = NA_character_, move_next_ext = NA_character_))
   }
 
   swing_window <- min(120, length(hist_high))
@@ -88,14 +93,18 @@ compute_structural_target <- function(price, hist_close, hist_high,
 
   candidates <- c(swing_high, yr_high_in_reach, round_target)
   candidates <- candidates[!is.na(candidates) & candidates > price]
-  .finalize_targets(candidates, price, hist_close, direction = "long")
+  .finalize_targets(candidates, price, hist_close, direction = "long",
+                    move_lookback = move_lookback)
 }
 
-.structural_target_short <- function(price, hist_close, hist_low) {
+.structural_target_short <- function(price, hist_close, hist_low,
+                                      move_lookback = 40) {
   if (length(hist_low) < 60) {
     return(list(spot_target_low = NA_real_, spot_target_high = NA_real_,
                 targets_agreeing = 0L, fib_confirms = FALSE,
-                source_levels = c(), direction = "short"))
+                source_levels = c(), direction = "short",
+                move_base = NA_real_, move_pct = NA_real_,
+                move_fib = NA_character_, move_next_ext = NA_character_))
   }
 
   swing_window <- min(120, length(hist_low))
@@ -122,7 +131,8 @@ compute_structural_target <- function(price, hist_close, hist_high,
 
   candidates <- c(swing_low, yr_low_in_reach, round_target)
   candidates <- candidates[!is.na(candidates) & candidates < price]
-  .finalize_targets(candidates, price, hist_close, direction = "short")
+  .finalize_targets(candidates, price, hist_close, direction = "short",
+                    move_lookback = move_lookback)
 }
 
 #' Fib 1.272/1.618 confirmation overlay — direction-aware. TRUE if a projected
@@ -157,22 +167,65 @@ compute_structural_target <- function(price, hist_close, hist_high,
   FALSE
 }
 
+#' Swing base that launched the CURRENT leg, within the supplied close window.
+#' ZigZag detection: a pivot is confirmed when price reverses by >= `th` from a
+#' running extreme. For a long we return the swing LOW that started the current
+#' up-leg (the running min if price is mid-pullback, else the last confirmed
+#' swing low); mirror for a short. This anchors on the latest leg — in a
+#' stair-step uptrend it picks the most recent higher-low, not the stale low of
+#' the whole window. Falls back to the windowed extreme when no >= th reversal
+#' exists inside the cap (one uninterrupted run). `th` = reversal fraction
+#' (default 4%, a normal breakout-base pullback).
+.recent_swing_anchor <- function(recent, direction, th = 0.04) {
+  recent <- recent[!is.na(recent)]            # Yahoo's in-progress bar = NA close
+  n <- length(recent)
+  ext <- if (direction == "long") min(recent, na.rm = TRUE)
+         else                     max(recent, na.rm = TRUE)
+  if (n < 3) return(ext)
+  run_max <- recent[1]; run_min <- recent[1]
+  dir <- 0L                       # 0 unknown, 1 up-leg, -1 down-leg
+  last_swing_low <- NA_real_; last_swing_high <- NA_real_
+  for (i in 2:n) {
+    if (recent[i] > run_max) run_max <- recent[i]
+    if (recent[i] < run_min) run_min <- recent[i]
+    if (dir >= 0 && recent[i] <= run_max * (1 - th)) {       # reversal down
+      last_swing_high <- run_max; dir <- -1L; run_min <- recent[i]
+    } else if (dir <= 0 && recent[i] >= run_min * (1 + th)) { # reversal up
+      last_swing_low <- run_min; dir <- 1L; run_max <- recent[i]
+    }
+  }
+  if (direction == "long") {
+    base <- if (dir < 0) run_min
+            else if (!is.na(last_swing_low)) last_swing_low else ext
+    if (is.na(base) || base >= recent[n]) base <- ext
+    base
+  } else {
+    base <- if (dir > 0) run_max
+            else if (!is.na(last_swing_high)) last_swing_high else ext
+    if (is.na(base) || base <= recent[n]) base <- ext
+    base
+  }
+}
+
 #' Move-maturity overlay for the Fib/structural block. Expresses how far the
 #' current move has travelled from its swing base toward the nearest structural
 #' target (leg_top), as (a) % of the base->leg_top leg and (b) the nearest
 #' Fibonacci rung, plus the next extension rung as a forward price marker.
-#' Close-based swings, matching .fib_overlay. Direction-aware:
-#'   long  — base = swing low,  travel up toward a higher leg_top
-#'   short — base = swing high, travel down toward a lower leg_top
+#' Close-based. Direction-aware:
+#'   long  — base = recent swing low,  travel up toward a higher leg_top
+#'   short — base = recent swing high, travel down toward a lower leg_top
+#' `window` caps the lookback for the swing base (default 40 ~= the 2-4 week
+#' breakout horizon; tunable via analyze.move_lookback_days). The base is the
+#' most recent swing pivot in that window, NOT the windowed extreme.
 #' Returns list(base, pct, ratio, label, next_ext); NA fields on bad inputs.
 .move_extension <- function(price, hist_close, leg_top, direction,
-                            window = 120) {
+                            window = 40) {
   na <- list(base = NA_real_, pct = NA_real_, ratio = NA_real_,
              label = NA_character_, next_ext = NA_character_)
-  if (is.na(price) || is.na(leg_top) || length(hist_close) < 20) return(na)
+  hist_close <- hist_close[!is.na(hist_close)]   # drop Yahoo's NA in-progress bar
+  if (is.na(price) || is.na(leg_top) || length(hist_close) < 10) return(na)
   recent <- tail(hist_close, min(window, length(hist_close)))
-  base <- if (direction == "long") min(recent, na.rm = TRUE)
-          else                     max(recent, na.rm = TRUE)
+  base <- .recent_swing_anchor(recent, direction)
   span <- if (direction == "long") leg_top - base else base - leg_top
   if (is.na(base) || is.na(span) || span <= 0)
     return(modifyList(na, list(base = round(base, 2))))
@@ -203,7 +256,8 @@ compute_structural_target <- function(price, hist_close, hist_high,
 #' spot_target_high), a level corroborated by >=2 sources within ±2% is reported
 #' as a SINGLE target (spot_target_high = NA) with targets_agreeing = its support
 #' count. Genuinely distinct levels still form a low/high band as before.
-.finalize_targets <- function(candidates, price, hist_close, direction) {
+.finalize_targets <- function(candidates, price, hist_close, direction,
+                              move_lookback = 40) {
   if (direction == "long") candidates <- sort(candidates)
   else                     candidates <- sort(candidates, decreasing = TRUE)
 
@@ -256,8 +310,10 @@ compute_structural_target <- function(price, hist_close, hist_high,
                                hist_close, direction)
 
   # Move-maturity overlay: leg_top = nearest structural target (the wall the
-  # move is testing). Reuses the same swing base the Fib overlay anchors on.
-  move <- .move_extension(price, hist_close, spot_target_low, direction)
+  # move is testing). Base = most recent swing pivot within move_lookback days,
+  # sized to the 2-4 week breakout horizon (not the multi-month swing low).
+  move <- .move_extension(price, hist_close, spot_target_low, direction,
+                          window = move_lookback)
 
   list(spot_target_low = round(spot_target_low, 2),
        spot_target_high = if (is.na(spot_target_high)) NA_real_
@@ -267,7 +323,8 @@ compute_structural_target <- function(price, hist_close, hist_high,
        source_levels = round(candidates, 2),
        direction = direction,
        move_base = move$base, move_pct = move$pct,
-       move_fib = move$label, move_next_ext = move$next_ext)
+       move_fib = move$label, move_next_ext = move$next_ext,
+       move_lookback = move_lookback)
 }
 
 #' Nearest round number above current price on tiered grid.

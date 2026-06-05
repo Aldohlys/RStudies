@@ -88,6 +88,12 @@ default:
     # cap is considered usable. Below this, oi_cap_call/put = NA and the
     # structural target is used instead. ETFs and small-caps run thin.
     thin_oi_threshold: 100
+    # Move-maturity overlay (Fib/structural block): cap on the lookback used to
+    # find the swing-low/high base that anchors the "Move position" reading.
+    # Sized to the 2-4 week breakout horizon (BOT plan: hold 8-14d options /
+    # 20-40d stock; base forms over 20d/40d squeeze). The anchor is the most
+    # recent local swing pivot within this cap, not the windowed extreme.
+    move_lookback_days: 40
     # Earnings event window (days)
     earnings_window_days: 14
     # Skew-history table lookback for Phase C.2.d

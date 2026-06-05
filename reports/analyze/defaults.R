@@ -35,6 +35,7 @@ default_analyze_config <- function() {
     ),
     spread_widths = c(5, 10),
     moneyness_pct = 0.20,
+    move_lookback_days = 40,
     earnings_window_days = 14,
     skew_lookback_days = 365,
     out_dir = "C:/Users/aldoh/Documents/NewTrading/reports"

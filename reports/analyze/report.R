@@ -78,7 +78,7 @@ td.note{color:#555;font-size:13px}
   "spot_target_high"     = "FARTHER structural target. Long: higher price; short: lower price. '—' when a single corroborated level (e.g. swing high == 52w high).",
   "targets_agreeing"     = "Count of consensus sources agreeing within ±2% (range 0-3). More agreement = a sharper structural target.",
   "fib_confirms"         = "TRUE if Fibonacci 1.272/1.618 lands within ±2% of the structural target.",
-  "move_position"        = "Move maturity: how far the move has travelled from its swing base (close-based, 120d) to the nearest structural target — (a) % of that leg, (b) the nearest Fibonacci rung, and the next extension rung priced out as a forward level. High % / near the 1.0 rung = an extended move with little room left to the wall; low % = early. Descriptive only — does not feed scoring or flow.",
+  "move_position"        = "Move maturity: how far the move has travelled from its swing base to the nearest structural target — (a) % of that leg, (b) the nearest Fibonacci rung, and the next extension rung priced out as a forward level. The base is the most recent swing pivot (local low for longs / high for shorts) within the move_lookback_days window (default 40d, sized to the 2-4 week breakout horizon; tunable in config.yml), NOT the multi-month swing low. High % / near the 1.0 rung = an extended move with little room left to the wall; low % = early. Descriptive only — does not feed scoring or flow.",
   "expiry"               = "Selected expiration (YYYYMMDD). Picked live from IBKR ~45 DTE if scanner CSV is silent.",
   "oi_cap_call"          = "Strike with the largest call open interest in [-25%, +25%] of spot — magnetic resistance.",
   "oi_cap_put"           = "Strike with the largest put open interest in [-25%, +25%] of spot — magnetic support.",
@@ -633,14 +633,15 @@ render_analyze_html <- function(ctx, out_dir) {
   # nearest target (1a: % of leg), expressed on the Fib ladder (1b: rung + next
   # extension as a forward price). Descriptive only; no flow/scoring side-effects.
   mv_pct <- t$move_pct; mv_base <- t$move_base
-  mv_fib <- t$move_fib; mv_next <- t$move_next_ext
+  mv_fib <- t$move_fib; mv_next <- t$move_next_ext; mv_lb <- t$move_lookback
   move_val <- if (is.null(mv_pct) || is.na(mv_pct)) .fmt_cell(NA, t_reason)
     else sprintf("%.1f%% of base&rarr;target leg &middot; ~%s rung%s",
                  mv_pct, mv_fib %||% "n/a",
                  if (!is.null(mv_next) && !is.na(mv_next))
                    sprintf(" &middot; next ext %s", mv_next) else "")
   move_note <- if (!is.null(mv_base) && !is.na(mv_base))
-    sprintf("base = swing %s %.2f", if (direction == "long") "low" else "high", mv_base)
+    sprintf("base = swing %s %.2f%s", if (direction == "long") "low" else "high", mv_base,
+            if (!is.null(mv_lb) && !is.na(mv_lb)) sprintf(" (%dd lookback)", as.integer(mv_lb)) else "")
     else ""
 
   targets_html <- paste0(src_caption, sprintf(paste0(

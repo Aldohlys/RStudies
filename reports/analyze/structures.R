@@ -49,7 +49,9 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 
   # Targets: ALWAYS live-compute (direction-aware). Scanner CSV is LONG-only
   # and can't be reused for shorts (wrong tail). Step 4 rewrite 2026-05-12.
-  targets <- .live_targets(ticker, spot, direction = direction)
+  move_lookback <- as.integer(config$move_lookback_days %||% 40L)
+  targets <- .live_targets(ticker, spot, direction = direction,
+                           move_lookback = move_lookback)
 
   # Chain / OI: resolver (DB-fresh → live get_chain_oi). CSV oi_cap_call/_put
   # in scanner row are last-resort fallback if both DB and live fail.
@@ -186,7 +188,8 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 #' Live-compute direction-aware structural targets via 300-day OHLC + shared
 #' compute_structural_target(). For shorts, targets are below current price
 #' (prior swing lows / 52w low / round below). For longs, above.
-.live_targets <- function(ticker, spot, direction = "long") {
+.live_targets <- function(ticker, spot, direction = "long",
+                          move_lookback = 40) {
   if (is.na(spot)) return(list(
     spot_target_low = NA_real_, spot_target_high = NA_real_,
     targets_agreeing = NA_integer_, fib_confirms = NA,
@@ -200,7 +203,8 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   raw <- raw[order(raw$date), ]
   res <- tryCatch(compute_structural_target(spot, raw$Close, raw$High,
                                              hist_low = raw$Low,
-                                             direction = direction),
+                                             direction = direction,
+                                             move_lookback = move_lookback),
                   error = function(e) NULL)
   if (is.null(res)) return(list(
     spot_target_low = NA_real_, spot_target_high = NA_real_,
@@ -215,6 +219,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     move_pct         = res$move_pct,
     move_fib         = res$move_fib,
     move_next_ext    = res$move_next_ext,
+    move_lookback    = res$move_lookback %||% move_lookback,
     direction        = direction,
     source           = "live OHLC",
     reason           = NULL

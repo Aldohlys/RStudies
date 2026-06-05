@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-05] - analyze: move-maturity base sized to the breakout horizon
+
+Follow-up to the move-maturity overlay (same day). The first cut anchored the base on the **120-day** (close) swing low — wrong for a 2-4 week breakout horizon (BOT plan: hold 8-14d options / 20-40d stock; base forms over the 20d/40d squeeze). On AAPL that anchored on the stale early-April \$246 low, so every name read "fully extended." The base is now the swing pivot of the **current leg** within a breakout-sized window.
+
+### Changed
+- **shared/setup_chain_rr.R — `.recent_swing_anchor()`** (new): ZigZag swing detection — a pivot is confirmed when price reverses by >= `th` (default 4%) from a running extreme. For a long it returns the swing low that launched the current up-leg (running min if mid-pullback, else the last confirmed swing low); mirror for shorts. In a stair-step trend this picks the most recent higher-low, not the stale window low; falls back to the windowed extreme when no >= th reversal exists inside the cap (one uninterrupted run — e.g. AAPL's current grind). `.move_extension()` default window 120 -> 40 and now calls the anchor instead of `min()/max()`.
+- **Lookback is tunable**: `analyze.move_lookback_days` (default 40) in config.yml + defaults.R, threaded `compute_structural_target() -> .structural_target_long/short() -> .finalize_targets() -> .move_extension()`, and `run_phase_d() -> .live_targets()`. `compute_structural_target()` gains a defaulted `move_lookback = 40` arg (backward-compatible for the swing_scanner caller).
+- **analyze/report.R**: "Move position" note now shows the active window — "base = swing low 258.59 (40d lookback)"; tooltip rewritten (most-recent-swing-pivot within the configurable breakout-horizon window, not the multi-month low).
+
+### Verified
+- ZigZag on live AAPL closes: one-leg grind (no >= 3% pullback in-window) so anchor = windowed min at every threshold — 20d \$287 / 40d \$258.59 / 60d \$246; 40d base -> ~89.8% of leg, still extended (correct: +20% in 40d, no pullback). All changed files parse; config.yml loads move_lookback_days = 40.
+
 ## [2026-06-05] - analyze: move-maturity overlay in the Fib/structural block
 
 A `/analyze AAPL long` run did not surface that AAPL had run +23% off its early-April low and was sitting ~95% of the way to its structural wall — an extended move. The existing readings each under-signalled it: MA50 displacement was only +11% (the 50-day average had chased the rally), `ret20` showed +8.3% (most of the move sits behind the 20d window), and `fib_confirms` is a bare boolean. The swing base that answers "how extended" was already computed inside `.fib_overlay()` and then discarded. Rather than add parallel metrics (or disturb the flow-linked Phase B `stage` label / `headroom_band`), the move-maturity read is folded into the existing Fib/structural block.
