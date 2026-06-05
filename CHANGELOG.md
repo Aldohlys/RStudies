@@ -4,6 +4,48 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-05] - analyze: move-maturity overlay in the Fib/structural block
+
+A `/analyze AAPL long` run did not surface that AAPL had run +23% off its early-April low and was sitting ~95% of the way to its structural wall — an extended move. The existing readings each under-signalled it: MA50 displacement was only +11% (the 50-day average had chased the rally), `ret20` showed +8.3% (most of the move sits behind the 20d window), and `fib_confirms` is a bare boolean. The swing base that answers "how extended" was already computed inside `.fib_overlay()` and then discarded. Rather than add parallel metrics (or disturb the flow-linked Phase B `stage` label / `headroom_band`), the move-maturity read is folded into the existing Fib/structural block.
+
+### Added
+- **shared/setup_chain_rr.R — `.move_extension()`**: expresses how far the move has travelled from its swing base (close-based, 120d; swing low for longs, swing high for shorts) toward the nearest structural target (`spot_target_low`) as (a) **% of the base→target leg** and (b) the **nearest Fibonacci rung**, plus the **next true extension rung (>1.0) priced out as a forward level**. Direction-symmetric; a ratio >1.0 renders as `N.NNN ext` (move has pushed through its wall). `.finalize_targets()` now calls it and returns `move_base` / `move_pct` / `move_fib` / `move_next_ext` (NA-filled on the no-candidates path).
+- **analyze/structures.R — `.live_targets()`**: threads the four `move_*` fields through.
+- **analyze/report.R**: new **"Move position"** row in *Structural target sources* (value = "95.1% of base→target leg · ~1.000 rung · next ext 1.272 = 330.59", note = swing base). Tooltip `move_position` added. Descriptive only — no scoring/flow side-effects, consistent with /analyze's data-only mandate.
+
+### Verified
+- Unit cases: AAPL-like long (base 253, spot 311, target 314) → 95.1% / ~1.000 rung / next ext 1.272 = 330.59; short (base 200, spot 165, target 150) → 70.0% / 0.618 rung / next ext 1.272 = 136.40; ratio >1.0 → `1.272 ext`. All three changed R files parse.
+
+## [2026-06-03] - analyze: structural-target band — coincident-level + short-label fixes
+
+REMX surfaced `spot_target_low == spot_target_high == 111.55` (a zero-width band) with `targets_agreeing = 2`. Root cause: the nearest unbroken swing high *is* the 52-week high (same bar), so two of the three structural sources return the identical value, and `.finalize_targets()` picked that zero-gap duplicate pair as the band. Also clarified the long/high labels, which were misleading for shorts.
+
+### Fixed
+- **shared/setup_chain_rr.R — `.finalize_targets()`**: clusters near-coincident candidate levels (±2%, matching the agreement definition) into distinct structural levels with support counts. A level corroborated by ≥2 sources is now a **single target** (`spot_target_low` set, `spot_target_high = NA`) with `targets_agreeing` = its support count, instead of a zero-width band. Genuinely distinct levels still form a low/high band exactly as before (verified: within-5% → agreeing 2; >5% → agreeing 1), so the swing_scanner `targets_agreeing >= 2` gate (classify.R) is preserved. Extracted the Fib overlay into `.fib_overlay()` which tolerates `high = NA`.
+
+### Changed
+- **analyze/report.R**: relabelled the structural-target rows **"Target — near" / "Target — far"** (was spot_target_low/high). The labels denote distance from spot, not price order — for a *short*, near = the higher price (first downside level), far = the lower price. `spot_target_low` still drives `effective_target` / R:R (internal logic unchanged). `Target — far` renders "—" with a note when it's a single corroborated target; structures-table header → "Target (near/far)". Tooltips updated to spell out the long/short price direction.
+
+### Verified
+- Unit cases: REMX long → near 111.55 / far — / agreeing 2; REMX short → near 90.54 / far — / agreeing 2; distinct-within-5% → 106/110 band agreeing 2; all-distinct-&gt;5% → 100/110 band agreeing 1. All R files parse.
+
+## [2026-06-03] - analyze: Phase A option bid/ask-spread liquidity probe
+
+Phase A reported only expiry *counts* — it said nothing about whether those options are tradeable. A name can have a dense expiry calendar yet quote unusable spreads (REMX July 30Δ call: bid 0.20 / ask 0.60 → ~100% of mid; even the 98 ATM call quotes 6.40 / 8.40 → 27%). Phase A now probes live bid/ask and reports the normalized spread = (ask − bid) / mid.
+
+### Added
+- **shared/live_sources.R — `resolve_option_spread()`** + helpers `.pick_atm_row()`, `.pick_delta_row()`, `.norm_spread()`, `.spread_grab()`. Picks the expiry nearest 45 DTE in the tradeable window, pulls ATM + ~30Δ call/put quotes via `getOptValue` (which already returns `bid`/`ask`/`spread`), and computes the normalized spread for each leg. Prefers the Python-side `spread` column (= 2·(ask−bid)/(ask+bid) ≡ (ask−bid)/mid); falls back to a local bid/ask recompute. Uniform `.ok/.miss/.nodata` provenance shape. **`force_refresh=TRUE`** (like `.live_atm_iv` / `.live_25d_skew`): the parquet quote cache can hold rows fetched by paths that left bid/ask NaN (e.g. chain-OI scans), which yielded a spurious "no bid/ask spread" NO DATA on the first live run — a spread probe must pull the live quote.
+- **analyze/phases.R — `run_phase_a()`** now runs the spread probe (new `config` arg for TWS reachability) and threads `spread` / `spread_status` / `atm_bid_ask_pct` through every return path. New Phase E coverage row "Option liquidity (A)".
+- **analyze/report.R — `.render_phase_a_spread()`**: per-leg sub-table (ATM call/put, 30Δ call/put) showing strike, Δ, bid, ask, and spread %. Neutral — bare numbers, no verdict.
+
+### Changed
+- **analyze/phases.R — `.live_price()`** now prefers the live IBKR quote (`getStockPrice(close=FALSE)` → `tdata_py$getValue` when TWS is up; DB last price otherwise) and falls back to Yahoo. Previously it used `getLastSymPrice` alone — Yahoo's *adjusted daily close*, a day stale and dividend-adjusted, so the report spot drifted from the live quote (REMX 2026-06-03: 102 vs IBKR 97.81). Fixes the displayed spot AND the ATM-strike selection in the spread probe for the whole /analyze report (Phase B header, Phase D targets, Phase A spread). Factored the column-pluck into `.pluck_price()`.
+- **analyze/structures.R — `run_phase_d()`** takes `phase_a` and feeds its live `atm_bid_ask_pct` into `pick_vehicle_expiry()`, finally activating the dormant `atm_bid_ask% > 8 → stock` rule (previously always NA / never wired).
+- **analyze/main.R**: passes `config` to Phase A and `phase_a` to Phase D; terminal log gains a per-leg spread line.
+
+### Verified
+- All five edited files parse. Offline helper test reproduces the math; **live `resolve_option_spread("REMX", …)` against TWS returns LIVE**: ATM 98C 25.9% (6.40/8.30), ATM 98P 36.1%, 30Δ call (114) 87.0%, 30Δ put (95) 48.4%, ATM bid/ask% 31 → trips the >8% → stock vehicle rule. First live run surfaced the cache/`force_refresh` bug above (NO DATA), now fixed.
+
 ## [2026-06-02] - scanner: Flow Phase-B scoring fixes + funnel diagnostics
 
 Investigated a 0-candidate run (2026-06-02). Empirical funnel: 202 names → 71 dropped at A (no weekly), 130 at B, 1 at C (AAPL, rich IV). Root causes were two Phase-B issues, now fixed.

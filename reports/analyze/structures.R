@@ -7,7 +7,7 @@
 #   structural targets) — those phases get rewritten in Steps 2-4.
 
 run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
-                        freshness = NULL) {
+                        freshness = NULL, phase_a = NULL) {
   scan <- .read_scanner_row(ticker, freshness)
   r  <- if (!is.null(scan$row)) scan$row else NULL
   spot <- phase_b$price
@@ -36,10 +36,14 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   cheap_score_for_rule <- if (!is.null(phase_c) && !is.na(phase_c$cheap_score))
                             as.integer(phase_c$cheap_score) else NA_integer_
   stage_for_rule <- if (!is.null(phase_b) && !is.null(phase_b$stage)) phase_b$stage else NA_character_
+  # Live ATM bid/ask% from Phase A's spread probe finally activates the dormant
+  # atm_bid_ask% > 8 → stock rule (previously always NA — never wired).
+  atm_ba_pct <- if (!is.null(phase_a)) phase_a$atm_bid_ask_pct %||% NA_real_ else NA_real_
   vehicle_pick <- pick_vehicle_expiry(spot,
-                                       cheap_score = cheap_score_for_rule,
-                                       stage       = stage_for_rule,
-                                       direction   = direction)
+                                       cheap_score    = cheap_score_for_rule,
+                                       stage          = stage_for_rule,
+                                       atm_bid_ask_pct = atm_ba_pct,
+                                       direction      = direction)
   vehicle <- vehicle_pick$vehicle %||% "spread"
   vehicle_reason <- vehicle_pick$reason
 
@@ -207,6 +211,10 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     spot_target_high = res$spot_target_high,
     targets_agreeing = res$targets_agreeing,
     fib_confirms     = res$fib_confirms,
+    move_base        = res$move_base,
+    move_pct         = res$move_pct,
+    move_fib         = res$move_fib,
+    move_next_ext    = res$move_next_ext,
     direction        = direction,
     source           = "live OHLC",
     reason           = NULL

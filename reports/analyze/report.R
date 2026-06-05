@@ -74,10 +74,11 @@ td.note{color:#555;font-size:13px}
   "Skew (RR 25Δ)"   = "Risk-reversal at 25-delta in vol-points: (call25 IV - put25 IV) * 100. Positive = calls bid.",
   "Earnings"             = "Days until next earnings (from yfinance). Negative = past, 0-14 = inside event window.",
   # Phase D
-  "spot_target_low"      = "Lower bound of the structural-target consensus from prior swing high / 52w high / round number.",
-  "spot_target_high"     = "Upper bound of the structural-target consensus.",
+  "spot_target_low"      = "NEAREST structural target to spot (drives effective target & R:R), from prior swing high/low, 52w high/low, or round number. Long: lower price; short: higher price (first downside level).",
+  "spot_target_high"     = "FARTHER structural target. Long: higher price; short: lower price. '—' when a single corroborated level (e.g. swing high == 52w high).",
   "targets_agreeing"     = "Count of consensus sources agreeing within ±2% (range 0-3). More agreement = a sharper structural target.",
   "fib_confirms"         = "TRUE if Fibonacci 1.272/1.618 lands within ±2% of the structural target.",
+  "move_position"        = "Move maturity: how far the move has travelled from its swing base (close-based, 120d) to the nearest structural target — (a) % of that leg, (b) the nearest Fibonacci rung, and the next extension rung priced out as a forward level. High % / near the 1.0 rung = an extended move with little room left to the wall; low % = early. Descriptive only — does not feed scoring or flow.",
   "expiry"               = "Selected expiration (YYYYMMDD). Picked live from IBKR ~45 DTE if scanner CSV is silent.",
   "oi_cap_call"          = "Strike with the largest call open interest in [-25%, +25%] of spot — magnetic resistance.",
   "oi_cap_put"           = "Strike with the largest put open interest in [-25%, +25%] of spot — magnetic support.",
@@ -226,6 +227,52 @@ td.note{color:#555;font-size:13px}
   paste0(kind, "-", base)
 }
 
+#' Render the Phase A bid/ask-spread sub-table. One row per probed leg
+#' (ATM call, ATM put, 30Δ call, 30Δ put). Neutral: bare numbers, no verdict.
+#' `spread` cell shows the normalized (ask-bid)/mid as a percentage.
+.render_phase_a_spread <- function(pa) {
+  sp <- pa$spread
+  if (is.null(sp)) {
+    # Probe didn't return a value — surface the provenance status + reason.
+    st <- pa$spread_status %||% "FETCH FAILED"
+    rs <- pa$spread_reason
+    return(sprintf(paste0(
+      '<h3>Option bid/ask spread (liquidity)</h3>',
+      '<p class="sub">%s%s</p>'),
+      st, if (!is.null(rs) && nzchar(rs)) paste0(" &mdash; ", rs) else ""))
+  }
+
+  leg_row <- function(label, g) {
+    if (is.null(g)) g <- list(strike = NA, spread = NA, bid = NA, ask = NA, delta = NA)
+    spread_txt <- if (is.null(g$spread) || is.na(g$spread)) "n/a"
+                  else sprintf("%.1f%%", g$spread * 100)
+    sprintf(paste0(
+      '<tr><td>%s</td><td class="value">%s</td><td class="value">%s</td>',
+      '<td class="value">%s</td><td class="value">%s</td>',
+      '<td class="value">%s</td></tr>'),
+      label,
+      .fmt_num(g$strike, 2), .fmt_num(g$delta, 2),
+      .fmt_num(g$bid, 2), .fmt_num(g$ask, 2), spread_txt)
+  }
+
+  rows <- paste0(
+    leg_row("ATM call", sp$atm_call),
+    leg_row("ATM put",  sp$atm_put),
+    leg_row("30&Delta; call", sp$c30),
+    leg_row("30&Delta; put",  sp$p30))
+
+  paste0(
+    '<h3>Option bid/ask spread (liquidity)</h3>',
+    .retrieved_caption(`source` = pa$spread_retrieved_at),
+    sprintf('<p class="sub">Expiry probed: %s (%s DTE). Spread = (ask &minus; bid) / mid. ',
+            sp$expiration %||% "n/a", sp$dte %||% "n/a"),
+    sprintf('ATM bid/ask %s%% feeds the vehicle rule (&gt;8%% &rarr; trade stock, not options).</p>',
+            .fmt_num(sp$atm_bid_ask_pct, 1)),
+    '<table><tr><th>Leg</th><th>Strike</th><th>&Delta;</th>',
+    '<th>Bid</th><th>Ask</th><th>Spread</th></tr>',
+    rows, '</table>')
+}
+
 # ── Main render entry ────────────────────────────────────────────────────
 render_analyze_html <- function(ctx, out_dir) {
   ticker <- ctx$ticker; direction <- ctx$direction; date <- ctx$date
@@ -267,7 +314,8 @@ render_analyze_html <- function(ctx, out_dir) {
       .fmt_num(pa$n_expiries, 0),
       .fmt_num(pa$tradeable_expiries, 0),
       pa$source %||% "n/a",
-      pa$reason %||% "live IBKR probe"))
+      pa$reason %||% "live IBKR probe"),
+    .render_phase_a_spread(pa))
 
   # Phase B — direction-aware trend + sector RS context + collapsible breakdown
   sec_b <- paste0(
@@ -574,20 +622,46 @@ render_analyze_html <- function(ctx, out_dir) {
   else if (!is.null(pd$entry_source) && pd$entry_source == "live")
     '<p class="sub" style="margin:0 0 6px">R:R / entry framework re-derived live (scanner did not emit).</p>'
   else ''
+  # spot_target_high is intentionally NA when the structural target is a single
+  # level corroborated by >=2 sources (e.g. swing high == 52w high) — render it
+  # as "—" with a note, distinct from a genuine fetch failure.
+  single_target <- !is.na(t$spot_target_low) && is.na(t$spot_target_high)
+  high_cell <- if (single_target) "&mdash;" else .fmt_cell(t$spot_target_high, t_reason)
+  high_note <- if (single_target) "single corroborated target (see agreeing)" else ""
+
+  # Move position — how far the move has travelled from its swing base toward the
+  # nearest target (1a: % of leg), expressed on the Fib ladder (1b: rung + next
+  # extension as a forward price). Descriptive only; no flow/scoring side-effects.
+  mv_pct <- t$move_pct; mv_base <- t$move_base
+  mv_fib <- t$move_fib; mv_next <- t$move_next_ext
+  move_val <- if (is.null(mv_pct) || is.na(mv_pct)) .fmt_cell(NA, t_reason)
+    else sprintf("%.1f%% of base&rarr;target leg &middot; ~%s rung%s",
+                 mv_pct, mv_fib %||% "n/a",
+                 if (!is.null(mv_next) && !is.na(mv_next))
+                   sprintf(" &middot; next ext %s", mv_next) else "")
+  move_note <- if (!is.null(mv_base) && !is.na(mv_base))
+    sprintf("base = swing %s %.2f", if (direction == "long") "low" else "high", mv_base)
+    else ""
+
   targets_html <- paste0(src_caption, sprintf(paste0(
     '<h3>Structural target sources</h3>',
     '<table><tr><th>Field</th><th>Value</th><th>Note</th></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note"></td></tr>',
-    '<tr><td>%s</td><td class="value">%s</td><td class="note"></td></tr>',
+    '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">cutoff &ge; 2</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">overlay only</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
+    '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
     '</table>'),
-    .tt("spot_target_low"),  .fmt_cell(t$spot_target_low, t_reason),
-    .tt("spot_target_high"), .fmt_cell(t$spot_target_high, t_reason),
+    .tt("Target &mdash; near", override = .TOOLTIPS[["spot_target_low"]]),
+      .fmt_cell(t$spot_target_low, t_reason),
+    .tt("Target &mdash; far", override = .TOOLTIPS[["spot_target_high"]]),
+      high_cell, high_note,
     .tt("targets_agreeing"), .fmt_cell(t$targets_agreeing, t_reason, digits = 0),
     .tt("fib_confirms"),
       if (is.na(t$fib_confirms)) (.fmt_cell(NA, t_reason)) else as.character(t$fib_confirms),
+    .tt("Move position", override = .TOOLTIPS[["move_position"]]),
+      move_val, move_note,
     .tt("expiry"), .fmt_cell(pd$expiry, pd$expiry_reason),
     if (!is.null(pd$expiry_reason)) "live-picked from IBKR" else "from scanner CSV"))
 
@@ -690,7 +764,7 @@ render_analyze_html <- function(ctx, out_dir) {
   fmt <- function(v) if (is.null(v) || is.na(v)) "&mdash;" else sprintf("$%.2f", v)
   rr  <- if (is.na(r$rr)) "&mdash;" else sprintf("%.2f", r$rr)
   paste0(
-    '<table><tr><th>Entry</th><th>Stop</th><th>Target (low/high)</th>',
+    '<table><tr><th>Entry</th><th>Stop</th><th>Target (near/far)</th>',
     '<th>Risk/sh</th><th>Reward/sh</th><th>R:R</th></tr>',
     sprintf(paste0('<tr class="row-pass"><td>%s</td><td>%s</td>',
                    '<td>%s / %s</td><td>%s</td><td>%s</td><td class="value">%s</td></tr>'),

@@ -125,78 +125,149 @@ compute_structural_target <- function(price, hist_close, hist_high,
   .finalize_targets(candidates, price, hist_close, direction = "short")
 }
 
-#' Pick the two closest levels and tally agreement. Direction-symmetric.
+#' Fib 1.272/1.618 confirmation overlay — direction-aware. TRUE if a projected
+#' Fib extension lands within ±2% of either target endpoint. `spot_target_high`
+#' may be NA (single corroborated target) — only the set endpoints are tested.
+.fib_overlay <- function(spot_target_low, spot_target_high, hist_close, direction) {
+  recent_60 <- tail(hist_close, min(60, length(hist_close)))
+  if (length(recent_60) < 20) return(FALSE)
+  tgts <- c(spot_target_low, spot_target_high)
+  tgts <- tgts[!is.na(tgts)]
+  if (length(tgts) == 0) return(FALSE)
+  hit <- function(fib) any(abs(fib - tgts) / abs(tgts) <= 0.02)
+  if (direction == "long") {
+    anchor_idx <- which.min(recent_60)
+    if (anchor_idx >= length(recent_60)) return(FALSE)
+    peak <- max(recent_60[(anchor_idx + 1):length(recent_60)], na.rm = TRUE)
+    if (peak <= recent_60[anchor_idx]) return(FALSE)
+    leg <- peak - recent_60[anchor_idx]
+    for (fib in c(recent_60[anchor_idx] + leg * 1.272,
+                   recent_60[anchor_idx] + leg * 1.618))
+      if (hit(fib)) return(TRUE)
+  } else {  # short
+    anchor_idx <- which.max(recent_60)
+    if (anchor_idx >= length(recent_60)) return(FALSE)
+    trough <- min(recent_60[(anchor_idx + 1):length(recent_60)], na.rm = TRUE)
+    if (trough >= recent_60[anchor_idx]) return(FALSE)
+    leg <- recent_60[anchor_idx] - trough
+    for (fib in c(recent_60[anchor_idx] - leg * 1.272,
+                   recent_60[anchor_idx] - leg * 1.618))
+      if (hit(fib)) return(TRUE)
+  }
+  FALSE
+}
+
+#' Move-maturity overlay for the Fib/structural block. Expresses how far the
+#' current move has travelled from its swing base toward the nearest structural
+#' target (leg_top), as (a) % of the base->leg_top leg and (b) the nearest
+#' Fibonacci rung, plus the next extension rung as a forward price marker.
+#' Close-based swings, matching .fib_overlay. Direction-aware:
+#'   long  — base = swing low,  travel up toward a higher leg_top
+#'   short — base = swing high, travel down toward a lower leg_top
+#' Returns list(base, pct, ratio, label, next_ext); NA fields on bad inputs.
+.move_extension <- function(price, hist_close, leg_top, direction,
+                            window = 120) {
+  na <- list(base = NA_real_, pct = NA_real_, ratio = NA_real_,
+             label = NA_character_, next_ext = NA_character_)
+  if (is.na(price) || is.na(leg_top) || length(hist_close) < 20) return(na)
+  recent <- tail(hist_close, min(window, length(hist_close)))
+  base <- if (direction == "long") min(recent, na.rm = TRUE)
+          else                     max(recent, na.rm = TRUE)
+  span <- if (direction == "long") leg_top - base else base - leg_top
+  if (is.na(base) || is.na(span) || span <= 0)
+    return(modifyList(na, list(base = round(base, 2))))
+  travel <- if (direction == "long") price - base else base - price
+  ratio  <- travel / span
+  rungs  <- c(0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618, 2.0)
+  near   <- rungs[which.min(abs(rungs - ratio))]
+  label  <- if (near >= 1.272) sprintf("%.3f ext", near) else sprintf("%.3f", near)
+  # Next true extension rung (> 1.0) above the current ratio, priced out as a
+  # forward level — "where the move would push beyond the wall / get extended".
+  above  <- rungs[rungs > ratio + 1e-9 & rungs > 1.0]
+  next_ext <- if (length(above) > 0) {
+    r   <- above[1]
+    lvl <- if (direction == "long") base + r * span else base - r * span
+    sprintf("%.3f = %.2f", r, lvl)
+  } else NA_character_
+  list(base = round(base, 2), pct = round(ratio * 100, 1),
+       ratio = round(ratio, 3), label = label, next_ext = next_ext)
+}
+
+#' Pick the structural-target band and tally agreement. Direction-symmetric.
 #' For long: candidates sorted ascending, closer = lower price (closer to spot).
 #' For short: candidates sorted descending, closer = higher price (closer to spot).
+#'
+#' Coincident levels: the nearest unbroken swing high is frequently ALSO the
+#' 52-week high (literally the same bar), so two of the three sources return the
+#' identical value. Rather than emit a zero-width band (spot_target_low ==
+#' spot_target_high), a level corroborated by >=2 sources within ±2% is reported
+#' as a SINGLE target (spot_target_high = NA) with targets_agreeing = its support
+#' count. Genuinely distinct levels still form a low/high band as before.
 .finalize_targets <- function(candidates, price, hist_close, direction) {
   if (direction == "long") candidates <- sort(candidates)
   else                     candidates <- sort(candidates, decreasing = TRUE)
 
+  if (length(candidates) == 0) {
+    return(list(spot_target_low = NA_real_, spot_target_high = NA_real_,
+                targets_agreeing = 0L, fib_confirms = FALSE,
+                source_levels = numeric(0), direction = direction,
+                move_base = NA_real_, move_pct = NA_real_,
+                move_fib = NA_character_, move_next_ext = NA_character_))
+  }
+
   if (length(candidates) < 2) {
-    return(list(spot_target_low = if (length(candidates) == 1) candidates[1] else NA_real_,
-                spot_target_high = NA_real_,
-                targets_agreeing = length(candidates),
-                fib_confirms = FALSE,
-                source_levels = round(candidates, 2),
-                direction = direction))
-  }
-
-  # Spreads: absolute proportional gap between adjacent levels
-  spreads <- abs(diff(candidates)) / abs(candidates[-length(candidates)])
-  best_idx <- which.min(spreads)
-  spot_target_low  <- candidates[best_idx]      # closer to spot
-  spot_target_high <- candidates[best_idx + 1]  # farther from spot
-  agreeing <- if (spreads[best_idx] <= 0.05) 2L else 1L
-  if (length(candidates) >= 3 && spreads[best_idx] <= 0.05) {
-    if (length(spreads) >= best_idx + 1 && spreads[best_idx + 1] <= 0.05)
-      agreeing <- 3L
-  }
-
-  # Fib confirmation overlay — direction-aware
-  fib_confirms <- FALSE
-  recent_60 <- tail(hist_close, min(60, length(hist_close)))
-  if (length(recent_60) >= 20) {
-    if (direction == "long") {
-      anchor_idx <- which.min(recent_60)
-      if (anchor_idx < length(recent_60)) {
-        after <- recent_60[(anchor_idx + 1):length(recent_60)]
-        peak <- max(after, na.rm = TRUE)
-        if (peak > recent_60[anchor_idx]) {
-          leg <- peak - recent_60[anchor_idx]
-          for (fib in c(recent_60[anchor_idx] + leg * 1.272,
-                         recent_60[anchor_idx] + leg * 1.618)) {
-            if (abs(fib - spot_target_low)  / abs(spot_target_low)  <= 0.02 ||
-                abs(fib - spot_target_high) / abs(spot_target_high) <= 0.02) {
-              fib_confirms <- TRUE; break
-            }
-          }
-        }
+    spot_target_low  <- candidates[1]
+    spot_target_high <- NA_real_
+    agreeing <- 1L
+  } else {
+    # Cluster near-coincident levels (±2%, matching the agreement tooltip) into
+    # distinct structural levels, tracking how many sources support each.
+    reps <- numeric(0); counts <- integer(0)
+    for (cand in candidates) {
+      if (length(reps) > 0 &&
+          abs(cand - reps[length(reps)]) / abs(reps[length(reps)]) <= 0.02) {
+        counts[length(counts)] <- counts[length(counts)] + 1L
+      } else {
+        reps <- c(reps, cand); counts <- c(counts, 1L)
       }
-    } else {  # short
-      anchor_idx <- which.max(recent_60)
-      if (anchor_idx < length(recent_60)) {
-        after <- recent_60[(anchor_idx + 1):length(recent_60)]
-        trough <- min(after, na.rm = TRUE)
-        if (trough < recent_60[anchor_idx]) {
-          leg <- recent_60[anchor_idx] - trough
-          for (fib in c(recent_60[anchor_idx] - leg * 1.272,
-                         recent_60[anchor_idx] - leg * 1.618)) {
-            if (abs(fib - spot_target_low)  / abs(spot_target_low)  <= 0.02 ||
-                abs(fib - spot_target_high) / abs(spot_target_high) <= 0.02) {
-              fib_confirms <- TRUE; break
-            }
-          }
-        }
-      }
+    }
+
+    if (max(counts) >= 2L) {
+      # A corroborated level exists — report it as a single target (closest such
+      # level to spot wins ties; reps stay in proximity order from the sort).
+      primary_idx <- which.max(counts)
+      spot_target_low  <- reps[primary_idx]
+      spot_target_high <- NA_real_
+      agreeing <- min(as.integer(max(counts)), 3L)
+    } else {
+      # No coincidence — tightest adjacent pair is the consensus band.
+      spreads <- abs(diff(candidates)) / abs(candidates[-length(candidates)])
+      best_idx <- which.min(spreads)
+      spot_target_low  <- candidates[best_idx]      # closer to spot
+      spot_target_high <- candidates[best_idx + 1]  # farther from spot
+      agreeing <- if (spreads[best_idx] <= 0.05) 2L else 1L
+      if (length(candidates) >= 3 && spreads[best_idx] <= 0.05 &&
+          length(spreads) >= best_idx + 1 && spreads[best_idx + 1] <= 0.05)
+        agreeing <- 3L
     }
   }
 
+  fib_confirms <- .fib_overlay(spot_target_low, spot_target_high,
+                               hist_close, direction)
+
+  # Move-maturity overlay: leg_top = nearest structural target (the wall the
+  # move is testing). Reuses the same swing base the Fib overlay anchors on.
+  move <- .move_extension(price, hist_close, spot_target_low, direction)
+
   list(spot_target_low = round(spot_target_low, 2),
-       spot_target_high = round(spot_target_high, 2),
+       spot_target_high = if (is.na(spot_target_high)) NA_real_
+                          else round(spot_target_high, 2),
        targets_agreeing = as.integer(agreeing),
        fib_confirms = fib_confirms,
        source_levels = round(candidates, 2),
-       direction = direction)
+       direction = direction,
+       move_base = move$base, move_pct = move$pct,
+       move_fib = move$label, move_next_ext = move$next_ext)
 }
 
 #' Nearest round number above current price on tiered grid.
