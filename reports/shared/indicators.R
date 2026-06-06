@@ -29,7 +29,7 @@ calc_ind <- function(d) {
   d$din    <- as.numeric(adx_obj[, "DIn"])
 
   d$ma20   <- as.numeric(TTR::SMA(d$Close, n = 20))
-  d$ma50   <- as.numeric(TTR::SMA(d$Close, n = 50))
+  d$ma50   <- as.numeric(TTR::EMA(d$Close, n = 50))
   d$ma20_slope <- (d$ma20 - dplyr::lag(d$ma20, 5)) / dplyr::lag(d$ma20, 5) * 100
   d$ma50_slope <- (d$ma50 - dplyr::lag(d$ma50, 5)) / dplyr::lag(d$ma50, 5) * 100
 
