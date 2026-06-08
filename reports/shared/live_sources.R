@@ -68,13 +68,23 @@ if (!exists("%||%", mode = "function")) {
 
 #' Pick the IBKR expiration whose DTE is closest to `target_dte`. Filters out
 #' past expirations. Returns YYYYMMDD string or NA.
-.pick_expiry_for_dte <- function(expiries, target_dte) {
+.pick_expiry_for_dte <- function(expiries, target_dte, prefer_monthly = TRUE) {
   if (is.null(expiries) || length(expiries) == 0) return(NA_character_)
   exp_dates <- as.Date(as.character(expiries), format = "%Y%m%d")
   dtes <- as.integer(exp_dates - Sys.Date())
   ok <- !is.na(dtes) & dtes > 0
   if (!any(ok)) return(NA_character_)
-  expiries <- expiries[ok]; dtes <- dtes[ok]
+  expiries <- expiries[ok]; exp_dates <- exp_dates[ok]; dtes <- dtes[ok]
+  # Prefer the standard monthly (3rd Friday: weekday Fri & day-of-month 15-21).
+  # Monthlies carry the OI and the tight bid/ask; weeklies are often near-dead
+  # (e.g. C Jul'26 weekly ATM 25% wide / OI ~1 vs monthly 7% / OI ~5k), which
+  # otherwise mis-trips the vehicle rule into "stock" and prices junk spreads.
+  if (isTRUE(prefer_monthly)) {
+    lt <- as.POSIXlt(exp_dates)
+    is_monthly <- lt$wday == 5L & lt$mday >= 15L & lt$mday <= 21L
+    if (any(is_monthly))
+      return(expiries[is_monthly][which.min(abs(dtes[is_monthly] - target_dte))])
+  }
   expiries[which.min(abs(dtes - target_dte))]
 }
 
@@ -464,6 +474,130 @@ resolve_skew_25d <- function(ticker, spot, freshness, tws_ok = TRUE,
     }
   }
   .live_25d_skew(ticker, spot, target_dte = target_dte, tws_ok = tws_ok)
+}
+
+# ── Option bid/ask spread (liquidity) ─────────────────────────────────────
+
+#' Pick the row whose delta is closest to `target` (signed: +0.30 for a 30Δ
+#' call, -0.30 for a 30Δ put). Returns a 1-row data.frame or NULL.
+.pick_delta_row <- function(df, target) {
+  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) return(NULL)
+  d <- suppressWarnings(as.numeric(df$delta))
+  ok <- !is.na(d)
+  if (!any(ok)) return(NULL)
+  cand <- which(ok)
+  cand[which.min(abs(d[ok] - target))] |> (\(i) df[i, , drop = FALSE])()
+}
+
+#' Pick the row whose strike is closest to `spot`. Returns 1-row df or NULL.
+.pick_atm_row <- function(df, spot) {
+  if (is.null(df) || !is.data.frame(df) || nrow(df) == 0) return(NULL)
+  k <- suppressWarnings(as.numeric(df$strike))
+  ok <- !is.na(k)
+  if (!any(ok)) return(NULL)
+  which(ok)[which.min(abs(k[ok] - spot))] |> (\(i) df[i, , drop = FALSE])()
+}
+
+#' Normalized bid/ask spread for one option row = (ask-bid)/mid. Prefers the
+#' Python-side `spread` column (= 2*(ask-bid)/(ask+bid), identical to (ask-bid)
+#' /mid); falls back to a local recompute from bid/ask. Returns a fraction
+#' (e.g. 0.27 for a 27% spread) or NA.
+.norm_spread <- function(row) {
+  if (is.null(row) || nrow(row) == 0) return(NA_real_)
+  sp <- suppressWarnings(as.numeric(row$spread[1]))
+  if (!is.na(sp) && sp >= 0) return(sp)
+  bid <- suppressWarnings(as.numeric(row$bid[1]))
+  ask <- suppressWarnings(as.numeric(row$ask[1]))
+  if (is.na(bid) || is.na(ask) || (bid + ask) <= 0) return(NA_real_)
+  2 * (ask - bid) / (ask + bid)
+}
+
+#' Flatten one option row into the fields the report needs.
+.spread_grab <- function(row) {
+  list(
+    strike = if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row$strike[1])),
+    spread = .norm_spread(row),
+    bid    = if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row$bid[1])),
+    ask    = if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row$ask[1])),
+    delta  = if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row$delta[1])))
+}
+
+#' Resolve option bid/ask-spread liquidity at one expiry near `target_dte`.
+#' Probes the ATM strike (call + put) and the ~30Δ call/put wings, computing
+#' the normalized spread (ask-bid)/mid for each. Live IBKR only — option quotes
+#' have no DB-cache path here. force_refresh=TRUE (like .live_atm_iv /
+#' .live_25d_skew): the parquet quote cache can hold rows fetched by paths that
+#' left bid/ask NaN (e.g. chain-OI scans), which would yield a spurious "no
+#' bid/ask spread" NO DATA — a spread probe must pull the live quote.
+#'
+#' Returns .ok(list(expiration, dte, atm_strike, atm_call, atm_put, c30, p30,
+#'   atm_bid_ask_pct)) where atm_*/c30/p30 are .spread_grab() lists (spreads are
+#'   fractions) and atm_bid_ask_pct is the mean ATM call/put spread in PERCENT
+#'   (for the vehicle rule). .miss / .nodata on failure.
+resolve_option_spread <- function(ticker, spot, target_dte = 45, tws_ok = TRUE) {
+  if (!isTRUE(tws_ok))
+    return(.miss("TWS not reachable; cannot probe option bid/ask spreads"))
+  py <- .tdata_py()
+  if (is.null(py))
+    return(.miss("tdata_py unavailable; cannot probe option bid/ask spreads"))
+  if (is.na(spot) || spot <= 0) return(.miss("spot price unavailable"))
+
+  expiries <- tryCatch(py$getExpirationDates(ticker),
+                       error = function(e) conditionMessage(e))
+  if (is.character(expiries) && length(expiries) == 1)
+    return(.miss(paste("getExpirationDates:", expiries)))
+  if (is.null(expiries) || length(expiries) == 0)
+    return(.miss("no expirations from IBKR"))
+  expiration <- .pick_expiry_for_dte(expiries, target_dte)
+  if (is.na(expiration))
+    return(.miss(sprintf("no expiry near %dd DTE", target_dte)))
+  dte <- tryCatch(as.integer(as.Date(expiration, "%Y%m%d") - Sys.Date()),
+                  error = function(e) NA_integer_)
+
+  # ±35% span so the ~30Δ wings (typ. ±10-15% for a 45 DTE swing name) are
+  # covered even when IV is elevated.
+  strikes <- tryCatch(py$getStrikesAuto(
+    sym = ticker, expiration = expiration,
+    center_strike = spot, range_pct = 0.35),
+    error = function(e) conditionMessage(e))
+  if (is.character(strikes) && length(strikes) == 1)
+    return(.miss(paste("getStrikesAuto:", strikes)))
+  if (is.null(strikes) || length(strikes) == 0)
+    return(.miss("no strikes from IBKR"))
+  strikes <- as.numeric(unlist(strikes)); strikes <- strikes[!is.na(strikes)]
+  if (length(strikes) == 0) return(.miss("all strikes from IBKR were NaN"))
+
+  fetch_df <- function(right) {
+    tryCatch(py$getOptValue(
+      sym = ticker, expiration = expiration,
+      strikes = as.list(strikes), right = right,
+      force_refresh = TRUE),
+      error = function(e) NULL)
+  }
+  df_c <- fetch_df("C"); df_p <- fetch_df("P")
+  if ((is.null(df_c) || nrow(df_c) == 0) && (is.null(df_p) || nrow(df_p) == 0))
+    return(.nodata(sprintf("getOptValue empty for both wings on %s", expiration)))
+
+  atm_call <- .spread_grab(.pick_atm_row(df_c, spot))
+  atm_put  <- .spread_grab(.pick_atm_row(df_p, spot))
+  c30      <- .spread_grab(.pick_delta_row(df_c,  0.30))
+  p30      <- .spread_grab(.pick_delta_row(df_p, -0.30))
+
+  all_spreads <- c(atm_call$spread, atm_put$spread, c30$spread, p30$spread)
+  if (all(is.na(all_spreads)))
+    return(.nodata(sprintf("quotes returned but no bid/ask spread on %s",
+                           expiration)))
+
+  atm_spreads <- c(atm_call$spread, atm_put$spread)
+  atm_spreads <- atm_spreads[!is.na(atm_spreads)]
+  atm_bid_ask_pct <- if (length(atm_spreads) > 0)
+    round(mean(atm_spreads) * 100, 1) else NA_real_
+  atm_strike <- if (!is.na(atm_call$strike)) atm_call$strike else atm_put$strike
+
+  .ok(list(expiration = expiration, dte = dte, atm_strike = atm_strike,
+           atm_call = atm_call, atm_put = atm_put, c30 = c30, p30 = p30,
+           atm_bid_ask_pct = atm_bid_ask_pct),
+      source = "live")
 }
 
 # ── Chain OI ──────────────────────────────────────────────────────────────

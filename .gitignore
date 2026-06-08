@@ -61,6 +61,7 @@ logs/
 *.pdf
 *.html
 ivol_probe_out/
+quotes/
 
 # Claude project config
 .claude/

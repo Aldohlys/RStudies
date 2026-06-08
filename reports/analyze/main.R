@@ -103,12 +103,25 @@ CONFIG$tws_reachable <- TWS_REACHABLE
 
 # ── Phase A: option liquidity (informational only) ────────────────────────
 message("Phase A: Option liquidity probe (informational)...")
-phase_a <- run_phase_a(args$ticker, freshness = freshness)
+phase_a <- run_phase_a(args$ticker, freshness = freshness, config = CONFIG)
 message(sprintf("  A: %s | %s expiries (%s tradeable in 14-90 DTE) | src=%s",
                 phase_a$result,
                 phase_a$n_expiries %||% "n/a",
                 phase_a$tradeable_expiries %||% "n/a",
                 phase_a$source %||% "n/a"))
+if (!is.null(phase_a$spread)) {
+  .sp <- phase_a$spread
+  .pct <- function(g) if (is.null(g) || is.na(g$spread)) "n/a"
+                      else sprintf("%.0f%%", g$spread * 100)
+  message(sprintf("    Spread @ %s (%sd): ATM call %s / put %s | 30Δ call %s / put %s",
+                  .sp$expiration %||% "n/a", .sp$dte %||% "n/a",
+                  .pct(.sp$atm_call), .pct(.sp$atm_put),
+                  .pct(.sp$c30), .pct(.sp$p30)))
+} else if (!identical(phase_a$spread_status, "LIVE")) {
+  message(sprintf("    Spread probe: %s%s", phase_a$spread_status %||% "n/a",
+                  if (!is.null(phase_a$spread_reason))
+                    paste0(" — ", phase_a$spread_reason) else ""))
+}
 
 # ── Phase B: Trend + sector RS context ────────────────────────────────────
 message("Phase B: Trend + sector RS context...")
@@ -138,7 +151,7 @@ if (!is.null(phase_c$funnel)) {
 # ── Phase D: Setup, chain, R:R + structures table ─────────────────────────
 message("Phase D: Setup, chain, R:R, structures...")
 phase_d <- run_phase_d(args$ticker, args$direction, phase_b, phase_c,
-                       config = CONFIG, freshness = freshness)
+                       config = CONFIG, freshness = freshness, phase_a = phase_a)
 message(sprintf("  D: structures=%s chain=%s entry=%s | targets_agreeing=%s | within-cap=%s",
                 phase_d$structures_status_prov, phase_d$chain_status_prov,
                 phase_d$entry_status_prov, phase_d$targets_agreeing,

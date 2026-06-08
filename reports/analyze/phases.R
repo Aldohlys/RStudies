@@ -46,9 +46,26 @@
 # Step 5 rewrite 2026-05-12: Phase A is INFORMATIONAL only — never SKIPs the
 # downstream phases. Live IBKR probe (getExpirationDates + ATM strikes). DB
 # scanner_rich_universe cache and scanner CSV are last-resort fallbacks.
-run_phase_a <- function(ticker, freshness = NULL) {
-  tws_ok <- TRUE  # reachability is checked at module level (CONFIG$tws_reachable),
-                  # but the probe call below has its own try/error guards.
+run_phase_a <- function(ticker, freshness = NULL, config = NULL) {
+  tws_ok <- if (is.null(config)) TRUE else isTRUE(config$tws_reachable)
+                  # reachability is checked at module level (CONFIG$tws_reachable);
+                  # each probe call below also has its own try/error guards.
+
+  # Bid/ask-spread liquidity probe — one expiry near 45 DTE, ATM + 30Δ wings.
+  # Informational; surfaces appalling OTM spreads (e.g. REMX July 30Δ call near
+  # 100%) and feeds the dormant atm_bid_ask% > 8 → stock vehicle rule.
+  spot <- tryCatch(.live_price(ticker), error = function(e) NA_real_)
+  spr <- tryCatch(resolve_option_spread(ticker, spot, target_dte = 45,
+                                        tws_ok = tws_ok),
+                  error = function(e)
+                    .miss(paste("resolve_option_spread:", conditionMessage(e))))
+  spread_block <- list(
+    spread          = if (is.list(spr$value)) spr$value else NULL,
+    spread_status   = spr$status,
+    spread_reason   = spr$reason,
+    spread_retrieved_at = spr$retrieved_at,
+    atm_bid_ask_pct = if (is.list(spr$value)) spr$value$atm_bid_ask_pct else NA_real_
+  )
 
   # Live probe — try to fetch expiries
   py <- tryCatch(Tdata:::tdata_py, error = function(e) NULL)
@@ -62,14 +79,14 @@ run_phase_a <- function(ticker, freshness = NULL) {
                             error = function(e) as.Date(NA))
       dtes <- as.integer(exp_dates - Sys.Date())
       tradeable <- sum(!is.na(dtes) & dtes >= 14 & dtes <= 90, na.rm = TRUE)
-      return(list(
+      return(c(list(
         result = "INFO",
         n_expiries = n_exp,
         tradeable_expiries = tradeable,
         source = "live IBKR",
         reason = NULL,
         retrieved_at = Sys.time()
-      ))
+      ), spread_block))
     }
   }
 
@@ -82,36 +99,36 @@ run_phase_a <- function(ticker, freshness = NULL) {
       params = list(ticker)), error = function(e) NULL)
     DBI::dbDisconnect(conn)
     if (!is.null(db_row) && nrow(db_row) > 0) {
-      return(list(
+      return(c(list(
         result = "INFO",
         n_expiries = NA_integer_,
         tradeable_expiries = NA_integer_,
         source = "DB scanner_rich_universe",
         reason = paste("DB:", db_row$reason),
         retrieved_at = db_row$cache_date
-      ))
+      ), spread_block))
     }
   }
 
   # Last resort: scanner CSV
   scan <- .read_scanner_row(ticker, freshness)
   if (!is.null(scan$row)) {
-    return(list(
+    return(c(list(
       result = "INFO",
       n_expiries = NA_integer_,
       tradeable_expiries = NA_integer_,
       source = "scanner CSV",
       reason = "live + DB unavailable; using scanner CSV",
       retrieved_at = scan$mtime
-    ))
+    ), spread_block))
   }
 
-  list(result = "INFO",
-       n_expiries = NA_integer_,
-       tradeable_expiries = NA_integer_,
-       source = "unavailable",
-       reason = "live IBKR, DB, and scanner CSV all unavailable",
-       retrieved_at = NA)
+  c(list(result = "INFO",
+         n_expiries = NA_integer_,
+         tradeable_expiries = NA_integer_,
+         source = "unavailable",
+         reason = "live IBKR, DB, and scanner CSV all unavailable",
+         retrieved_at = NA), spread_block)
 }
 
 # ── PHASE B ──────────────────────────────────────────────────────────────
@@ -229,11 +246,11 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
   })
 }
 
-.live_price <- function(ticker) {
-  p <- tryCatch(Tdata::getLastSymPrice(ticker), error = function(e) NA_real_)
+#' Pluck a single numeric price from a Tdata price return (scalar or tibble).
+.pluck_price <- function(p) {
   if (is.null(p) || length(p) == 0) return(NA_real_)
-  # Some Tdata variants return a data.frame; pluck a price-like column.
   if (is.data.frame(p)) {
+    if (nrow(p) == 0) return(NA_real_)
     cand <- intersect(c("price", "Close", "close", "last", "value"), names(p))
     if (length(cand) > 0) p <- p[[cand[1]]] else {
       # Pick the last numeric column (date columns sit at the start)
@@ -241,7 +258,19 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
       p <- if (length(num_cols) > 0) p[[tail(num_cols, 1)]] else p[[1]]
     }
   }
-  as.numeric(p)[1]
+  suppressWarnings(as.numeric(p)[1])
+}
+
+#' Resolve a live-ish spot for /analyze. Prefers the IBKR price
+#' (getStockPrice close=FALSE → tdata_py$getValue when TWS is up; DB last price
+#' otherwise) and falls back to Yahoo. getLastSymPrice alone is Yahoo's
+#' ADJUSTED daily close — a day stale and dividend-adjusted, so it drifts from
+#' the live quote (REMX 2026-06-03: Yahoo 102 vs IBKR 97.81).
+.live_price <- function(ticker) {
+  v <- .pluck_price(tryCatch(Tdata::getStockPrice(ticker, close = FALSE),
+                             error = function(e) NULL))
+  if (!is.na(v) && v > 0) return(v)
+  .pluck_price(tryCatch(Tdata::getLastSymPrice(ticker), error = function(e) NULL))
 }
 
 # ── PHASE C (C.1 cheap score; C.2 funnel handled in funnel.R) ────────────
@@ -381,7 +410,21 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config) {
     funnel_status <- "SKIPPED"; funnel_detail <- "--no-vol-funnel"
   }
 
+  # Phase A bid/ask-spread liquidity provenance.
+  sp <- phase_a$spread
+  liq_detail <- if (!is.null(sp)) {
+    pct <- function(g) if (is.null(g) || is.na(g$spread)) "n/a"
+                       else sprintf("%.0f%%", g$spread * 100)
+    sprintf("ATM %s · 30&Delta; call %s @ %s",
+            if (is.na(phase_a$atm_bid_ask_pct))
+              "n/a" else sprintf("%.1f%%", phase_a$atm_bid_ask_pct),
+            pct(sp$c30), sp$expiration %||% "n/a")
+  } else phase_a$spread_reason %||% "no spread probe"
+
   coverage <- list(
+    list(dimension = "Option liquidity (A)",
+         status = phase_a$spread_status %||% "FETCH FAILED",
+         detail = liq_detail),
     list(dimension = "Trend &amp; sector RS (B)",
          status = phase_b$result %||% "FETCH FAILED",
          detail = sprintf("stage=%s · alignment=%s",

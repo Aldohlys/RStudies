@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-08] - analyze: Phase A bid/ask liquidity probe + monthly-chain preference
+
+`/analyze C long` recommended a **stock** vehicle off an ATM bid/ask of **25%** (30Δ call 45%) — but those quotes came from the near-dead **Jul 24 weekly** (OI ~1). The standard **Jul 17 monthly** was 6–7% wide with OI ~5k: a perfectly tradeable debit-vertical chain. Two defects: the new liquidity probe was reading whatever expiry sat closest to 45 DTE (a weekly), and that wide reading then mis-tripped the dormant `atm_bid_ask% > 8 → stock` vehicle rule.
+
+### Added
+- **shared/live_sources.R — `resolve_option_spread()`** (+ helpers `.pick_atm_row()`, `.pick_delta_row()`, `.norm_spread()`, `.spread_grab()`): live IBKR probe of one expiry's ATM and 30Δ call/put bid/ask, returning the normalized `(ask−bid)/mid` per leg plus an `atm_bid_ask_pct`. Surfaces appalling OTM spreads (e.g. REMX July 30Δ call near 100%) and feeds the `atm_bid_ask% > 8 → stock` vehicle rule.
+- **analyze/phases.R — `run_phase_a()`**: now runs the spread probe (informational), threads `spread`/`spread_status`/`atm_bid_ask_pct` through every return path (live / DB / scanner-CSV / unavailable). New `.pluck_price()` + reworked `.live_price()` prefer the live IBKR price (`getStockPrice(close=FALSE)`) over Yahoo's adjusted, day-stale close.
+- **analyze/main.R + report.R**: spread line in the run log; new **"Option liquidity (A)"** row in the Data Coverage provenance block.
+
+### Fixed
+- **shared/live_sources.R — `.pick_expiry_for_dte()`**: new `prefer_monthly = TRUE`. Detects the standard monthly (3rd Friday: `wday==5 & mday 15–21`), picks the monthly nearest `target_dte`, and falls back to nearest-any only when no monthly exists (indices / weekly-only names). One chokepoint, so it corrects the liquidity probe, the vehicle decision, the structure legs (`resolve_expiry` 30d/55d), and `.live_atm_iv` together.
+
+### Verified
+- Selector unit cases on C's Jul'26 expiries (Jul 2/10/17/24, Aug 21): targets 30/45/55 all resolve to **Jul 17** (was Jul 24 weekly at target 45); weekly-only input falls back to the weekly without error; `prefer_monthly=FALSE` reproduces the old nearest-DTE pick. All three changed R files parse.
+- **Known follow-up:** when the 30d and 55d structure legs both snap to the same monthly (monthlies at e.g. 39 & 74 DTE), the two-expiry grid collapses to one — partially defeating the "enumerate ~30 and ~55 DTE" intent. Candidate fix: long leg takes the next *distinct* monthly. Deferred.
+
+### Housekeeping
+- **.gitignore**: ignore `quotes/` (tdata_py per-ticker quote cache written at run time).
+
 ## [2026-06-05] - analyze: move-maturity base sized to the breakout horizon
 
 Follow-up to the move-maturity overlay (same day). The first cut anchored the base on the **120-day** (close) swing low — wrong for a 2-4 week breakout horizon (BOT plan: hold 8-14d options / 20-40d stock; base forms over the 20d/40d squeeze). On AAPL that anchored on the stale early-April \$246 low, so every name read "fully extended." The base is now the swing pivot of the **current leg** within a breakout-sized window.
