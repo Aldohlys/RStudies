@@ -34,6 +34,7 @@ h1{font-size:22px;margin:0 0 4px}
 h2{font-size:16px;margin:24px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--rule)}
 h3{font-size:14px;margin:14px 0 6px;color:#555;text-transform:uppercase;letter-spacing:.04em}
 .sub{color:#666;font-size:12px;margin-bottom:14px}
+.warn-box{background:var(--warn-light);border-left:4px solid var(--warn-bg);padding:8px 12px;margin:6px 0 14px;font-size:13px;color:#6b4e00}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 14px}
 .badge{display:inline-block;color:#fff;padding:3px 10px;border-radius:3px;font-size:12px;font-weight:600}
 .badge-pass{background:var(--pass-bg)}
@@ -349,7 +350,8 @@ render_analyze_html <- function(ctx, out_dir) {
                                    structures_retrieved_at = pd$structures_retrieved_at,
                                    outrights = pd$outrights,
                                    stock_struct = pd$stock_struct,
-                                   direction = direction)
+                                   direction = direction,
+                                   earnings_expiry = pd$earnings_expiry)
 
   # Data summary
   sec_summary <- .render_summary(ctx)
@@ -706,7 +708,8 @@ render_analyze_html <- function(ctx, out_dir) {
                                structures_retrieved_at = NULL,
                                outrights = NULL,
                                stock_struct = NULL,
-                               direction = "long") {
+                               direction = "long",
+                               earnings_expiry = NULL) {
   cap <- config$risk_cap_lot_usd
 
   vehicle_banner <- sprintf(
@@ -716,6 +719,15 @@ render_analyze_html <- function(ctx, out_dir) {
     vehicle_banner <- paste0(vehicle_banner,
       sprintf('<p class="sub">Per shared vehicle rule: %s</p>',
               vehicle_reason))
+  }
+
+  # Earnings-inside-the-hold warning (structure-relative; see
+  # .earnings_vs_expiries). Renders only when a proposed expiry carries the print.
+  if (!is.null(earnings_expiry) && isTRUE(earnings_expiry$any_inside) &&
+      !is.null(earnings_expiry$message)) {
+    vehicle_banner <- paste0(vehicle_banner,
+      sprintf('<p class="warn-box">&#9888; %s</p>',
+              earnings_expiry$message))
   }
 
   retrieved_html <- .retrieved_caption(`live pricer` = structures_retrieved_at)
@@ -957,7 +969,10 @@ render_analyze_html <- function(ctx, out_dir) {
       .fmt_cell(if (!is.null(fn)) fn$rr_vp else NA, fn_reasons$rr, 1)),
     c("Earnings",
       if (!is.null(fn) && !is.na(fn$earnings_dte))
-        sprintf("%s (%dd)", as.character(fn$earnings_date), fn$earnings_dte)
+        sprintf("%s (%dd)%s", as.character(fn$earnings_date), fn$earnings_dte,
+                if (!is.null(pd$earnings_expiry) &&
+                    isTRUE(pd$earnings_expiry$any_inside))
+                  " &#9888; inside proposed expiry" else "")
       else .fmt_cell(NA, fn_reasons$earnings)),
     c("Targets agreeing", .fmt_cell(pd$targets_agreeing, t_reason, 0)),
     c("Effective target", .fmt_cell(pd$effective_target, e_reason)),

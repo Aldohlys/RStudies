@@ -32,6 +32,15 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
                    else if (is.na(expiry_long)) exp_long_r$reason
                    else NULL
 
+  # Earnings vs. the PROPOSED expiries. The funnel's "event window" label uses
+  # a fixed 14-day macro lookahead and runs in Phase C before expiries exist;
+  # this is the structure-relative check — earnings between today and a proposed
+  # expiry means the trade is held through the print (binary event risk).
+  earnings_expiry <- .earnings_vs_expiries(
+    earnings_dte  = if (!is.null(phase_c$funnel)) phase_c$funnel$earnings_dte else NA_integer_,
+    earnings_date = if (!is.null(phase_c$funnel)) phase_c$funnel$earnings_date else NA,
+    expiries      = expiries)
+
   # Vehicle: prefer scanner-row value; otherwise re-derive via shared rule.
   cheap_score_for_rule <- if (!is.null(phase_c) && !is.na(phase_c$cheap_score))
                             as.integer(phase_c$cheap_score) else NA_integer_
@@ -131,6 +140,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     strike            = rr_obj$strike,
     expiry            = expiry,
     expiry_reason     = expiry_reason,
+    earnings_expiry   = earnings_expiry,
     targets           = targets,
     targets_agreeing  = targets$targets_agreeing,
     chain_state       = chain$chain_state,
@@ -156,6 +166,43 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     entry_status_prov      = entry_status_prov,
     structures_status_prov = structures_status_prov
   )
+}
+
+#' Flag whether the next earnings date falls inside any PROPOSED structure
+#' expiry's holding window. Returns a list with per-expiry detail, an
+#' `any_inside` boolean, and a ready-to-render `message`. Earnings strictly
+#' between today (dte > 0) and a proposed expiry (earnings_dte <= expiry_dte)
+#' means the trade is held through the print — binary event risk, not a clean
+#' directional hold. Complements the funnel's fixed-window macro label.
+.earnings_vs_expiries <- function(earnings_dte, earnings_date, expiries) {
+  expiries <- expiries[!is.na(expiries)]
+  empty <- list(earnings_dte = earnings_dte, earnings_date = earnings_date,
+                per_expiry = list(), any_inside = FALSE, message = NULL)
+  if (is.null(earnings_dte) || is.na(earnings_dte) || earnings_dte <= 0 ||
+      length(expiries) == 0)
+    return(empty)
+  per <- lapply(expiries, function(exp) {
+    dte <- tryCatch(as.integer(as.Date(exp, "%Y%m%d") - Sys.Date()),
+                    error = function(e) NA_integer_)
+    inside <- !is.na(dte) && earnings_dte <= dte
+    list(expiry = exp, dte = dte, inside = inside,
+         days_before_expiry = if (isTRUE(inside)) dte - earnings_dte else NA_integer_)
+  })
+  any_inside <- any(vapply(per, function(p) isTRUE(p$inside), logical(1)))
+  msg <- if (any_inside) {
+    hit <- Filter(function(p) isTRUE(p$inside), per)
+    parts <- vapply(hit, function(p)
+      sprintf("%s (%dd exp, %dd pre-print)",
+              as.character(as.Date(p$expiry, "%Y%m%d")), p$dte,
+              p$days_before_expiry), character(1))
+    sprintf(paste0("Earnings %s (%dd) falls INSIDE the hold for %s. ",
+                   "The structure is carried through the print — binary event ",
+                   "risk, not a clean directional hold."),
+            as.character(earnings_date), earnings_dte,
+            paste(parts, collapse = "; "))
+  } else NULL
+  list(earnings_dte = earnings_dte, earnings_date = earnings_date,
+       per_expiry = per, any_inside = any_inside, message = msg)
 }
 
 #' Build a one-row stock-only structure (vehicle == "stock"). R:R is computed

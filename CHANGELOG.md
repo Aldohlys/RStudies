@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-08] - analyze: earnings-inside-the-hold check vs proposed expiries
+
+The vol funnel labels earnings against a **fixed 14-day** macro lookahead and runs in Phase C, *before* the structure expiries are picked — so `/analyze C long` showed earnings "outside event window" (36 DTE) while the chosen **Jul 17** monthly vehicle (39 DTE) actually carries the **2026-07-14** print 3 days before expiry. A breakout spread held through earnings is a binary event trade, not a directional hold. (The prefer-monthly fix amplifies this: the liquid chain is the post-earnings monthly, while the only pre-earnings expiries are dead weeklies.)
+
+### Added
+- **analyze/structures.R — `.earnings_vs_expiries()`**: structure-relative earnings check. For each PROPOSED expiry (the ~30d and ~55d picks), flags earnings strictly between today and that expiry (`0 < earnings_dte <= expiry_dte`), reporting per-expiry DTE and days-pre-print, an `any_inside` boolean, and a ready-to-render message. `run_phase_d()` calls it (off `phase_c$funnel$earnings_dte`) and returns `earnings_expiry`.
+- **analyze/report.R**: amber `.warn-box` banner under the *Recommended vehicle* header when a proposed expiry carries the print (e.g. "⚠ Earnings 2026-07-14 (36d) falls INSIDE the hold for 2026-07-17 (39d exp, 3d pre-print)…"); Data Summary *Earnings* row gets a "⚠ inside proposed expiry" tag.
+
+### Verified
+- Unit cases: C (earnings 36d, expiry Jul 17 / 39d) → inside, "3d pre-print"; earnings after expiry → clean; two expiries with earnings inside only the long leg → flags the long only; no earnings date → clean. Both changed files parse.
+
 ## [2026-06-08] - analyze: Phase A bid/ask liquidity probe + monthly-chain preference
 
 `/analyze C long` recommended a **stock** vehicle off an ATM bid/ask of **25%** (30Δ call 45%) — but those quotes came from the near-dead **Jul 24 weekly** (OI ~1). The standard **Jul 17 monthly** was 6–7% wide with OI ~5k: a perfectly tradeable debit-vertical chain. Two defects: the new liquidity probe was reading whatever expiry sat closest to 45 DTE (a weekly), and that wide reading then mis-tripped the dormant `atm_bid_ask% > 8 → stock` vehicle rule.
