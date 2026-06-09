@@ -83,7 +83,9 @@ default:
       pt1_max: 0     # IV30/IV90 < 0%  → 1
     # Maximum vertical-spread width to enumerate
     spread_widths: [5, 10]
-    moneyness_pct: 0.20
+    # ±5% strike band: only the 10 best near-ATM DEBIT spreads are proposed,
+    # so a tight band suffices; wider just over-fetches/over-enumerates.
+    moneyness_pct: 0.05
     # Thin-chain bypass — minimum OTM OI on a single strike before that side's
     # cap is considered usable. Below this, oi_cap_call/put = NA and the
     # structural target is used instead. ETFs and small-caps run thin.

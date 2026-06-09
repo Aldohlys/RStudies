@@ -175,9 +175,11 @@ resolve_expiry <- function(ticker, target_dte = 45, tws_ok = TRUE) {
   expiration <- .pick_expiry_for_dte(expiries, target_dte)
   if (is.na(expiration)) return(.miss(sprintf("no expiry near %dd DTE", target_dte)))
 
+  # ±4% is enough to bracket the ATM strike on any grid while qualifying far
+  # fewer strikes than the old ±10% (only the ATM strike is priced below).
   strikes <- tryCatch(py$getStrikesAuto(
     sym = ticker, expiration = expiration,
-    center_strike = spot, range_pct = 0.1),
+    center_strike = spot, range_pct = 0.04),
     error = function(e) conditionMessage(e))
   if (is.character(strikes) && length(strikes) == 1)
     return(.miss(paste("getStrikesAuto:", strikes)))
@@ -376,15 +378,24 @@ resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   }
   if (!isTRUE(tws_ok))
     return(.miss("DB Prices.rvp NA/stale; TWS not reachable for live"))
-  res <- tryCatch(Tdata::getVolMetrics(ticker),
+  # rvp comes from the 252d historical-vol bars. Fetch ONLY that via the python
+  # helper directly, NOT Tdata::getVolMetrics — the latter also computes the
+  # iv15/30/90/180 term structure (8 option-chain fetches) and writes the Prices
+  # DB, all wasted here. /analyze is a read tool; the scanner keeps Prices warm.
+  py <- .tdata_py()
+  if (is.null(py))
+    return(.miss("tdata_py unavailable for live RV percentile"))
+  res <- tryCatch(as.data.frame(py$get_volatility_metrics(
+                    sym = ticker, lookback_days = 252L, hist = TRUE, price = FALSE)),
                   error = function(e) NULL)
-  if (is.null(res) || !is.data.frame(res) || nrow(res) == 0)
-    return(.nodata("getVolMetrics request OK but returned empty"))
-  rvp <- suppressWarnings(as.numeric(res$rvp[1]))
-  if (is.na(rvp)) return(.nodata("getVolMetrics returned NaN rvp"))
+  if (is.null(res) || nrow(res) == 0)
+    return(.nodata("get_volatility_metrics returned empty"))
+  rvp <- suppressWarnings(as.numeric(res$hv_percentile[1]))
+  if (is.na(rvp)) return(.nodata("get_volatility_metrics returned NaN hv_percentile"))
+  rv30 <- suppressWarnings(as.numeric(res$current_hv[1]))
   .ok(round(rvp, 1), source = "live",
-      reason = sprintf("from getVolMetrics (RV30=%.1f%%)",
-                       suppressWarnings(as.numeric(res$rv30[1])) * 100))
+      reason = sprintf("from hist-vol bars (RV30=%.1f%%, no IV term structure)",
+                       rv30 * 100))
 }
 
 # ── 25-delta skew (RR_25) ────────────────────────────────────────────────
@@ -405,17 +416,32 @@ resolve_rvp <- function(ticker, freshness, tws_ok = TRUE, conn = NULL) {
   if (is.na(expiration))
     return(.miss(sprintf("no expiry near %dd DTE", target_dte)))
 
-  strikes <- tryCatch(py$getStrikesAuto(
+  # Locate the 25Δ wings analytically (rough IV from DB, 0.30 fallback) and
+  # price only their neighborhoods — not the whole ±25% chain. Final pick is by
+  # actual delta (pick_25d below).
+  sigma <- .rough_iv30(ticker)
+  dte   <- tryCatch(as.integer(as.Date(expiration, "%Y%m%d") - Sys.Date()),
+                    error = function(e) NA_integer_)
+  Tyr   <- (if (is.na(dte)) target_dte else dte) / 365
+  ssT   <- sigma * sqrt(Tyr)
+  drift <- 0.5 * sigma^2 * Tyr
+  k_c25 <- spot * exp( 0.6745 * ssT + drift)   # 25Δ call (OTM, above spot)
+  k_p25 <- spot * exp(-0.6745 * ssT + drift)   # 25Δ put  (OTM, below spot)
+
+  span <- max(abs(k_c25 / spot - 1), abs(1 - k_p25 / spot)) + 0.02
+  all_strikes <- tryCatch(py$getStrikesInRange(
     sym = ticker, expiration = expiration,
-    center_strike = spot, range_pct = 0.25),
+    center_strike = spot, range_pct = span),
     error = function(e) conditionMessage(e))
-  if (is.character(strikes) && length(strikes) == 1)
-    return(.miss(paste("getStrikesAuto:", strikes)))
-  if (is.null(strikes) || length(strikes) == 0)
-    return(.miss("no strikes from IBKR"))
-  strikes <- as.numeric(unlist(strikes))
-  strikes <- strikes[!is.na(strikes)]
-  if (length(strikes) == 0) return(.miss("all strikes were NaN"))
+  if (is.character(all_strikes) && length(all_strikes) == 1)
+    return(.miss(paste("getStrikesInRange:", all_strikes)))
+  all_strikes <- sort(as.numeric(unlist(all_strikes)))
+  all_strikes <- all_strikes[!is.na(all_strikes)]
+  if (length(all_strikes) == 0) return(.miss("no strikes from IBKR"))
+
+  .near <- function(center)
+    Tbasics::get_nearest_values(all_strikes, center, n_below = 1, n_above = 1)
+  strikes <- sort(unique(c(.near(k_c25), .near(k_p25))))
 
   fetch_df <- function(right) {
     tryCatch(py$getOptValue(
@@ -522,6 +548,20 @@ resolve_skew_25d <- function(ticker, spot, freshness, tws_ok = TRUE,
     delta  = if (is.null(row)) NA_real_ else suppressWarnings(as.numeric(row$delta[1])))
 }
 
+#' Rough current IV30 for locating the 30Δ wings — cheap DB read of the latest
+#' Prices.iv30 (a fraction, e.g. 0.18). Falls back to 0.30 when absent. Only
+#' used to *place* the strike search; the final 30Δ pick is by actual delta.
+.rough_iv30 <- function(ticker, default = 0.30) {
+  conn <- tryCatch(Tdata::safe_db_connect(), error = function(e) NULL)
+  if (is.null(conn)) return(default)
+  on.exit(DBI::dbDisconnect(conn))
+  v <- tryCatch(DBI::dbGetQuery(conn,
+    "SELECT iv30 FROM Prices WHERE sym = ? AND iv30 IS NOT NULL ORDER BY ROWID DESC LIMIT 1",
+    params = list(ticker))$iv30, error = function(e) NULL)
+  if (is.null(v) || length(v) == 0 || is.na(v[1]) || v[1] <= 0) return(default)
+  as.numeric(v[1])
+}
+
 #' Resolve option bid/ask-spread liquidity at one expiry near `target_dte`.
 #' Probes the ATM strike (call + put) and the ~30Δ call/put wings, computing
 #' the normalized spread (ask-bid)/mid for each. Live IBKR only — option quotes
@@ -554,18 +594,35 @@ resolve_option_spread <- function(ticker, spot, target_dte = 45, tws_ok = TRUE) 
   dte <- tryCatch(as.integer(as.Date(expiration, "%Y%m%d") - Sys.Date()),
                   error = function(e) NA_integer_)
 
-  # ±35% span so the ~30Δ wings (typ. ±10-15% for a 45 DTE swing name) are
-  # covered even when IV is elevated.
-  strikes <- tryCatch(py$getStrikesAuto(
+  # Locate the ATM + ~30Δ wings analytically (rough IV from DB, 0.30 fallback)
+  # instead of fetching the whole chain. The final 30Δ pick is still by actual
+  # delta from the fetched rows; the estimate only places the strike search.
+  sigma <- .rough_iv30(ticker)
+  Tyr   <- (if (is.na(dte)) 45L else dte) / 365
+  ssT   <- sigma * sqrt(Tyr)
+  drift <- 0.5 * sigma^2 * Tyr
+  k_c30 <- spot * exp( 0.524 * ssT + drift)   # 30Δ call (OTM, above spot)
+  k_p30 <- spot * exp(-0.524 * ssT + drift)   # 30Δ put  (OTM, below spot)
+
+  # Qualify a band just wide enough to span both wings (+2% buffer); cached per
+  # expiry after the first run. Far tighter than the old ±35%.
+  span <- max(abs(k_c30 / spot - 1), abs(1 - k_p30 / spot)) + 0.02
+  all_strikes <- tryCatch(py$getStrikesInRange(
     sym = ticker, expiration = expiration,
-    center_strike = spot, range_pct = 0.35),
+    center_strike = spot, range_pct = span),
     error = function(e) conditionMessage(e))
-  if (is.character(strikes) && length(strikes) == 1)
-    return(.miss(paste("getStrikesAuto:", strikes)))
-  if (is.null(strikes) || length(strikes) == 0)
-    return(.miss("no strikes from IBKR"))
-  strikes <- as.numeric(unlist(strikes)); strikes <- strikes[!is.na(strikes)]
-  if (length(strikes) == 0) return(.miss("all strikes from IBKR were NaN"))
+  if (is.character(all_strikes) && length(all_strikes) == 1)
+    return(.miss(paste("getStrikesInRange:", all_strikes)))
+  all_strikes <- sort(as.numeric(unlist(all_strikes)))
+  all_strikes <- all_strikes[!is.na(all_strikes)]
+  if (length(all_strikes) == 0) return(.miss("no strikes from IBKR"))
+
+  # Price ONLY the ATM + the two wing neighborhoods (±1 strike each). Quotes are
+  # force-refreshed, so fetching ~6-9 strikes instead of the whole chain is the
+  # main recurring saving.
+  .near <- function(center)
+    Tbasics::get_nearest_values(all_strikes, center, n_below = 1, n_above = 1)
+  strikes <- sort(unique(c(.near(spot), .near(k_c30), .near(k_p30))))
 
   fetch_df <- function(right) {
     tryCatch(py$getOptValue(
@@ -676,7 +733,10 @@ resolve_chain_oi <- function(ticker, expiry, spot, freshness, tws_ok = TRUE,
   py <- .tdata_py()
   if (is.null(py)) return(.miss("DB option_chain_oi_history NA/stale; tdata_py unavailable"))
   if (is.na(spot)) return(.miss("missing spot — cannot pull live OI"))
-  smin <- spot * 0.75; smax <- spot * 1.25
+  # ±12% OI band. OI walls that can cap a directional target sit within ~±10%
+  # for a 30-60 DTE swing; a far-OTM lottery wall beyond that isn't a relevant
+  # cap. ±25% just qualified/priced ~212 strikes (genericTickList=101 per strike).
+  smin <- spot * 0.88; smax <- spot * 1.12
   live_oi <- tryCatch(py$get_chain_oi(
     sym = ticker, expiration = expiry,
     strike_min = smin, strike_max = smax),

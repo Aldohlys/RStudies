@@ -502,9 +502,15 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
   rows <- list(); failures <- character(0)
   for (exp in expiries) {
     for (w in config$spread_widths) {
+      # The ±band must fit a width-w spread (short = long + w, in dollars) plus
+      # some OTM room. As a fraction of spot that's w/spot + room. For a high-
+      # priced name this stays at the lean base (QQQ: 10/717≈1.4% < 5%); for a
+      # cheap one it widens so spreads can actually form (MT ~$67: 10/67≈15%,
+      # so a fixed 5% would yield ZERO width-10 spreads).
+      eff_moneyness <- max(config$moneyness_pct, as.numeric(w) / spot + 0.03)
       df <- tryCatch(spread_mod$compute_spread_risk_reward(
         sym = ticker, trading_class = ticker, expiration = exp,
-        current_price = spot, moneyness_pct = config$moneyness_pct,
+        current_price = spot, moneyness_pct = eff_moneyness,
         spread_width = as.integer(w), right = right,
         multiplier = 100L, currency = "USD",
         exchangeSec = "SMART", exchangeOpt = "SMART",
@@ -555,7 +561,8 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
                 -spreads_df$expected_value
               else -spreads_df$reward_risk_ratio
   spreads_df <- spreads_df[order(sort_key), , drop = FALSE]
-  spreads_df
+  # Propose only the 10 best (highest-EV) DEBIT spreads; the rest are noise.
+  utils::head(spreads_df, 10)
 }
 
 #' Single-row data frame surfacing an unavailable-structures reason. `status`

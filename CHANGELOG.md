@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-06-09] - analyze: volatility-character section + option-fetch leaning
+
+### Added
+- **"Volatility character" section** (phases.R `.compute_vol_character`, report.R `.render_vol_character`, after Phase C): spot/vol correlation + vol-of-vol (cheap Yahoo history, always computed) plus an opt-in VIX put/call skew decomposition. Calls the Tdata-promoted helpers (`compute_spot_vol_correlation`, `compute_vol_of_vol`, `get_vix_skew`/`format_vix_results`; requires Tdata ≥ 5.10.21).
+- **`--skew` flag** (main.R): the VIX put/call decomposition is an ~80-strike IBKR chain pull, so it is opt-in; default runs skip it and the row reports "not computed (run with --skew)".
+
+### Changed — option-fetch leaning (large drop in live IBKR option requests per run)
+- **shared/live_sources.R**
+  - `resolve_rv30`: read `rvp` straight from the 252d historical-vol bars (`get_volatility_metrics`, hist-only) instead of `Tdata::getVolMetrics` — drops the 8 option-chain fetches (iv15/30/90/180 term structure) that were pure waste for a realized-vol percentile.
+  - `resolve_option_spread` (Phase A) and `.live_25d_skew` (funnel): locate ATM / 30Δ / 25Δ strikes analytically (rough IV via new `.rough_iv30`, then BS), qualify a tight σ-sized band, and price only the few strikes needed — was ±35%/±25% priced wholesale (≈474 quotes → ≈6).
+  - `.live_atm_iv`: ATM-search band ±10% → ±4%.
+  - `resolve_chain_oi`: OI-wall band ±25% → ±12% (a far-OTM wall is not a relevant cap for a swing-horizon target).
+- **analyze/structures.R**
+  - Proposed spreads capped to the **top-10 by EV** (was every within-cap row, ~76).
+  - Spread-enumeration band is now **width/price-aware** (`eff_moneyness = max(base, width/spot + room)`): stays tight on high-priced names (QQQ \$717: \$10 width ≈ 1.4%) and widens enough on cheap ones so spreads can form (MT \$67, F \$15 yielded ZERO width-10 spreads at a fixed 5%).
+- **analyze/defaults.R**, **config.yml**: `moneyness_pct` 0.20 → 0.05 (base; structures.R scales it up per width as needed).
+
+### Notes
+- Validated across QQQ / MT / J / NVDA / F (\$15–\$717, \$1 and \$5 grids, long + short): per-leg quote fetches down from hundreds to 1–6 strikes; structures still produced on thin/cheap names; put path symmetric. Residual cost is inside `tdata_py.spread` (per-width force-refresh band pricing) — deferred Tdata-side optimization.
+
 ## [2026-06-08] - analyze: earnings-inside-the-hold check vs proposed expiries
 
 The vol funnel labels earnings against a **fixed 14-day** macro lookahead and runs in Phase C, *before* the structure expiries are picked — so `/analyze C long` showed earnings "outside event window" (36 DTE) while the chosen **Jul 17** monthly vehicle (39 DTE) actually carries the **2026-07-14** print 3 days before expiry. A breakout spread held through earnings is a binary event trade, not a directional hold. (The prefer-monthly fix amplifies this: the liquid chain is the post-earnings monthly, while the only pre-earnings expiries are dead weeklies.)

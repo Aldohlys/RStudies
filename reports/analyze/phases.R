@@ -285,7 +285,7 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
 # always exposed in the output for transparency. Scanner CSV no longer read.
 # PASS cutoff = >=6 of 9.
 run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
-                        spot = NA_real_, freshness = NULL) {
+                        spot = NA_real_, freshness = NULL, want_skew = FALSE) {
   funnel <- if (run_funnel)
     run_funnel_deep_dive(ticker, direction, NULL, config, spot = spot,
                          freshness = freshness)
@@ -310,18 +310,53 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
             else if (!run_funnel) "SKIPPED (--no-vol-funnel)"
             else "FETCH FAILED"
 
+  vol_character <- .compute_vol_character(ticker, spot, config, want_skew = want_skew)
+
   list(
-    result      = result,
-    cheap_pass  = cheap_pass,
-    cheap_score = cheap_score,
-    cheap_max   = 9L,
-    cheap_side  = cheap_side,
-    components  = components,
-    ivp_used    = ivp_used,
-    vrp         = vrp_value,
-    funnel      = funnel,
-    source      = if (!is.null(components)) "live funnel" else "unavailable"
+    result        = result,
+    cheap_pass    = cheap_pass,
+    cheap_score   = cheap_score,
+    cheap_max     = 9L,
+    cheap_side    = cheap_side,
+    components    = components,
+    ivp_used      = ivp_used,
+    vrp           = vrp_value,
+    funnel        = funnel,
+    vol_character = vol_character,
+    source        = if (!is.null(components)) "live funnel" else "unavailable"
   )
+}
+
+#' Volatility character: realized-vol behaviour (spot/vol correlation, vol-of-vol)
+#' plus an optional VIX put/call skew decomposition.
+#'
+#' spot/vol correlation and vol-of-vol are cheap (Yahoo history) and always
+#' computed. The VIX put/call decomposition (get_vix_skew) needs ~80 IBKR
+#' option fetches, so it is opt-in via --skew AND requires TWS — otherwise the
+#' section reports why it was skipped. Data-only; nothing here is scored.
+.compute_vol_character <- function(ticker, spot, config, want_skew = FALSE) {
+  spot_vol <- tryCatch(compute_spot_vol_correlation(ticker), error = function(e) NULL)
+  vov      <- tryCatch(compute_vol_of_vol(ticker),           error = function(e) NULL)
+
+  vix_skew <- NULL
+  skew_status <- NULL
+  if (!want_skew) {
+    skew_status <- "not computed (run with --skew)"
+  } else if (!isTRUE(config$tws_reachable)) {
+    skew_status <- "TWS not reachable"
+  } else if (is.null(spot) || length(spot) == 0 || is.na(spot[1])) {
+    skew_status <- "no spot price"
+  } else {
+    ccy <- tryCatch({
+      t <- Tdata::getTicker(ticker)
+      if (is.data.frame(t) && nrow(t) > 0) t$Currency[1] else "USD"
+    }, error = function(e) "USD")
+    vix_skew <- tryCatch(get_vix_skew(ticker, ccy, as.numeric(spot[1])),
+                         error = function(e) NULL)
+    if (is.null(vix_skew)) skew_status <- "fetch failed / insufficient chain"
+  }
+
+  list(spot_vol = spot_vol, vov = vov, vix_skew = vix_skew, skew_status = skew_status)
 }
 
 #' Compute cheap_score components from funnel data.

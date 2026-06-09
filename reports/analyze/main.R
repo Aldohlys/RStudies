@@ -48,7 +48,7 @@ CONFIG <- load_analyze_config(.cfg_path)
 # ── Args ──────────────────────────────────────────────────────────────────
 parse_args <- function(argv) {
   if (length(argv) < 2) stop(
-    "Usage: Rscript main.R <TICKER> <DIRECTION> [--no-html] [--no-vol-funnel] [--refresh] [--max-age <hours>]")
+    "Usage: Rscript main.R <TICKER> <DIRECTION> [--no-html] [--no-vol-funnel] [--skew] [--refresh] [--max-age <hours>]")
   ticker    <- toupper(argv[1])
   direction <- tolower(argv[2])
   if (!direction %in% c("long", "short")) stop("DIRECTION must be 'long' or 'short'")
@@ -56,7 +56,8 @@ parse_args <- function(argv) {
     ticker        = ticker,
     direction     = direction,
     no_html       = "--no-html"        %in% argv,
-    no_vol_funnel = "--no-vol-funnel"  %in% argv
+    no_vol_funnel = "--no-vol-funnel"  %in% argv,
+    want_skew     = "--skew"           %in% argv
   )
 }
 
@@ -139,7 +140,8 @@ phase_c <- run_phase_c(args$ticker, args$direction,
                        run_funnel = !args$no_vol_funnel,
                        config = CONFIG,
                        spot = phase_b$price,
-                       freshness = freshness)
+                       freshness = freshness,
+                       want_skew = args$want_skew)
 message(sprintf("  C: %s | cheap_score=%s side=%s",
                 phase_c$result, phase_c$cheap_score, phase_c$cheap_side))
 if (!is.null(phase_c$funnel)) {

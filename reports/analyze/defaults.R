@@ -34,7 +34,11 @@ default_analyze_config <- function() {
       pt1_max = 0
     ),
     spread_widths = c(5, 10),
-    moneyness_pct = 0.20,
+    # ±5% strike band for spread enumeration. Only the 10 best DEBIT spreads
+    # are proposed and they sit near ATM (long ~ATM, short within the risk cap),
+    # so a tight band suffices; wider just qualifies/prices more strikes and
+    # enumerates more pairs that the within-cap + top-10 filters discard.
+    moneyness_pct = 0.05,
     move_lookback_days = 40,
     earnings_window_days = 14,
     skew_lookback_days = 365,
