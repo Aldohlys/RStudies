@@ -544,10 +544,18 @@ render_analyze_html <- function(ctx, out_dir) {
   }
 
   if (!is.null(vc$vov)) {
+    ### Vol-of-vol is reported as a percentile of the stored reference basket.
+    ### Its absolute level is uninformative - the 10d rolling estimator returns
+    ### ~1.94 even when true vol-of-vol is zero - so the raw figure is kept only
+    ### as provenance for the percentile above it.
     rows <- paste0(rows,
-      sprintf('<tr><td>Vol-of-vol (annualized)</td><td class="value">%.3f</td><td class="note">%s</td></tr>',
-              vc$vov$vol_of_vol, vc$vov$interpretation),
-      sprintf('<tr><td>Recent vol-of-vol (30d)</td><td class="value">%.3f</td><td class="note"></td></tr>',
+      sprintf('<tr><td>Vol-of-vol (percentile)</td><td class="value">%s</td><td class="note">%s</td></tr>',
+              if (is.na(vc$vov$vov_percentile)) "n/a"
+              else sprintf("%d%%", vc$vov$vov_percentile),
+              vc$vov$interpretation),
+      sprintf('<tr><td>Vol-of-vol (raw)</td><td class="value">%.3f</td><td class="note">uncalibrated - not comparable across tickers</td></tr>',
+              vc$vov$vol_of_vol),
+      sprintf('<tr><td>Recent vol-of-vol (30d)</td><td class="value">%.3f</td><td class="note">noise-dominated, indicative only</td></tr>',
               vc$vov$recent_vol_of_vol),
       sprintf('<tr><td>Current RV / percentile</td><td class="value">%.1f%% / %d%%</td><td class="note"></td></tr>',
               vc$vov$current_rv, vc$vov$rv_percentile))

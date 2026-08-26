@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-08-26] - analyze: vol-of-vol reported as a percentile, not a level
+
+### Changed
+- **Volatility character section** (report.R `.render_vol_character`): the *Vol-of-vol (annualized)* row printed *"Very high - extreme vol instability, option prices will swing significantly"* on **every** report. It was not a per-ticker reading: the estimator returns ~1.94 even for constant volatility, so the "> 2.0" cutoff sat on its own noise floor and no ticker could ever score below it. Measured across the universe, KO scored *above* MT and SPY at 8.1% realized vol read as "extreme vol instability".
+  - The row is now **Vol-of-vol (percentile)** against a stored reference basket, with the raw figure kept beneath it as provenance and labelled "uncalibrated - not comparable across tickers". The 30d row is labelled noise-dominated.
+  - Requires Tdata >= 5.14.2 (`vov_percentile` field) and a populated `VolOfVolBreakpoints` table; without the table the row degrades to "n/a / percentile unavailable" rather than failing.
+  - Sample of the new spread: TLT 1st pct, KO 28th, MT 37th, SPY 53rd, UNH 97th.
+
 ## [2026-06-09] - analyze: volatility-character section + option-fetch leaning
 
 ### Added
