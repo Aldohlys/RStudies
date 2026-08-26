@@ -228,6 +228,12 @@ if (!args$no_html) {
   dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
   html_file <- render_analyze_html(ctx, out_dir)
   message(sprintf("HTML written: %s", html_file))
+  # The filename is slugged from the RESOLVED symbol, so a caller cannot
+  # rebuild it from what the user typed ("BRK.B" -> analyze_BRK_B_...).
+  # When ANALYZE_PATH_OUT is set, drop the real path there for the wrapper.
+  path_out <- Sys.getenv("ANALYZE_PATH_OUT")
+  if (nzchar(path_out))
+    tryCatch(writeLines(html_file, path_out), error = function(e) NULL)
   if (interactive()) utils::browseURL(html_file)
 }
 
