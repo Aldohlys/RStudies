@@ -273,6 +273,13 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   )
 }
 
+#' Look up the IBKR option TradingClass for a symbol, defaulting to the symbol.
+.trading_class <- function(ticker) {
+  tc <- tryCatch(Tdata::getTicker(ticker)$TradingClass[1],
+                 error = function(e) NA_character_)
+  if (length(tc) != 1 || is.na(tc) || !nzchar(tc)) ticker else tc
+}
+
 #' Live-derive R:R + entry framework when scanner row is silent. Picks strikes
 #' off rounded grid, prices via Black-Scholes (Tbasics::getOptPrice) using
 #' phase_c$ivp_used (or 0.30 fallback) as IV, then calls compute_rr_entry +
@@ -499,6 +506,12 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
   if (is.null(spread_mod)) return(.fetch_failed_structures(
     "tdata_py.spread import failed"))
 
+  # TradingClass is usually the symbol, but not always: IBKR class shares keep
+  # a space in Name ("BRK B") and drop it in TradingClass ("BRKB"), and the
+  # option chain is keyed on TradingClass -- passing the symbol returns no
+  # strikes at all ("Chain not available for BRK B BRK B").
+  tclass <- .trading_class(ticker)
+
   rows <- list(); failures <- character(0)
   for (exp in expiries) {
     for (w in config$spread_widths) {
@@ -509,7 +522,7 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
       # so a fixed 5% would yield ZERO width-10 spreads).
       eff_moneyness <- max(config$moneyness_pct, as.numeric(w) / spot + 0.03)
       df <- tryCatch(spread_mod$compute_spread_risk_reward(
-        sym = ticker, trading_class = ticker, expiration = exp,
+        sym = ticker, trading_class = tclass, expiration = exp,
         current_price = spot, moneyness_pct = eff_moneyness,
         spread_width = as.integer(w), right = right,
         multiplier = 100L, currency = "USD",

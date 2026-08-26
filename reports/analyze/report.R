@@ -375,8 +375,11 @@ render_analyze_html <- function(ctx, out_dir) {
     .sortable_script(),
     '</body></html>')
 
+  # Space-form symbols ("BRK B") would put a literal space in the filename;
+  # the slug collapses it while the report title keeps the canonical name.
+  slug <- gsub("[^A-Za-z0-9]+", "_", ticker)
   out_file <- file.path(out_dir, sprintf("analyze_%s_%s.html",
-                                          ticker, format(date, "%Y%m%d")))
+                                          slug, format(date, "%Y%m%d")))
   writeLines(html, out_file, useBytes = TRUE)
   out_file
 }

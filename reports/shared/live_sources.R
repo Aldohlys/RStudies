@@ -258,7 +258,12 @@ resolve_iv90 <- function(ticker, spot, freshness, tws_ok = TRUE, conn = NULL) {
     return(.miss("reticulate unavailable"))
   tryCatch({
     yf <- reticulate::import("yfinance", delay_load = TRUE)
-    hist <- yf$Ticker(ticker)$history(period = "60d", interval = "1d")
+    # Yahoo spells class shares with a hyphen ("BRK-B") where IBKR uses a
+    # space ("BRK B"); the raw symbol returns an empty history.
+    yn <- tryCatch(unname(Tdata::getYahooName(ticker)[1]),
+                   error = function(e) NA_character_)
+    sym <- if (is.na(yn) || !nzchar(yn)) ticker else yn
+    hist <- yf$Ticker(sym)$history(period = "60d", interval = "1d")
     closes <- as.numeric(hist$Close)
     closes <- closes[!is.na(closes) & closes > 0]
     if (length(closes) < 21) stop("yfinance returned <21 closes")

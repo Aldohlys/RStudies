@@ -46,12 +46,57 @@ source(file.path(SCRIPT_DIR, "report.R"))
 CONFIG <- load_analyze_config(.cfg_path)
 
 # ── Args ──────────────────────────────────────────────────────────────────
+
+#' Resolve a user-typed symbol to the canonical `Tickers.Name`.
+#'
+#' IBKR spells class shares with a space ("BRK B"), while users type "BRK.B",
+#' "BRK-B" or "BRKB". Every downstream lookup (getYahooName, getStockPrice,
+#' the chain fetch) matches `Tickers.Name` exactly, so an unresolved symbol
+#' yields a report whose every cell reads "FETCH FAILED: spot price
+#' unavailable" -- indistinguishable from a genuine data outage. Try the
+#' punctuation variants, then TradingClass, then stop with a clear message.
+.resolve_ticker <- function(raw) {
+  cands <- unique(c(raw,
+                    gsub("[.-]", " ", raw),
+                    gsub("[.[:space:]-]", "", raw)))
+  for (x in cands) {
+    if (nrow(tryCatch(Tdata::getTicker(x),
+                      error = function(e) data.frame())) > 0) return(x)
+  }
+
+  # TradingClass fallback: "BRKB" -> "BRK B".
+  conn <- tryCatch(Tdata::safe_db_connect(), error = function(e) NULL)
+  if (!is.null(conn)) {
+    on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    hit <- tryCatch(DBI::dbGetQuery(conn, sprintf(
+      "SELECT Name FROM Tickers WHERE TradingClass IN (%s) LIMIT 1",
+      paste(rep("?", length(cands)), collapse = ",")),
+      params = as.list(cands)), error = function(e) NULL)
+    if (!is.null(hit) && nrow(hit) > 0) return(hit$Name[1])
+  }
+
+  stop(sprintf(paste0("Ticker '%s' not found in the Tickers table (tried: %s). ",
+                      "Class shares use the IBKR space form, e.g. 'BRK B'."),
+               raw, paste(cands, collapse = ", ")))
+}
+
 parse_args <- function(argv) {
   if (length(argv) < 2) stop(
     "Usage: Rscript main.R <TICKER> <DIRECTION> [--no-html] [--no-vol-funnel] [--skew] [--refresh] [--max-age <hours>]")
-  ticker    <- toupper(argv[1])
-  direction <- tolower(argv[2])
+
+  # A space-form symbol passed unquoted arrives as two tokens, pushing
+  # DIRECTION to argv[3]; rejoin it rather than reading "B" as a direction.
+  raw <- argv[1]
+  dir_at <- 2L
+  if (!tolower(argv[2]) %in% c("long", "short") &&
+      length(argv) >= 3 && tolower(argv[3]) %in% c("long", "short")) {
+    raw <- paste(argv[1], argv[2])
+    dir_at <- 3L
+  }
+
+  direction <- tolower(argv[dir_at])
   if (!direction %in% c("long", "short")) stop("DIRECTION must be 'long' or 'short'")
+  ticker <- .resolve_ticker(toupper(raw))
   list(
     ticker        = ticker,
     direction     = direction,
