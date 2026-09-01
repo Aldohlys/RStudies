@@ -60,7 +60,15 @@ score_breakout <- function(last, price, etf_ret) {
     vol_dec = if (!is.na(last$vol_decline))   round(last$vol_decline, 3)   else NA,
     vol_surge = if (!is.na(last$vol_surge))   round(last$vol_surge, 2)     else NA,
     flags = paste0(
-      "S:", setup_score, "/6",
+      # Cluster sub-totals first: the nine criteria carry ~4.9 effective
+      # dimensions, with S1/S2/S4/BK1/BK2/BK3 moving together as one
+      # trend-and-position factor and S5, S6/BK4 independent of it. The raw
+      # S/BK totals follow, unchanged, so nothing downstream loses them.
+      "T:", sum(c(S1, S2, S4, BK1, BK2, BK3)), "/6",
+      " C:", sum(c(S5)), "/1",
+      " V:", sum(c(S6, BK4)), "/2",
+      " RS:", ifelse(S3, "+", "-"),
+      " | S:", setup_score, "/6",
       " BK:", breakout_score, "/4",
       " | S1:", ifelse(S1,"+","-"), " S2:", ifelse(S2,"+","-"),
       " S3:", ifelse(S3,"+","-"), " S4:", ifelse(S4,"+","-"),

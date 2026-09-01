@@ -410,9 +410,9 @@ render_analyze_html <- function(ctx, out_dir) {
       sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">user direction <code>%s</code></td></tr>',
               .row_class(pb$result), .tt("Direction alignment"),
               pb$direction_match %||% "n/a", direction),
-      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">setup %s/6 · breakout %s/4</td></tr>',
+      sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
               .row_class(pb$result), .tt("Stage"), pb$stage %||% "n/a",
-              .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0)),
+              .cluster_note(pb)),
       '</table>'))
   }
 
@@ -456,8 +456,7 @@ render_analyze_html <- function(ctx, out_dir) {
     '<tr><th>Field</th><th>Value</th><th>Note</th></tr>',
     .row(.tt("Stage", "Mechanical label from MA50 position + setup/breakout counts. extended = stock >15% above MA50 (long) or <-15% below (short). early = setup count >=4/6 AND breakout >=3/4. continuation = MA50 sloping with you. none = otherwise."),
          pb$stage %||% "n/a",
-         sprintf("setup %s/6 · breakout %s/4",
-                 .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0))),
+         .cluster_note(pb)),
     .row(.tt("Direction alignment", "Long ALIGNED iff price > MA50; short ALIGNED iff price < MA50."),
          pb$direction_match %||% "n/a",
          sprintf("user direction <code>%s</code>", direction)),
@@ -485,6 +484,22 @@ render_analyze_html <- function(ctx, out_dir) {
     '</table>')
 
   paste0(hdr, tbl)
+}
+
+# Report the three measured clusters rather than one flat count. The nine
+# criteria carry ~4.9 effective dimensions: trend/position is six criteria
+# voting near-together, while compression (S5) and the supply pair (S6/BK4) are
+# independent of it and of each other. "setup 5/6 - breakout 4/4" invites
+# reading ten confirmations where there are nearer three.
+.cluster_note <- function(pb) {
+  if (is.null(pb$trend_count) || is.na(pb$trend_count)) {
+    return(sprintf("setup %s/6 &middot; breakout %s/4",
+                   .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0)))
+  }
+  sprintf("trend %s/6 &middot; compression %s/1 &middot; supply %s/2 &nbsp;<span class=\"sub\">(setup %s/6 &middot; breakout %s/4)</span>",
+          .fmt_num(pb$trend_count, 0), .fmt_num(pb$compression_count, 0),
+          .fmt_num(pb$supply_count, 0),
+          .fmt_num(pb$setup_count, 0), .fmt_num(pb$breakout_count, 0))
 }
 
 # ── Phase B per-indicator breakdown (collapsible) ────────────────────────

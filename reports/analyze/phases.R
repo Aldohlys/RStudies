@@ -147,6 +147,8 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
   # Per-indicator counts from breakdown attrs (set by compute_breakdown)
   setup_n <- if (!is.null(breakdown)) attr(breakdown, "setup_count") %||% 0L else NA_integer_
   bk_n    <- if (!is.null(breakdown)) attr(breakdown, "breakout_count") %||% 0L else NA_integer_
+  .cl <- function(a) if (!is.null(breakdown)) attr(breakdown, a) %||% 0L else NA_integer_
+  trend_n <- .cl("trend_count"); compr_n <- .cl("compression_count"); supply_n <- .cl("supply_count")
 
   # MA50 position from the last indicator row (for stage + direction alignment)
   ind_last <- .phase_b_last_indicators(ticker)
@@ -189,6 +191,9 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
     sector_context   = sector_ctx,
     setup_count      = setup_n,
     breakout_count   = bk_n,
+    trend_count      = trend_n,
+    compression_count= compr_n,
+    supply_count     = supply_n,
     price            = spot,
     breakdown        = breakdown,
     breakdown_retrieved_at = if (!is.null(breakdown)) Sys.time() else NULL

@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-09-01] - BOT criteria reported as three clusters, not one flat count
+
+### Changed
+- **Phase B stage line and scanner flags**: `setup 5/6 - breakout 4/4` reads as ten independent confirmations. Measured across 205 scanner-universe names, the nine criteria carry **~4.9 effective dimensions** (participation ratio; only 3 eigenvalues > 1) in three clusters:
+  - **trend / position** - S1, S2, S4, BK1, BK2, BK3 move together as one factor (lambda 3.27). `S1<->S2` phi **0.80**; underneath, `ma50_disp<->ma50_slope` **0.95**, `ma50_disp<->rsi14` **0.92**, `rsi14<->rng_pct` **0.92**.
+  - **compression** - S5, orthogonal to everything else (-0.04..+0.10).
+  - **supply / volume regime** - S6 and BK4, also orthogonal, and mildly *opposed* to each other (-0.12; they share `vol_ma20` on opposite sides of a fraction).
+
+  So the score is nearer three statements than ten, weighted 6:1:2, and its loudest component is its least specific. Example: AAPL displayed "setup 5/6 - breakout 3/4" while **six of those eight points came from the single trend factor**.
+- `shared/indicators.R` `compute_breakdown()` now also sets `trend_count` (of 6), `compression_count` (of 1) and `supply_count` (of 2) as attributes. **Additive** - `setup_count` / `breakout_count` are unchanged.
+- `analyze/phases.R` carries the three counts into the Phase B result; `analyze/report.R` renders them via a new `.cluster_note()` ("trend 6/6 - compression 1/1 - supply 1/2") with the raw totals kept in a muted sub-span, falling back to the old string when the attributes are absent.
+- `swing_scanner/flow_score.R` flags now lead with `T:6/6 C:1/1 V:1/2 RS:+` ahead of the unchanged `S:x/6 BK:x/4 | S1:+ ...`. Nothing parses this string (verified), so the extension is safe.
+
+**Presentational only** - same gates, same thresholds, same scoring, same `Flow_Score`. No behaviour change; this stops the display overstating how much independent confirmation it has. Rationale and the measurements behind it: `docs/TODO.md` #82 (item I-1).
+
 ## [2026-08-26] - analyze: vol-of-vol reported as a percentile, not a level
 
 ### Changed

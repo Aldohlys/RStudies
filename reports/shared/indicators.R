@@ -221,6 +221,17 @@ compute_breakdown <- function(last, price, direction = "long") {
   bk_pass    <- sum(rows$pass[rows$id %in% c("BK1","BK2","BK3","BK4")], na.rm = TRUE)
   attr(rows, "setup_count") <- setup_pass     # of 5 (S3 = sector RS, computed elsewhere)
   attr(rows, "breakout_count") <- bk_pass     # of 4
+
+  # The S/BK split is not a split into independent evidence. Measured across 205
+  # names, the nine criteria carry ~4.9 effective dimensions in three clusters:
+  # S1/S2/S4/BK1/BK2/BK3 move together as one trend-and-position factor
+  # (S1<->S2 phi 0.80; ma50_disp<->rsi14 0.92; rsi14<->rng_pct 0.92), while S5
+  # and the S6/BK4 volume pair are each independent of it and of each other.
+  # A raw "5/6 + 4/4" therefore reads as ten confirmations when it is nearer
+  # three. These sub-totals let callers report the clusters instead.
+  attr(rows, "trend_count")       <- sum(rows$pass[rows$id %in% c("S1","S2","S4","BK1","BK2","BK3")], na.rm = TRUE)  # of 6
+  attr(rows, "compression_count") <- sum(rows$pass[rows$id %in% c("S5")], na.rm = TRUE)                              # of 1
+  attr(rows, "supply_count")      <- sum(rows$pass[rows$id %in% c("S6","BK4")], na.rm = TRUE)                        # of 2
   rows
 }
 
