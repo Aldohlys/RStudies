@@ -14,6 +14,13 @@
 # Extreme rule: TRUE when the current net sits at or beyond the 5-year 90th
 # percentile (crowded long) or 10th percentile (crowded short).
 #
+# Side-output: NewTrading/reports/cot_actors_latest.csv -- the latest week for
+# every trader category (producer, swap dealer, managed money, other
+# reportables, retail) per contract, with long / short / net and the
+# week-on-week change in each, plus derived legacy commercial / large-spec /
+# small-spec rollups. positioning.R keeps only the one speculative net per
+# asset that the regime score consumes; this is the detail behind it.
+#
 # Run: Rscript RStudies/reports/macro_context/refresh_cot.R [--dry-run]
 # Scheduled Saturday 08:00 via RApplication/scripts/RefreshCOT.xml — the CFTC
 # releases Friday 15:30 ET (21:30 CET), so Saturday morning is clear of it.
@@ -55,22 +62,54 @@ ASSETS <- list(
   list(label = "Copper",    sector = "Materials",     src = "disagg", codes = "085692")
 )
 
+# Trader categories carried into the CSV side-output. Note the CFTC's own
+# double-underscore typo in two Swap column names -- it is in the files, not here.
+CATS_DISAGG <- list(
+  producer      = c("Prod_Merc_Positions_Long_All",  "Prod_Merc_Positions_Short_All",  NA),
+  swap_dealer   = c("Swap_Positions_Long_All",       "Swap__Positions_Short_All",       "Swap__Positions_Spread_All"),
+  managed_money = c("M_Money_Positions_Long_All",    "M_Money_Positions_Short_All",    "M_Money_Positions_Spread_All"),
+  other_rept    = c("Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All", "Other_Rept_Positions_Spread_All"),
+  retail        = c("NonRept_Positions_Long_All",    "NonRept_Positions_Short_All",    NA)
+)
+CATS_TFF <- list(
+  dealer        = c("Dealer_Positions_Long_All",     "Dealer_Positions_Short_All",     "Dealer_Positions_Spread_All"),
+  asset_manager = c("Asset_Mgr_Positions_Long_All",  "Asset_Mgr_Positions_Short_All",  "Asset_Mgr_Positions_Spread_All"),
+  lev_money     = c("Lev_Money_Positions_Long_All",  "Lev_Money_Positions_Short_All",  "Lev_Money_Positions_Spread_All"),
+  other_rept    = c("Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All", "Other_Rept_Positions_Spread_All"),
+  retail        = c("NonRept_Positions_Long_All",    "NonRept_Positions_Short_All",    NA)
+)
+.cat_cols <- function(cats) unique(stats::na.omit(unlist(cats, use.names = FALSE)))
+
 SOURCES <- list(
   disagg = list(
     url  = "https://www.cftc.gov/files/dea/history/fut_disagg_txt_%d.zip",
     cols = c("Report_Date_as_YYYY-MM-DD", "CFTC_Contract_Market_Code",
-             "M_Money_Positions_Long_All", "M_Money_Positions_Short_All"),
+             "Open_Interest_All", .cat_cols(CATS_DISAGG)),
     long = "M_Money_Positions_Long_All", short = "M_Money_Positions_Short_All",
+    cats = CATS_DISAGG,
     who  = "MM"),
   tff = list(
     url  = "https://www.cftc.gov/files/dea/history/fut_fin_txt_%d.zip",
     cols = c("Report_Date_as_YYYY-MM-DD", "CFTC_Contract_Market_Code",
-             "Asset_Mgr_Positions_Long_All", "Asset_Mgr_Positions_Short_All",
-             "Lev_Money_Positions_Long_All", "Lev_Money_Positions_Short_All"),
+             "Open_Interest_All", .cat_cols(CATS_TFF)),
     long = c("Asset_Mgr_Positions_Long_All", "Lev_Money_Positions_Long_All"),
     short = c("Asset_Mgr_Positions_Short_All", "Lev_Money_Positions_Short_All"),
+    cats = CATS_TFF,
     who  = "Lev+AM")
 )
+
+# One row per contract for the CSV: the grains basket is split into its legs,
+# because at that level you want corn separately from soy.
+CSV_CONTRACTS <- list(
+  list(label = "Crude Oil", src = "disagg", code = "067651"),
+  list(label = "Gold",      src = "disagg", code = "088691"),
+  list(label = "Copper",    src = "disagg", code = "085692"),
+  list(label = "Corn",      src = "disagg", code = "002602"),
+  list(label = "Soybeans",  src = "disagg", code = "005602"),
+  list(label = "SRW Wheat", src = "disagg", code = "001602"),
+  list(label = "USD Index", src = "tff",    code = "098662")
+)
+CSV_OUT <- "C:/Users/aldoh/Documents/NewTrading/reports/cot_actors_latest.csv"
 
 # ── Fetch ─────────────────────────────────────────────────────────────────────
 # Past years never change, so they are downloaded once; the current year is
@@ -250,6 +289,71 @@ COT_AS_OF <- "%s"   # Tuesday-close date the positions refer to
   paste(entries, collapse = ",\n"),
   as.character(Sys.Date()), AS_OF, as.character(Sys.Date()), AS_OF)
 
+# ── CSV side-output: every trader category, per contract, with WoW ────────────
+# positioning.R deliberately carries one number per asset (the speculative net)
+# because that is all the regime score consumes. This file is the full picture
+# behind it -- who is on each side and how each moved over the week.
+build_actor_csv <- function() {
+  rows <- lapply(CSV_CONTRACTS, function(k) {
+    spec <- SOURCES[[k$src]]
+    d <- DATA[[k$src]][code == .norm_code(k$code)][order(date)]
+    if (nrow(d) < 2) return(NULL)
+    cur <- d[.N]; prv <- d[.N - 1]
+    get <- function(row, col) if (is.na(col)) NA_real_ else as.numeric(row[[col]])
+
+    per_cat <- lapply(names(spec$cats), function(cn) {
+      cc <- spec$cats[[cn]]
+      l <- get(cur, cc[1]); s <- get(cur, cc[2]); sp <- get(cur, cc[3])
+      lp <- get(prv, cc[1]); spr <- get(prv, cc[2]); spp <- get(prv, cc[3])
+      data.frame(category = cn, long = l, short = s, spreading = sp,
+                 net = l - s, long_wow = l - lp, short_wow = s - spr,
+                 net_wow = (l - s) - (lp - spr), spread_wow = sp - spp,
+                 stringsAsFactors = FALSE)
+    })
+    out <- do.call(rbind, per_cat)
+
+    # Legacy rollups, so "commercial / large spec / small spec" is answerable
+    # from the same file. Only meaningful for the disaggregated report --
+    # producer + swap IS the old commercial, and managed money + other
+    # reportables IS the old non-commercial (verified against the legacy report).
+    if (k$src == "disagg") {
+      # fold_spread: the legacy report gives Commercial no spreading column, so a
+      # commercial trader's spread position is distributed into BOTH gross legs.
+      # Non-Commercial keeps spreading separate, so large_spec must not fold.
+      # Net is unaffected either way; this is only about matching the published
+      # gross long/short. Verified against the legacy figures for WTI.
+      roll <- function(nm, parts, fold_spread = FALSE) {
+        p <- out[out$category %in% parts, ]
+        sp <- sum(p$spreading, na.rm = TRUE)
+        spw <- sum(p$spread_wow, na.rm = TRUE)
+        add <- if (fold_spread) sp else 0
+        addw <- if (fold_spread) spw else 0
+        data.frame(category = nm,
+                   long = sum(p$long) + add, short = sum(p$short) + add,
+                   spreading = if (fold_spread) NA_real_ else sp,
+                   net = sum(p$net), long_wow = sum(p$long_wow) + addw,
+                   short_wow = sum(p$short_wow) + addw, net_wow = sum(p$net_wow),
+                   spread_wow = if (fold_spread) NA_real_ else spw,
+                   stringsAsFactors = FALSE)
+      }
+      out <- rbind(out,
+                   roll("[legacy] commercial",  c("producer", "swap_dealer"), fold_spread = TRUE),
+                   roll("[legacy] large_spec",  c("managed_money", "other_rept")),
+                   roll("[legacy] small_spec",  "retail"))
+    }
+    oi <- as.numeric(cur[["Open_Interest_All"]])
+    data.frame(report_date = as.character(cur$date), asset = k$label,
+               cftc_code = k$code, report = k$src, open_interest = oi,
+               out,
+               pct_oi_long = round(100 * out$long / oi, 1),
+               pct_oi_short = round(100 * out$short / oi, 1),
+               prev_date = as.character(prv$date), stringsAsFactors = FALSE)
+  })
+  do.call(rbind, rows)
+}
+
+actors <- build_actor_csv()
+
 # ── Report + write ────────────────────────────────────────────────────────────
 cat("\n")
 cat(sprintf("COT data as of %s%s\n", AS_OF,
@@ -280,6 +384,13 @@ cat("\n")
 unchanged <- file.exists(TARGET) &&
   identical(.body(strsplit(header, "\n", fixed = TRUE)[[1]]),
             .body(readLines(TARGET, warn = FALSE)))
+
+if (!DRY_RUN && !is.null(actors)) {
+  dir.create(dirname(CSV_OUT), recursive = TRUE, showWarnings = FALSE)
+  utils::write.csv(actors, CSV_OUT, row.names = FALSE, na = "")
+  cat(sprintf("Actor detail: %s (%d rows, %d contracts x categories)\n",
+              CSV_OUT, nrow(actors), length(CSV_CONTRACTS)))
+}
 
 if (DRY_RUN) {
   cat("--dry-run: positioning.R not written.\n")
