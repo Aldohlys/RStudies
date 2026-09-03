@@ -14,7 +14,7 @@
 # Extreme rule: TRUE when the current net sits at or beyond the 5-year 90th
 # percentile (crowded long) or 10th percentile (crowded short).
 #
-# Side-output: NewTrading/reports/cot_actors_latest.csv -- the latest week for
+# Side-output: NewTrading/Reports/cot_actors_latest.csv -- the latest week for
 # every trader category (producer, swap dealer, managed money, other
 # reportables, retail) per contract, with long / short / net and the
 # week-on-week change in each, plus derived legacy commercial / large-spec /
@@ -109,7 +109,7 @@ CSV_CONTRACTS <- list(
   list(label = "SRW Wheat", src = "disagg", code = "001602"),
   list(label = "USD Index", src = "tff",    code = "098662")
 )
-CSV_OUT <- "C:/Users/aldoh/Documents/NewTrading/reports/cot_actors_latest.csv"
+CSV_OUT <- "C:/Users/aldoh/Documents/NewTrading/Reports/cot_actors_latest.csv"
 
 # ── Fetch ─────────────────────────────────────────────────────────────────────
 # Past years never change, so they are downloaded once; the current year is
