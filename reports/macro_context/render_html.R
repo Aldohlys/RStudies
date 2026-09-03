@@ -122,6 +122,7 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
 
   # Section 8: Regime Detection
   sec8 <- ""
+  positioning <- NULL
   if (!is.null(scenario_scores) && nrow(scenario_scores) > 0) {
     sorted <- scenario_scores[order(-scenario_scores$probability), ]
     signals <- attr(scenario_scores, "signals")
@@ -169,8 +170,12 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
     if (!is.null(positioning)) {
       pos_css <- if (positioning$crowding_score > 0.5) "sc-high" else if (positioning$crowding_score > 0.3) "sc-mid" else "sc-low"
       cot_str <- if (length(positioning$cot_extremes) > 0) paste("COT extremes:", paste(positioning$cot_extremes, collapse = ", ")) else "No COT extremes"
-      pos_html <- sprintf('<div class="pos-bar"><span class="pos-label" title="Positioning stress from sector RS extremes + COT data. >0.3 = fragile, boosts liquidation probability.">Positioning stress:</span> <span class="sc-prob %s">%.2f</span> <span class="pos-detail">%s</span></div>',
-        pos_css, positioning$crowding_score, cot_str)
+      age_str <- if (!is.null(positioning$cot_as_of) && !is.na(positioning$cot_age_days))
+        sprintf(' <span class="pos-age%s">COT as of %s (%dd)</span>',
+                ifelse(isTRUE(positioning$cot_stale), " pos-age-stale", ""),
+                positioning$cot_as_of, round(positioning$cot_age_days)) else ""
+      pos_html <- sprintf('<div class="pos-bar"><span class="pos-label" title="Positioning stress from sector RS extremes + COT data. >0.3 = fragile, boosts liquidation probability.">Positioning stress:</span> <span class="sc-prob %s">%.2f</span> <span class="pos-detail">%s</span>%s</div>',
+        pos_css, positioning$crowding_score, cot_str, age_str)
     }
 
     sec8 <- paste0(
@@ -191,13 +196,26 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
       vix$vix)
   }
 
+  # Data-hygiene banner: COT positioning file has missed at least one weekly
+  # release, so crowding_score and the 'net' direction labels are on old data.
+  # Not market stress - deliberately a separate, calmer banner.
+  data_banner <- ""
+  if (!is.null(positioning) && isTRUE(positioning$cot_stale)) {
+    n <- positioning$cot_missed_releases
+    data_banner <- sprintf(
+      '<div class="stale-banner">STALE POSITIONING DATA &mdash; COT is as of %s, %d days old (%d weekly release%s missed)<span class="stale-sub">Crowding score %.2f and the net-direction labels below are computed from that file. Refresh reports/macro_context/positioning.R before trusting the positioning read.</span></div>',
+      positioning$cot_as_of, round(positioning$cot_age_days), n,
+      ifelse(n == 1, "", "s"), positioning$crowding_score)
+  }
+
   list(sec1 = sec1, sec2 = sec2, sec3 = sec3,
        sec4 = paste0(sec4, collapse = ""),
        sec5 = paste0(sec5, collapse = ""),
        sec6 = paste0(sec6, collapse = ""),
        sec7 = paste0(sec7, collapse = ""),
        sec8 = sec8,
-       stress_banner = stress_banner)
+       stress_banner = stress_banner,
+       data_banner = data_banner)
 }
 
 # ── Render final HTML ───────────────────────────────────────────────────────
@@ -221,6 +239,7 @@ render_macro_html <- function(sections, synthesis, breadth, out_dir) {
     "{{SEC7}}"        = sections$sec7,
     "{{SEC8}}"        = sections$sec8,
     "{{STRESS_BANNER}}" = sections$stress_banner,
+    "{{DATA_BANNER}}"   = if (is.null(sections$data_banner)) "" else sections$data_banner,
     "{{FOOTER_BREADTH}}" = sprintf("Breadth: %.1f%% (%d/%d stocks &gt; MA50) &mdash; computed in %.1fs",
                                     breadth$pct, breadth$n_above, breadth$n_valid, breadth$elapsed)
   )

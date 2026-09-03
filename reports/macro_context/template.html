@@ -85,6 +85,14 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
   border:2px solid #8B1A3A;animation:pulse-border 2s ease-in-out infinite}
 @keyframes pulse-border{0%,100%{border-color:#8B1A3A}50%{border-color:#fff}}
 .stress-banner .stress-sub{font-weight:400;font-size:12px;display:block;margin-top:4px;opacity:.85}
+/* Data-hygiene warning (stale COT file) — deliberately calmer than stress-banner:
+   amber, no pulse. It says "this input is old", not "the market is in trouble". */
+.stale-banner{background:var(--orange-light);color:#92400e;padding:10px 20px;border-radius:4px;
+  margin-bottom:20px;font-weight:700;font-size:13px;text-align:center;letter-spacing:.03em;
+  border:1px solid #d97706}
+.stale-banner .stale-sub{font-weight:400;font-size:12px;display:block;margin-top:4px;opacity:.85}
+.pos-age{font-size:11px;color:var(--dim);margin-left:8px}
+.pos-age-stale{color:#92400e;font-weight:700}
 .synth-list li{padding:6px 12px;margin:4px 0;border-radius:3px;font-size:13px;font-weight:500}
 .synth-list li.zone-green{background:var(--green-light);color:#1a6b3c}
 .synth-list li.zone-orange{background:var(--orange-light);color:#92400e}
@@ -147,6 +155,7 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 </div>
 
 {{STRESS_BANNER}}
+{{DATA_BANNER}}
 
 <div class="grid">
 

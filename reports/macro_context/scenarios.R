@@ -173,8 +173,13 @@ compute_regime_scores <- function(signals) {
 #' Compute positioning stress from COT data and sector RS extremes
 #' @param sector_ok Named list of sector gate results (from swing_scanner)
 #' @param cot_data List from positioning.R COT_POSITIONING
-#' @return Named list: crowding_score (0-1), extreme_sectors, cot_extremes
-compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL) {
+#' @param cot_as_of Character date "YYYY-MM-DD" the COT positions refer to
+#'   (positioning.R COT_AS_OF = the Tuesday close, NOT the refresh date).
+#'   NULL skips the staleness check.
+#' @return Named list: crowding_score (0-1), cot_extremes, plus staleness
+#'   fields cot_as_of / cot_age_days / cot_missed_releases / cot_stale
+compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL,
+                                       cot_as_of = NULL) {
   crowding <- 0
   cot_extremes <- character(0)
 
@@ -196,7 +201,22 @@ compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL) {
       function(c) c$asset, character(1))
   }
 
-  list(crowding_score = min(crowding, 1), cot_extremes = cot_extremes)
+  # COT staleness. The report covers the Tuesday close and is released the
+  # following Friday, so a promptly-maintained file sits 3-9 days old. At 10
+  # days a newer release exists, i.e. at least one has been missed.
+  age_days <- NA_real_
+  missed <- 0L
+  if (!is.null(cot_as_of) && !is.na(cot_as_of) && nzchar(cot_as_of)) {
+    d <- suppressWarnings(as.Date(cot_as_of))
+    if (!is.na(d)) {
+      age_days <- as.numeric(Sys.Date() - d)
+      missed <- max(0L, as.integer(floor((age_days - 3) / 7)))
+    }
+  }
+
+  list(crowding_score = min(crowding, 1), cot_extremes = cot_extremes,
+       cot_as_of = cot_as_of, cot_age_days = age_days,
+       cot_missed_releases = missed, cot_stale = missed >= 1L)
 }
 
 # ── Catalyst Proximity ────────────────────────────────────────────────────────
@@ -375,7 +395,18 @@ run_scenarios <- function(raw, vix_res, rates_res, breadth, comm_res, events, co
 
   # 3. Positioning stress from COT
   cot_data <- tryCatch(COT_POSITIONING, error = function(e) list())
-  pos_stress <- compute_positioning_stress(cot_data = cot_data)
+  cot_as_of <- tryCatch(COT_AS_OF, error = function(e) NULL)
+  pos_stress <- compute_positioning_stress(cot_data = cot_data,
+                                           cot_as_of = cot_as_of)
+
+  if (isTRUE(pos_stress$cot_stale)) {
+    message(sprintf(
+      "STALE COT: positioning.R is as of %s (%d days, %d release%s missed). Crowding contribution (%.2f) and the 'net' direction labels may be wrong - refresh before trusting them.",
+      pos_stress$cot_as_of, round(pos_stress$cot_age_days),
+      pos_stress$cot_missed_releases,
+      ifelse(pos_stress$cot_missed_releases == 1, "", "s"),
+      pos_stress$crowding_score))
+  }
 
   # Boost liquidation/neutral when positioning is crowded
   if (pos_stress$crowding_score > 0.3) {
