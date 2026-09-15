@@ -571,48 +571,17 @@
     },
     "Tbasics": {
       "Package": "Tbasics",
-      "Version": "1.6.3",
-      "Source": "unknown",
-      "Type": "Package",
-      "Title": "Basic trading utilities and computation",
-      "Description": "This package will be used by all RTrading programs. It includes any utilities that do not relate to 1/IBKR API 2/Persistent DB such as option computation or chart and journal modules.",
-      "License": "MIT + file LICENSE",
-      "Encoding": "UTF-8",
-      "RoxygenNote": "7.3.2",
-      "Suggests": [
-        "testthat (>= 3.0.0)"
-      ],
-      "Config/testthat/edition": "3",
-      "Authors@R": "person(\"Alexis\", \"Martin\", , \"aldohlys@gmail.com\", role = c(\"aut\",\"cre\"), comment = c(ORCID = \"\"))",
-      "Imports": [
-        "config",
-        "DescTools",
-        "derivmkts",
-        "dplyr",
-        "grDevices",
-        "lubridate",
-        "purrr",
-        "quantmod",
-        "shiny",
-        "stats",
-        "stringr",
-        "utils",
-        "vctrs",
-        "withr",
-        "Tlogger",
-        "logger",
-        "glue"
-      ],
-      "NeedsCompilation": "no",
-      "Author": "Alexis Martin [aut, cre]",
-      "Maintainer": "Alexis Martin <aldohlys@gmail.com>"
+      "Version": "1.6.4",
+      "Source": "Local",
+      "RemoteType": "local",
+      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tbasics_1.6.4.tar.gz"
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.19.0",
+      "Version": "5.19.1",
       "Source": "Local",
       "RemoteType": "local",
-      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.19.0.tar.gz"
+      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.19.1.tar.gz"
     },
     "Tlogger": {
       "Package": "Tlogger",
