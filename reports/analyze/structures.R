@@ -83,7 +83,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     list(oi_cap_call = NA_real_, oi_cap_put = NA_real_,
          chain_state = NA_character_, reason = chain_r$reason)
   }
-  # Neutral provenance for the coverage summary (TODO #60): inherit the
+  # Neutral provenance for the coverage summary: inherit the
   # resolver status; CSV fallback is CACHED.
   chain_status_prov <- if (is.list(chain_r$value)) (chain_r$status %||% "LIVE")
                        else if (!is.na(chain$oi_cap_call) || !is.na(chain$oi_cap_put)) "CACHED"
@@ -113,7 +113,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     iv_outright, config),
     error = function(e) { message("outrights enum failed: ", conditionMessage(e)); NULL })
 
-  # TODO #60 de-gate: no d_pass verdict. Each sub-fact is reported on its own
+  # No d_pass verdict: each sub-fact is reported on its own
   # merits and the coverage summary reads the provenance fields below.
   structures_status_prov <-
     if (!is.null(structures) && "prov_status" %in% names(structures))
@@ -579,7 +579,7 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
 }
 
 #' Single-row data frame surfacing an unavailable-structures reason. `status`
-#' (TODO #60) distinguishes FETCH FAILED (no response: TWS down, import failed)
+#' distinguishes FETCH FAILED (no response: TWS down, import failed)
 #' from NO DATA (pricer ran but returned/kept no rows). Numeric cells stay NA so
 #' report.R renders them as `n/a`; `surface_fact` carries the cause.
 .fetch_failed_structures <- function(reason, status = "FETCH FAILED") {

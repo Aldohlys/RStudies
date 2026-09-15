@@ -11,7 +11,7 @@
 #   IVP gap (UPS 2026-05-11 test) closed by resolve_ivp() via
 #   Tdata::getIVPercentileLevels.
 
-# ── Provenance helpers (TODO #60 de-gate) ─────────────────────────────────
+# ── Provenance helpers ─────────────────────────────────
 # A metric is unavailable for two distinct reasons; carry that distinction.
 .STATUS_RANK <- c("LIVE" = 0L, "CACHED" = 1L, "NO DATA" = 2L, "FETCH FAILED" = 3L)
 

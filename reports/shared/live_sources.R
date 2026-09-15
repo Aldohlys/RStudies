@@ -40,7 +40,7 @@ if (!exists("%||%", mode = "function")) {
 }
 
 #' Standard return-shape constructor. `status` is the neutral provenance label
-#' surfaced by /analyze (see TODO #60): LIVE / CACHED / NO DATA / FETCH FAILED.
+#' surfaced by /analyze: LIVE / CACHED / NO DATA / FETCH FAILED.
 #' Defaults derive from `source` so existing call-sites need no change:
 #'   source "live"                         -> LIVE
 #'   source "db" / "csv" / "computed"      -> CACHED

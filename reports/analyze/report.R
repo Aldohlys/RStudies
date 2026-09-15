@@ -186,22 +186,13 @@ td.note{color:#555;font-size:13px}
          "row-warn")
 }
 
-.badge_class <- function(result) {
-  switch(result %||% "STALE",
-         PASS = "badge-pass",
-         SKIP = "badge-fail",
-         `NO SIGNAL` = "badge-skip",
-         STALE = "badge-warn",
-         "badge-skip")
-}
-
 .fmt_num <- function(x, digits = 2) {
   if (is.null(x) || all(is.na(x))) return("n/a")
   if (is.numeric(x)) sprintf(paste0("%.", digits, "f"), x) else as.character(x)
 }
 
 #' Like .fmt_num but, when the value is NA and `reason` is non-empty, returns
-#' "<status>: <reason>" instead of "n/a". `status` (TODO #60) distinguishes
+#' "<status>: <reason>" instead of "n/a". `status` distinguishes
 #' NO DATA (request OK, response empty/NaN) from FETCH FAILED (no response).
 #' Surfaces the cause directly in the report
 #' (see feedback_analyze_live_data_fallback.md).
@@ -280,7 +271,7 @@ render_analyze_html <- function(ctx, out_dir) {
   pa <- ctx$phase_a; pb <- ctx$phase_b; pc <- ctx$phase_c
   pd <- ctx$phase_d; pe <- ctx$phase_e
 
-  # Header strip — neutral facts only (no classification/verdict). TODO #60.
+  # Header strip — neutral facts only (no classification/verdict).
   meta <- sprintf(paste0(
     '<div class="meta-grid">',
     '<div class="cell"><div class="lbl">%s</div><div class="val">$%s</div></div>',
@@ -332,7 +323,7 @@ render_analyze_html <- function(ctx, out_dir) {
   # Phase D
   sec_d <- .render_phase_d(pd, direction)
 
-  # Phase E — data-coverage summary (TODO #60 de-gate). One row per dimension
+  # Phase E — data-coverage summary. One row per dimension
   # reporting provenance (LIVE / CACHED / NO DATA / FETCH FAILED). NO verdict.
   cov_rows <- paste0(vapply(pe$coverage, function(cv)
     sprintf('<tr class="%s"><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
@@ -815,8 +806,8 @@ render_analyze_html <- function(ctx, out_dir) {
   spread_table   <- .render_structures_table(structures, cap)
   stock_table    <- .render_stock_table(stock_struct, direction)
 
-  # The vehicle-preferred table renders OPEN; the others collapse (TODO #60
-  # fold-in of former sub-task 2). Vehicle rule is informational, not gating.
+  # The vehicle-preferred table renders OPEN; the others collapse.
+  # The vehicle rule is informational, not gating.
   open_outright <- vehicle %in% c("call", "put")
   open_stock    <- identical(vehicle, "stock")
   open_spread   <- identical(vehicle, "spread")

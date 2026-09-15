@@ -143,14 +143,3 @@ evaluate_gate3 <- function(vol_data, tickers) {
 
   results
 }
-
-#' Flag tickers with missing or stale IV data
-#' @param gate3_results data.frame from evaluate_gate3()
-#' @return Character vector of tickers needing TWS update
-flag_missing <- function(gate3_results) {
-  missing <- gate3_results$Ticker[gate3_results$Optionality == "NO DATA"]
-  if (length(missing) > 0)
-    message(sprintf("CHECK TWS — %d tickers still without IV data: %s",
-      length(missing), paste(head(missing, 10), collapse = ", ")))
-  missing
-}

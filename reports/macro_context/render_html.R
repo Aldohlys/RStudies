@@ -2,18 +2,6 @@
 
 source(file.path(SCRIPT_DIR, "..", "shared", "html_helpers.R"))
 
-# ── HTML row builders ───────────────────────────────────────────────────────
-html_row <- function(label, value, z, note) {
-  vs <- if (is.na(value)) "n/a" else sprintf("%.2f", value)
-  sprintf('<tr class="data-row %s"><td class="label">%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
-    zone_class(z), label, vs, note)
-}
-
-html_sub <- function(label, val_str, z, note) {
-  sprintf('<tr class="sub-row %s"><td class="label indent">%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
-    zone_class(z), label, val_str, note)
-}
-
 # ── Build all sections ──────────────────────────────────────────────────────
 build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, synthesis, events, scenario_scores = NULL) {
   zc <- zone_class

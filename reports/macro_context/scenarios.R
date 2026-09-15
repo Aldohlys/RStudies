@@ -252,21 +252,6 @@ compute_catalyst_boost <- function(events, today = Sys.Date()) {
 
 # ── Macro Outcome Modifier ────────────────────────────────────────────────────
 
-#' Get recent macro surprise modifier
-#' @param outcomes List from macro_outcomes.R
-#' @return Named list with direction and decay factor
-get_outcome_modifier <- function(outcomes) {
-  if (is.null(outcomes) || length(outcomes) == 0) return(NULL)
-  today <- Sys.Date()
-  recent <- Filter(function(o) {
-    d <- tryCatch(as.Date(o$date), error = function(e) NA)
-    !is.na(d) && as.integer(today - d) <= 30
-  }, outcomes)
-  if (length(recent) == 0) return(NULL)
-  # Most recent outcome
-  recent[[length(recent)]]
-}
-
 # ── Softmax with Temperature ─────────────────────────────────────────────────
 
 #' Softmax normalization with temperature parameter
@@ -487,15 +472,3 @@ run_scenarios <- function(raw, vix_res, rates_res, breadth, comm_res, events, co
 
   results
 }
-
-#' Get sector flow map for swing_scanner sector_gate.R
-#' Returns the static regime flows + DXY/curve modifiers
-get_scenario_sector_map <- function() {
-  REGIME_SECTOR_FLOWS
-}
-
-#' Get DXY sector impact for flow modifier
-get_dxy_impact <- function() { DXY_SECTOR_IMPACT }
-
-#' Get yield curve sector impact for flow modifier
-get_curve_impact <- function() { CURVE_SECTOR_IMPACT }

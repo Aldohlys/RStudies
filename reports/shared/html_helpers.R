@@ -29,17 +29,6 @@ zone <- function(val, breaks, labels) {
   labels[length(labels)]
 }
 
-#' Build a table header cell with tooltip
-#' @param col Column name
-#' @param tip Tooltip text
-tooltip_th <- function(col, tip = NULL) {
-  if (!is.null(tip) && !is.na(tip)) {
-    sprintf('<th title="%s">%s</th>', tip, col)
-  } else {
-    sprintf('<th>%s</th>', col)
-  }
-}
-
 #' Render an HTML template by replacing {{PLACEHOLDER}} markers
 #' @param template Character string containing {{...}} placeholders
 #' @param replacements Named list of placeholder -> value mappings
@@ -54,12 +43,6 @@ render_template <- function(template, replacements) {
 fmt_chg <- function(cur, prev) {
   if (is.na(cur) || is.na(prev)) "n/a"
   else sprintf("%+.2f", cur - prev)
-}
-
-#' Format a numeric value or return "n/a"
-naf <- function(x, digits = 2) {
-  if (is.na(x)) "n/a"
-  else sprintf(paste0("%.", digits, "f"), x)
 }
 
 #' Build a macro data row with tooltip

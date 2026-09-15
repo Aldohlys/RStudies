@@ -173,7 +173,7 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
       message("Sector RS context failed: ", conditionMessage(e)); NULL
     })
 
-  # Phase B is no longer a gate (TODO #60 de-gate). `result` is now a neutral
+  # Phase B is not a gate. `result` is a neutral
   # PROVENANCE status, not a PASS/SKIP verdict: LIVE when the live-OHLC
   # breakdown computed, FETCH FAILED when it didn't. The analytical facts
   # (direction_match, sector_rank, stage) are reported on their own merits.
@@ -308,7 +308,7 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   # cheap_pass is kept as an analytical FACT (score >= 6 of 9), not a gate.
   cheap_pass <- !is.na(cheap_score) && cheap_score >= 6L
 
-  # `result` is now a neutral PROVENANCE status (TODO #60 de-gate), not
+  # `result` is a neutral PROVENANCE status, not
   # PASS/SKIP: LIVE when the funnel produced cheap-score components, a SKIPPED
   # note when the funnel was switched off, FETCH FAILED otherwise.
   result <- if (!is.null(components)) "LIVE"
@@ -427,9 +427,9 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   )
 }
 
-# ── PHASE E — Data-coverage summary (TODO #60 de-gate) ────────────────────
+# ── PHASE E — Data-coverage summary ────────────────────
 # /analyze runs on ONE ticker the user already chose to study, so there is no
-# gate to drop it at and no verdict to render. Phase E is now a NEUTRAL
+# gate to drop it at and no verdict to render. Phase E is a NEUTRAL
 # coverage summary: one row per dimension, reporting how much of the report is
 # real (LIVE / CACHED / NO DATA / FETCH FAILED). NO TOP PICK/WATCH/SKIP, NO
 # phase_of_drop.
