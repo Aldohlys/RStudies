@@ -30,7 +30,10 @@ ZONE_DEFAULTS <- list(
   zz_atr    = 2.00,   # pivot needs a reversal of this many ATR
   zz_floor  = 0.025,  # ... but never less than 2.5%
   zz_ceil   = 0.100,  # ... and never more than 10%
-  far_stop  = 3.00    # beyond this many ATR a support zone is not a usable stop
+  far_stop  = 3.00,   # beyond this many ATR a support zone is not a usable stop
+  near_stop = 0.50    # nor is one closer than this: it sits inside the noise,
+                      # and it collapses the denominator of asym (SNOW produced
+                      # 18.5:1 from a .618 retracement a hair below spot)
 )
 
 #' ZigZag reversal threshold for a name, as a fraction.
@@ -203,11 +206,14 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   # The nearest repetition-validated support can sit so far below that no one
   # would place a stop there (MSFT: 6.6 ATR in the trial), so fall back in order
   # zone -> retracement -> plain ATR, and say which was used.
+  # A usable stop is far enough below spot to sit outside the noise and near
+  # enough to be worth placing.
+  usable <- function(lvl) is.finite(lvl) && lvl < price &&
+    (price - lvl) >= cfg$near_stop * atr && (price - lvl) <= cfg$far_stop * atr
   stop_zone <- if (!is.null(sup)) sup$lo else NA_real_
-  zone_usable <- !is.null(sup) && (price - sup$hi) <= cfg$far_stop * atr
+  zone_usable <- !is.null(sup) && usable(sup$lo)
   stop_fib <- if (!is.null(fb)) unname(fb$ret[3]) else NA_real_   # .618, deepest
-  fib_usable <- is.finite(stop_fib) && stop_fib < price &&
-    (price - stop_fib) <= cfg$far_stop * atr
+  fib_usable <- usable(stop_fib)
   if (zone_usable) {
     stop_px <- stop_zone; stop_source <- "zone_stop"
   } else if (fib_usable) {
