@@ -48,6 +48,11 @@ syms_arg <- setdiff(args[!grepl("^--", args)], c(opt("--db"), opt("--out"), opt(
 
 `%||%` <- function(a, b) if (is.null(a) || length(a) != 1 || is.na(a)) b else a
 .n <- function(x) if (is.null(x) || length(x) != 1 || !is.finite(x)) NA_real_ else x
+# A FAILED row carries only status and notes, so every other field is NULL there.
+# A NULL field becomes a ZERO-LENGTH column and as.data.frame() then refuses the
+# whole row list ("les arguments impliquent des nombres de lignes differentes").
+.s <- function(x) if (is.null(x) || length(x) != 1) NA_character_ else as.character(x)
+.i <- function(x) if (is.null(x) || length(x) != 1 || is.na(x)) NA_integer_ else as.integer(x)
 
 SCHEMA <- c(
   BOT_Eligible = "INTEGER", BOT_Reason = "TEXT", BOT_VehicleHint = "TEXT",
@@ -185,6 +190,9 @@ for (i in seq_len(nrow(tickers))) {
   if (i %% 25 == 0) message(sprintf("  ... %d/%d", i, nrow(tickers)))
 }
 if (!length(res)) { message("nothing computed"); quit(status = 1) }
+cache_path <- file.path(tempdir(), "bot_monthly_phase1.rds")
+saveRDS(res, cache_path)
+message("phase 1 cached at ", cache_path, " (", length(res), " rows)")
 
 # ── Phase 2: cross-sectional terciles ──────────────────────────────────────
 # Cut against the universe, which is why this cannot be a per-ticker decision.
@@ -212,31 +220,31 @@ rows <- lapply(res, function(r) {
             (if (.n(r$atm_bid_ask) > BIDASK_STOCK) "stock_only" else "options") else NA_character_
 
   reason <- if (identical(r$status, "FAILED")) "no_data"
-            else if (identical(.n(r$atr_band) , NA_real_) && is.na(r$atr_band)) "no_atr"
-            else if (identical(r$atr_band, "low")) "atr_band"
+            else if (is.na(.s(r$atr_band))) "no_atr"
+            else if (identical(.s(r$atr_band), "low")) "atr_band"
             else if (identical(gs_t, "high")) "gap_share"
             else if (identical(adv_pass, 0L)) "adv"
             else if (is.finite(.n(r$opp_n)) && r$opp_n < 1) "no_opportunity"
             else "eligible"
   elig <- as.integer(identical(reason, "eligible"))
 
-  list(name = r$name, yahoo = r$yahoo, type = r$type, currency = r$currency,
-       bot_eligible = elig, bot_reason = reason, vehicle_hint = hint,
-       atr_pct = round(.n(r$atr_pct), 3), atr_band = r$atr_band,
-       gap_share = round(.n(r$gap_share), 4), gap_tercile = gs_t,
-       vov = round(.n(r$vov), 4), vov_pctile = round(.n(r$vov_pctile), 1), vov_tercile = vov_t,
+  list(name = .s(r$name), yahoo = .s(r$yahoo), type = .s(r$type), currency = .s(r$currency),
+       bot_eligible = .i(elig), bot_reason = .s(reason), vehicle_hint = .s(hint),
+       atr_pct = round(.n(r$atr_pct), 3), atr_band = .s(r$atr_band),
+       gap_share = round(.n(r$gap_share), 4), gap_tercile = .s(gs_t),
+       vov = round(.n(r$vov), 4), vov_pctile = round(.n(r$vov_pctile), 1), vov_tercile = .s(vov_t),
        atm_bid_ask_pct = round(.n(r$atm_bid_ask), 3),
-       adv_chf_m = round(.n(r$adv), 1), adv_pass = adv_pass,
+       adv_chf_m = round(.n(r$adv), 1), adv_pass = .i(adv_pass),
        atr_move_coef_hi = round(.n(r$coef_hi), 3), em10_hi_pct = round(.n(r$em_hi), 3),
-       model_sigma = round(.n(r$sigma), 4), iv_source = r$iv_src,
+       model_sigma = round(.n(r$sigma), 4), iv_source = .s(r$iv_src),
        model_call_cost = round(.n(r$call_cost), 2),
        breakeven_pct = round(.n(r$be_pct), 3), breakeven_atr = round(.n(r$be_atr), 3),
        breakeven_pct_em10 = round(.n(r$be_pct_em10), 1),
-       opportunities_2y = r$opp_n, last_opportunity = r$opp_last,
-       gate_version = GATE_VERSION, fetch_status = r$status,
+       opportunities_2y = .i(r$opp_n), last_opportunity = .s(r$opp_last),
+       gate_version = GATE_VERSION, fetch_status = .s(r$status),
        fetch_note = paste(r$notes, collapse = "; "),
        .atr_med5y = .n(r$atr_med5y), .atr_p25 = .n(r$atr_p25), .atr_p75 = .n(r$atr_p75),
-       .ba_asof = r$atm_bid_ask_asof)
+       .ba_asof = .s(r$atm_bid_ask_asof))
 })
 df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 
