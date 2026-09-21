@@ -113,6 +113,13 @@ compute_breakdown <- function(last, price, direction = "long") {
   ll <- as.list(last[1, , drop = FALSE])
   long <- identical(direction, "long")
 
+  # Thresholds are NOT restated here. gates.R is the one implementation; this
+  # function only formats what it returns. The two used to carry their own
+  # copies and had already drifted over whether S3 exists (gates.R header).
+  if (!exists("eval_gates", mode = "function"))
+    stop("compute_breakdown() needs shared/gates.R sourced by the caller")
+  g <- eval_gates(gate_inputs(last), price, direction)
+
   fmt <- function(x, d = 2) {
     if (is.null(x) || length(x) == 0 || is.na(x)) "n/a"
     else if (is.numeric(x)) sprintf(paste0("%.", d, "f"), x)
@@ -140,24 +147,11 @@ compute_breakdown <- function(last, price, direction = "long") {
   }
   na_safe_pass <- function(x) isTRUE(x)
 
-  # ── SETUP (S1-S6) — long thresholds; mirror for short ─────────────────
-  S1 <- if (long) (!is.na(ll$ma50) && price > ll$ma50)
-        else      (!is.na(ll$ma50) && price < ll$ma50)
-  S2 <- if (long) (!is.na(ll$ma50_slope) && ll$ma50_slope > 0)
-        else      (!is.na(ll$ma50_slope) && ll$ma50_slope < 0)
-  S4 <- if (long) (!is.na(ll$obv_slope) && ll$obv_slope > 0)
-        else      (!is.na(ll$obv_slope) && ll$obv_slope < 0)
-  S5 <- (!is.na(ll$squeeze_ratio) && ll$squeeze_ratio < 0.65)
-  S6 <- (!is.na(ll$vol_decline)   && ll$vol_decline   < 0.95)
-
-  # ── BREAKOUT (BK1-BK4) — long thresholds; mirror for short ────────────
-  BK1 <- if (long) (!is.na(ll$rsi14) && ll$rsi14 > 50 && !is.na(ll$rsi_slope) && ll$rsi_slope > 0)
-         else      (!is.na(ll$rsi14) && ll$rsi14 < 50 && !is.na(ll$rsi_slope) && ll$rsi_slope < 0)
-  BK2 <- if (long) (!is.na(ll$updn_ratio) && ll$updn_ratio > 1.1)
-         else      (!is.na(ll$updn_ratio) && ll$updn_ratio < 0.9)
-  BK3 <- if (long) (!is.na(ll$rng_pct) && ll$rng_pct >= 70)
-         else      (!is.na(ll$rng_pct) && ll$rng_pct <= 30)
-  BK4 <- (!is.na(ll$vol_surge) && ll$vol_surge >= 1.2)
+  # ── SETUP + BREAKOUT verdicts, taken from gates.R ─────────────────────
+  S1 <- isTRUE(g[["S1"]]); S2 <- isTRUE(g[["S2"]]); S4 <- isTRUE(g[["S4"]])
+  S5 <- isTRUE(g[["S5"]]); S6 <- isTRUE(g[["S6"]])
+  BK1 <- isTRUE(g[["BK1"]]); BK2 <- isTRUE(g[["BK2"]])
+  BK3 <- isTRUE(g[["BK3"]]); BK4 <- isTRUE(g[["BK4"]])
 
   # ── Auxiliary indicators (informational, no PASS gate) ────────────────
   ADX_passes <- !is.na(ll$adx10) && ll$adx10 > 20

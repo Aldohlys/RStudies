@@ -6,6 +6,10 @@
 #   higher-level fields not yet migrated (strike / vehicle / entry framework /
 #   structural targets) — those phases get rewritten in Steps 2-4.
 
+# Minimum payoff for an outright to be accepted, from the strategy profile:
+# win rate under 50% with avg win / avg loss > 2. Same constant BOT_name used.
+MIN_PAYOFF_OUTRIGHT <- 2
+
 run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
                         freshness = NULL, phase_a = NULL) {
   scan <- .read_scanner_row(ticker, freshness)
@@ -94,7 +98,8 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   # expiries enumerated side-by-side (~30 DTE and ~55 DTE).
   structures <- enumerate_structures(ticker, direction, spot, expiries, vehicle,
                                      config, expiry_reason = expiry_reason,
-                                     tws_ok = tws_ok)
+                                     tws_ok = tws_ok,
+                                     target = targets$spot_target_low)
   within <- if ("within_cap" %in% names(structures))
               structures$within_cap else logical(0)
   n_within <- sum(within, na.rm = TRUE)
@@ -471,7 +476,22 @@ enumerate_outrights <- function(direction, spot, expiries, eff_target, iv_now,
   }
   if (length(rows) == 0) return(NULL)
   df <- do.call(rbind, rows)
-  df[order(-df$rr), , drop = FALSE]
+
+  # ── BOT acceptance for the outright vehicle (BOT_TOOLS_DESIGN §4) ───────
+  # Premium within budget AND payoff > 2:1 at the structural target after the
+  # hold's decay — which is what `rr` already is, since fwd_premium is priced
+  # at eff_target with dte-5 and iv+0.02. Outrights decay at -2.93%/day of
+  # premium against a vertical's -0.70% (#82 F), so the decayed ratio is the
+  # only honest one to test.
+  cap <- config$risk_cap_lot_usd
+  over_budget <- is.finite(cap) & is.finite(df$entry_premium) & df$entry_premium > cap
+  below_payoff <- !is.finite(df$rr) | df$rr <= MIN_PAYOFF_OUTRIGHT
+  df$reject_reason <- ifelse(over_budget, "premium_over_budget",
+                      ifelse(below_payoff, "payoff_below_target", ""))
+  df$accept <- ifelse(nzchar(df$reject_reason), "REJECT", "ACCEPT")
+
+  # ACCEPT first, then payoff descending within each block.
+  df[order(df$accept != "ACCEPT", -ifelse(is.na(df$rr), -Inf, df$rr)), , drop = FALSE]
 }
 
 # ── Structure enumeration (live spread pricer; FETCH FAILED row otherwise) ──
@@ -486,7 +506,8 @@ enumerate_outrights <- function(direction, spot, expiries, eff_target, iv_now,
 #    round to zero).
 #  - Sorted by expected_value descending.
 enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
-                                 config, expiry_reason = NULL, tws_ok = TRUE) {
+                                 config, expiry_reason = NULL, tws_ok = TRUE,
+                                 target = NA_real_) {
   cap <- config$risk_cap_lot_usd
   right <- if (direction == "long") "C" else "P"
 
@@ -569,12 +590,41 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
     "no DEBIT spreads survived the within-cap + phantom filter",
     status = "NO DATA"))
 
-  # Sort by expected_value descending. Fall back to RR if EV missing.
-  sort_key <- if ("expected_value" %in% names(spreads_df))
-                -spreads_df$expected_value
-              else -spreads_df$reward_risk_ratio
-  spreads_df <- spreads_df[order(sort_key), , drop = FALSE]
-  # Propose only the 10 best (highest-EV) DEBIT spreads; the rest are noise.
+  # ── BOT acceptance test (BOT_TOOLS_DESIGN §4), folded in from bot_name ──
+  # For a debit vertical, max payoff = (width - debit)/debit, so the debit sets
+  # the payoff ratio the strategy profile depends on: <= 33% of width gives the
+  # >= 2:1 the book needs. It is arithmetic on the quote — #82's F.1 calls it
+  # the one criterion that needs no sample, against every statistical entry
+  # criterion that failed at n=95.
+  # Width in trade currency comes from the identity max_reward = width x mult -
+  # debit, so debit + max_reward IS width x mult. Taken this way it needs no
+  # multiplier column: reading one gave 2620% where the answer was 26.2%.
+  debit <- abs(spreads_df$max_risk)
+  width_ccy <- debit + spreads_df$max_reward
+  mult_eff <- ifelse(is.finite(spreads_df$width) & spreads_df$width > 0,
+                     width_ccy / spreads_df$width, NA_real_)
+  spreads_df$debit_pct_width <- ifelse(is.finite(width_ccy) & width_ccy > 0,
+                                       debit / width_ccy * 100, NA_real_)
+  # Breakeven at expiry on the long leg, then the internal-consistency check:
+  # a spread can clear the payoff test and still break even past the level the
+  # trade aims at, where it cannot profit at that target.
+  spreads_df$breakeven <- if (direction == "long")
+                            spreads_df$long_strike + debit / mult_eff
+                          else spreads_df$long_strike - debit / mult_eff
+  be_beyond <- is.finite(target) & is.finite(spreads_df$breakeven) &
+               (if (direction == "long") spreads_df$breakeven > target
+                else spreads_df$breakeven < target)
+  fails_width <- !is.finite(spreads_df$debit_pct_width) | spreads_df$debit_pct_width > 33
+  spreads_df$reject_reason <- ifelse(fails_width, "debit_pct_width",
+                              ifelse(be_beyond, "breakeven_beyond_target", ""))
+  spreads_df$accept <- ifelse(nzchar(spreads_df$reject_reason), "REJECT", "ACCEPT")
+
+  # ACCEPT first, then cheapest share of width — payoff per dollar, which is
+  # what #82 F.1 ranks on. Expected value is still reported, no longer the key.
+  spreads_df <- spreads_df[order(spreads_df$accept != "ACCEPT",
+                                 ifelse(is.na(spreads_df$debit_pct_width), Inf,
+                                        spreads_df$debit_pct_width)), , drop = FALSE]
+  # Propose only the 10 best DEBIT spreads; the rest are noise.
   utils::head(spreads_df, 10)
 }
 
@@ -592,6 +642,10 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
     reward_risk_ratio  = NA_real_,
     prob_success_delta = NA_real_,
     within_cap         = NA,
+    debit_pct_width    = NA_real_,
+    breakeven          = NA_real_,
+    accept             = NA_character_,
+    reject_reason      = NA_character_,
     surface_fact       = paste0(status, ": ", reason),
     source             = "fetch_failed",
     prov_status        = status,

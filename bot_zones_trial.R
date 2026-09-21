@@ -44,20 +44,24 @@ report <- function(sym) {
               sym, px, atr, atr / px * 100, r$zz_th * 100, EM_DAYS, em_pct, regime, r$n_pivots))
 
   if (!is.null(r$res)) {
-    cat(sprintf("  RES  %8.2f -%8.2f  mid %8.2f  %2d touches  %s .. %s\n",
-                r$res$lo, r$res$hi, r$res$mid, r$res$touches, r$res$first, r$res$last))
+    rr <- zone_ref(r$res, "res")
+    cat(sprintf("  RES  %8.2f -%8.2f  mid %8.2f  %2d touches  %s .. %s%s\n",
+                r$res$lo, r$res$hi, r$res$mid, r$res$touches, r$res$first, r$res$last,
+                if (isTRUE(r$res$in_zone)) "  [spot INSIDE - distance is to the upper edge]" else ""))
     cat(sprintf("       +%.2f (+%.2f%%)  %.2f ATR  %s of EM%dd\n",
-                r$res$lo - px, (r$res$lo / px - 1) * 100, (r$res$lo - px) / atr, pe(r$res$lo - px), EM_DAYS))
+                rr - px, (rr / px - 1) * 100, (rr - px) / atr, pe(rr - px), EM_DAYS))
   } else {
     cat(sprintf("  RES  none overhead (at/near highs) -> target = fib 1.272 %.2f\n", r$target))
     cat(sprintf("       +%.2f (+%.2f%%)  %.2f ATR  %s of EM%dd\n",
                 r$target - px, (r$target / px - 1) * 100, (r$target - px) / atr, pe(r$target - px), EM_DAYS))
   }
   if (!is.null(r$sup)) {
-    cat(sprintf("  SUP  %8.2f -%8.2f  mid %8.2f  %2d touches  %s .. %s\n",
-                r$sup$lo, r$sup$hi, r$sup$mid, r$sup$touches, r$sup$first, r$sup$last))
+    sr <- zone_ref(r$sup, "sup")
+    cat(sprintf("  SUP  %8.2f -%8.2f  mid %8.2f  %2d touches  %s .. %s%s\n",
+                r$sup$lo, r$sup$hi, r$sup$mid, r$sup$touches, r$sup$first, r$sup$last,
+                if (isTRUE(r$sup$in_zone)) "  [spot INSIDE - distance is to the lower edge]" else ""))
     cat(sprintf("       -%.2f (-%.2f%%)  %.2f ATR  %s of EM%dd\n",
-                px - r$sup$hi, (1 - r$sup$hi / px) * 100, (px - r$sup$hi) / atr, pe(px - r$sup$hi), EM_DAYS))
+                px - sr, (1 - sr / px) * 100, (px - sr) / atr, pe(px - sr), EM_DAYS))
   } else cat("  SUP  none\n")
 
   cat(sprintf("  TARGET zone %s / fib1.272 %s / fib1.618 %s  -> using %.2f (%s)\n",

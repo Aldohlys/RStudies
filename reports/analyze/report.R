@@ -879,7 +879,15 @@ render_analyze_html <- function(ctx, out_dir) {
     '<th><span title="Black-Scholes premium at current spot, current IV30. Per lot (×100). Equal to maximum loss for an outright long option.">Entry premium</span></th>',
     '<th><span title="Black-Scholes premium at the effective target (DTE − 5d theta buffer, IV bumped +2pp).">Fwd @ target</span></th>',
     '<th><span title="Fwd premium − entry premium per lot.">Reward</span></th>',
-    '<th><span title="Reward / risk on the move to effective target.">R:R</span></th>')
+    '<th><span title="Reward / risk on the move to effective target.">R:R</span></th>',
+    '<th><span title="BOT outright test: premium within the per-lot budget and payoff above 2:1 at the target after the hold&apos;s decay.">Accept</span></th>')
+
+  fmt_accept <- function(r) {
+    a <- r$accept
+    if (is.null(a) || length(a) == 0 || is.na(a)) "&mdash;"
+    else if (identical(a, "ACCEPT")) "ACCEPT"
+    else sprintf("REJECT (%s)", r$reject_reason %||% "")
+  }
 
   rows <- vapply(seq_len(nrow(outrights)), function(i) {
     r <- outrights[i, , drop = FALSE]
@@ -889,7 +897,8 @@ render_analyze_html <- function(ctx, out_dir) {
       sprintf('<td>%s</td>', fmt_money(r$entry_premium)),
       sprintf('<td>%s</td>', fmt_money(r$fwd_premium)),
       sprintf('<td>%s</td>', fmt_money(r$reward)),
-      sprintf('<td>%s</td>', fmt_ratio(r$rr)))
+      sprintf('<td>%s</td>', fmt_ratio(r$rr)),
+      sprintf('<td>%s</td>', fmt_accept(r)))
     sprintf('<tr class="row-pass">%s</tr>', paste0(cells, collapse = ""))
   }, character(1))
 
@@ -902,7 +911,7 @@ render_analyze_html <- function(ctx, out_dir) {
     '</tbody></table>',
     '<p class="sub">Strike × expiry grid. Entry priced at current spot/IV30. ',
     'Forward priced at effective target with theta buffer (DTE − 5d) and IV +2pp. ',
-    'Sorted by R:R desc.</p>')
+    'ACCEPT first, then R:R desc.</p>')
 }
 
 #' Inner spread enumeration table (no h2, no banner).
@@ -971,12 +980,23 @@ render_analyze_html <- function(ctx, out_dir) {
          "Maximum dollar gain per lot (width × 100 − debit)."),
     list("R:R",          function(r) fmt_ratio(r$reward_risk_ratio),
          "max_reward / debit."),
+    # fmt_pct() takes a FRACTION and multiplies by 100; debit_pct_width is
+    # already a percentage per the spec, so it is scaled back here.
+    list("Debit % width", function(r) fmt_pct(r$debit_pct_width / 100),
+         "debit / (width x multiplier). 33% or less is the 2:1 payoff the BOT profile needs."),
+    list("Accept",       function(r) {
+           a <- r$accept %||% NA
+           if (is.na(a)) "n/a"
+           else if (identical(a, "ACCEPT")) "ACCEPT"
+           else sprintf("REJECT (%s)", r$reject_reason %||% "")
+         },
+         "BOT per-vehicle test: debit at most 33% of width, and breakeven not past the structural target."),
     list("P(success)",   function(r) fmt_pct(r$prob_success_delta),
          "Probability the spread expires fully ITM (from delta)."),
     list("Edge",         function(r) fmt_pct(r$edge),
          "Excess probability vs market-implied (edge in probability-points)."),
     list("EV",           function(r) fmt_money(r$expected_value),
-         "Expected dollar value per lot. Table sorted by this descending.")
+         "Expected dollar value per lot. Reported, not the sort key.")
   )
 
   hdr <- paste0(vapply(col_spec, function(cs) {
@@ -995,8 +1015,9 @@ render_analyze_html <- function(ctx, out_dir) {
   paste0('<table class="sortable"><thead><tr>', hdr, '</tr></thead><tbody>',
          paste(rows, collapse = "\n"), '</tbody></table>',
          sprintf(paste0('<p class="sub">DEBIT spreads within $%d-per-lot cap, ',
-                        'sorted by Expected Value descending. ',
-                        'Click any column header to re-sort. ',
+                        'ACCEPT first, then cheapest share of width ',
+                        '(payoff per dollar). Expected Value is reported, not ',
+                        'the sort key. Click any column header to re-sort. ',
                         'CREDIT spreads and phantom/zero-priced legs filtered out.</p>'),
                  cap))
 }

@@ -79,9 +79,21 @@ load_universe <- function() {
           basename(UNIVERSE_CSV), " book_BOT (run BOT_monthly to replace this)")
   u <- utils::read.csv(UNIVERSE_CSV, sep = ";", stringsAsFactors = FALSE)
   u <- u[u$book_BOT %in% c("Y", "y", "YES", "Yes"), , drop = FALSE]
-  data.frame(name = u$ibkr_name, yahoo = u$yahoo,
-             atr_band = NA_character_, gap_tercile = NA_character_,
-             bench = u$bench, stringsAsFactors = FALSE)
+  out <- data.frame(name = u$ibkr_name, yahoo = u$yahoo,
+                    atr_band = NA_character_, gap_tercile = NA_character_,
+                    bench = u$bench, stringsAsFactors = FALSE)
+  # A name is never its own benchmark: rs20 would be identically zero and S3
+  # could never pass. Carried over from bot_scan_universe.py::resolve_bench()
+  # when that scanner was retired — TLT carried db_sector 'US bonds' -> TLT and
+  # scored S=0 on every scan until it was caught. The CSV is clean today, so
+  # this guards the next hand-edit of the bench column, not current data.
+  self_bench <- !is.na(out$bench) & nzchar(out$bench) & out$bench == out$yahoo
+  if (any(self_bench)) {
+    message(sprintf("Bench == name for %d row(s) (%s) - S3 abstains for them",
+                    sum(self_bench), paste(out$name[self_bench], collapse = ", ")))
+    out$bench[self_bench] <- NA_character_
+  }
+  out
 }
 
 # ── Per-name read ──────────────────────────────────────────────────────────
@@ -132,11 +144,29 @@ one_row <- function(row, direction, bench_ret20) {
   wi <- if (!is.null(wlast) && nrow(wlast)) gate_inputs(wlast) else NULL
 
   res <- lr$res; sup <- lr$sup; fb <- lr$fib
+  res_ref <- zone_ref(res, "res"); sup_ref <- zone_ref(sup, "sup")
+
+  # Entry factors F1/F2, ported from bot_scan_universe.py::score_one() when that
+  # scanner was retired. Validated on 93 realised trades (bot_book_design
+  # 20260827.md 9b): ATR in its own top quartile carried 20.7R of 42.9R, and a
+  # prior move of 2-3 ATR returned 0.76R per trade. Reported, never gated.
+  atr_pct_now <- atr / px * 100
+  atr_hist <- utils::tail(d$atr14 / d$Close * 100, 504)
+  atr_hist <- atr_hist[is.finite(atr_hist)]
+  atr_pctile <- if (length(atr_hist) > 250) mean(atr_hist < atr_pct_now) * 100 else NA_real_
+  # Signed, in ATR units: (Close_t - Close_t-20) / atr14. Not ret20% / atr%,
+  # which carries a spurious C_t/C_t-20 factor and inflates large up-moves.
+  prior20_atr <- if (nrow(d) > 20 && is.finite(atr) && atr > 0)
+                   (px - d$Close[nrow(d) - 20]) / atr else NA_real_
+  f1 <- is.finite(atr_pctile) && atr_pctile >= 75
+  f2 <- is.finite(prior20_atr) && abs(prior20_atr) >= 2
 
   list(
     date = as.character(as.Date(tail(d$date, 1))),
     name = row$name, yahoo = row$yahoo, direction = direction,
-    px = round(px, 4), atr = round(atr, 4), atr_pct = round(atr / px * 100, 3),
+    px = round(px, 4), atr = round(atr, 4), atr_pct = round(atr_pct_now, 3),
+    atr_pctile = round(atr_pctile, 1), prior20_atr = round(prior20_atr, 2),
+    entry_factors = as.integer(f1) + as.integer(f2),
     zz_th = round(lr$zz_th * 100, 3), n_pivots = lr$n_pivots,
     rng_pct_20 = round(.n(gi$rng_pct_20), 2), rng_dyn = round(.n(lr$rng_dyn), 2),
     zone_window_sessions = lr$zone_window_sessions,
@@ -146,18 +176,21 @@ one_row <- function(row, direction, bench_ret20) {
     res_touches = if (!is.null(res)) res$touches else NA_integer_,
     res_first   = if (!is.null(res)) res$first else NA_character_,
     res_last    = if (!is.null(res)) res$last  else NA_character_,
-    res_dist_pct    = if (!is.null(res)) round(.pct(res$lo - px, px), 3) else NA_real_,
-    res_dist_atr    = if (!is.null(res)) round((res$lo - px) / atr, 3) else NA_real_,
-    res_pct_of_em10 = if (!is.null(res)) round(.pct(res$lo - px, em_abs), 1) else NA_real_,
+    # Distances are to the edge in play (zone_ref): the lower edge when the zone
+    # is overhead, the upper edge when spot stands inside it. Both stay >= 0 and
+    # both answer the same question — how far to the level `target` sits on.
+    res_dist_pct    = if (!is.null(res)) round(.pct(res_ref - px, px), 3) else NA_real_,
+    res_dist_atr    = if (!is.null(res)) round((res_ref - px) / atr, 3) else NA_real_,
+    res_pct_of_em10 = if (!is.null(res)) round(.pct(res_ref - px, em_abs), 1) else NA_real_,
 
     sup_zone_lo = if (!is.null(sup)) round(sup$lo, 4) else NA_real_,
     sup_zone_hi = if (!is.null(sup)) round(sup$hi, 4) else NA_real_,
     sup_touches = if (!is.null(sup)) sup$touches else NA_integer_,
     sup_first   = if (!is.null(sup)) sup$first else NA_character_,
     sup_last    = if (!is.null(sup)) sup$last  else NA_character_,
-    sup_dist_pct    = if (!is.null(sup)) round(.pct(px - sup$hi, px), 3) else NA_real_,
-    sup_dist_atr    = if (!is.null(sup)) round((px - sup$hi) / atr, 3) else NA_real_,
-    sup_pct_of_em10 = if (!is.null(sup)) round(.pct(px - sup$hi, em_abs), 1) else NA_real_,
+    sup_dist_pct    = if (!is.null(sup)) round(.pct(px - sup_ref, px), 3) else NA_real_,
+    sup_dist_atr    = if (!is.null(sup)) round((px - sup_ref) / atr, 3) else NA_real_,
+    sup_pct_of_em10 = if (!is.null(sup)) round(.pct(px - sup_ref, em_abs), 1) else NA_real_,
 
     leg_low         = if (!is.null(fb)) round(fb$leg_low, 4) else NA_real_,
     leg_anchor_date = if (!is.null(fb)) fb$anchor_date else NA_character_,
@@ -172,6 +205,14 @@ one_row <- function(row, direction, bench_ret20) {
     target_agree = if (is.na(lr$fib_confirms_res)) NA_integer_
                    else as.integer(isTRUE(lr$fib_confirms_res)),
     stop = round(.n(lr$stop_px), 4), stop_source = lr$stop_source,
+    # What asym rests on. Zones are validated by REPETITION (>= 2 attempts to
+    # cross); Fibonacci levels and a flat 3x ATR stop are validated by nothing,
+    # so a high asym built from both is a ratio of two unobserved levels.
+    level_basis = {
+      tz <- lr$target_source %in% c("zone", "in_zone")
+      sz <- lr$stop_source %in% c("zone_stop", "in_zone_stop")
+      if (tz && sz) "zone" else if (!tz && !sz) "geometric" else "mixed"
+    },
     stop_agree = if (is.na(lr$fib_confirms_sup)) NA_integer_
                  else as.integer(isTRUE(lr$fib_confirms_sup)),
     asym = round(.n(lr$asym), 3), asym_fib = round(.n(lr$asym_fib), 3),
@@ -202,13 +243,24 @@ one_row <- function(row, direction, bench_ret20) {
     confluence = confluence_state(gd, gw),
 
     atr_band = row$atr_band, gap_tercile = row$gap_tercile,
+
+    # Entry veto: price standing in a zone is mid-struggle, with the level that
+    # decides the move at arm's length on both sides. No BOT entry is taken
+    # there. The row is kept so the level read stays visible.
+    tradable = as.integer(!(isTRUE(lr$in_res_zone) || isTRUE(lr$in_sup_zone))),
+    veto_reason = if (isTRUE(lr$in_res_zone) && isTRUE(lr$in_sup_zone)) "in_both"
+                  else if (isTRUE(lr$in_res_zone)) "in_resistance"
+                  else if (isTRUE(lr$in_sup_zone)) "in_support" else "",
+
     note = if (identical(lr$stop_source, "atr_stop"))
              sprintf("nearest support %.1f ATR away - ATR stop used",
                      if (!is.null(sup)) (px - sup$hi) / atr else NA_real_) else "")
 }
 
 # Column order and tiers are the spec's, kept here so a schema change is one edit.
-COLS <- c("date","name","yahoo","direction","px","atr","atr_pct","zz_th","n_pivots",
+COLS <- c("date","name","yahoo","direction","tradable","veto_reason",
+  "px","atr","atr_pct","atr_pctile","prior20_atr","entry_factors",
+  "zz_th","n_pivots",
   "rng_pct_20","rng_dyn","zone_window_sessions",
   "res_zone_lo","res_zone_hi","res_touches","res_first","res_last",
   "res_dist_pct","res_dist_atr","res_pct_of_em10",
@@ -217,7 +269,7 @@ COLS <- c("date","name","yahoo","direction","px","atr","atr_pct","zz_th","n_pivo
   "leg_low","leg_anchor_date","leg_high",
   "fib_ret_382","fib_ret_500","fib_ret_618","fib_ext_1272","fib_ext_1618",
   "target","target_source","target_agree","stop","stop_source","stop_agree",
-  "asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
+  "level_basis","asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",
@@ -261,8 +313,11 @@ df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors 
 df <- df[, COLS, drop = FALSE]
 if (!detail) df <- df[, setdiff(COLS, DETAIL_ONLY), drop = FALSE]
 
-# Reading order: asym desc, then res_pct_of_em10 asc. Not a ranking.
-df <- df[order(-ifelse(is.na(df$asym), -Inf, df$asym),
+# Reading order: tradable rows first, then asym desc, then res_pct_of_em10 asc.
+# Not a ranking. Vetoed rows keep their level read and sit below the block that
+# can actually be traded today.
+df <- df[order(-df$tradable,
+               -ifelse(is.na(df$asym), -Inf, df$asym),
                ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
 
 if (is.na(out_path))
@@ -271,5 +326,8 @@ dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
 utils::write.table(df, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
 
 message(sprintf("Wrote %d rows x %d cols -> %s", nrow(df), ncol(df), out_path))
+message(sprintf("Tradable: %d of %d  (vetoed: %s)", sum(df$tradable == 1L), nrow(df),
+                paste(sprintf("%s %d", names(table(df$veto_reason[df$tradable == 0L])),
+                              table(df$veto_reason[df$tradable == 0L])), collapse = ", ")))
 print(utils::head(df[, intersect(c("name","direction","px","target","target_source",
   "stop","stop_source","asym","trend_state","confluence"), names(df))], 12))

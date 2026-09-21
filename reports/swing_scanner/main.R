@@ -25,6 +25,7 @@ SCRIPT_DIR <- .get_script_dir()
 
 source(file.path(SCRIPT_DIR, "..", "shared", "universe.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "indicators.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "gates.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "vehicle_rule.R"))
 source(file.path(SCRIPT_DIR, "fetch.R"))
 source(file.path(SCRIPT_DIR, "sector_gate.R"))

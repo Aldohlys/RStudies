@@ -118,18 +118,65 @@ build_zones <- function(piv, type, atr, cfg = ZONE_DEFAULTS) {
 
 #' Nearest qualifying zone above (resistance) or below (support) spot.
 #'
+#' A zone that CONTAINS spot wins on both sides: it is the nearest level there
+#' is, at distance zero. Selecting only on `lo > price` / `hi < price` dropped
+#' it and reported no zone at all, which reads as "no overhead supply" when the
+#' truth is the opposite — spot standing in the middle of the most-tested band
+#' in the name's history (NTR, 5 touches, 2026-09-21).
+#'
 #' @param zones data.frame from build_zones(), or NULL
 #' @param price numeric spot
 #' @param side "res" or "sup"
-#' @return one-row data.frame, or NULL when price is beyond every zone
+#' @return one-row data.frame with an added `in_zone` flag, or NULL when there
+#'   is no zone on that side and none containing spot
 nearest_zone <- function(zones, price, side) {
   if (is.null(zones) || !nrow(zones)) return(NULL)
-  if (identical(side, "res")) {
+
+  beyond <- if (identical(side, "res")) {
     a <- zones[zones$lo > price, , drop = FALSE]
     if (nrow(a)) a[which.min(a$lo), , drop = FALSE] else NULL
   } else {
     b <- zones[zones$hi < price, , drop = FALSE]
     if (nrow(b)) b[which.max(b$hi), , drop = FALSE] else NULL
+  }
+
+  inside <- zones[zones$lo <= price & zones$hi >= price, , drop = FALSE]
+  if (nrow(inside)) {
+    # Overlapping zones are possible; take the most-tested, widest as tiebreak.
+    o <- order(-inside$touches, -(inside$hi - inside$lo))
+    cand <- inside[o[1], , drop = FALSE]
+    # Distance zero does not make it the more informative level. KTOS stood in
+    # a 2-touch band last touched 15 months earlier while a 4-touch wall sat
+    # 5.2 ATR overhead; promoting the containing zone there collapsed asym from
+    # 4.71 to 0.18. The containing zone wins only when it is at least as tested
+    # as the one beyond spot.
+    if (is.null(beyond) || cand$touches >= beyond$touches) {
+      cand$in_zone <- TRUE
+      return(cand)
+    }
+  }
+  if (is.null(beyond)) return(NULL)
+  beyond$in_zone <- FALSE
+  beyond
+}
+
+#' The zone edge that is in play, given where spot stands.
+#'
+#' Resistance: the lower edge is first contact on the way up, but once spot is
+#' inside the zone the level that matters is the upper edge — what price must
+#' clear. Support mirrors it: the upper edge is first contact on the way down,
+#' the lower edge is what must give way, and it is also where the stop already
+#' went (below the whole zone), so the in-zone case changes nothing there.
+#'
+#' @param z one-row data.frame from nearest_zone(), or NULL
+#' @param side "res" or "sup"
+#' @return numeric level, or NA_real_ when z is NULL
+zone_ref <- function(z, side) {
+  if (is.null(z)) return(NA_real_)
+  if (identical(side, "res")) {
+    if (isTRUE(z$in_zone)) z$hi else z$lo
+  } else {
+    if (isTRUE(z$in_zone)) z$lo else z$hi
   }
 }
 
@@ -190,16 +237,27 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   price <- tail(d$Close, 1)
   th <- zz_threshold(atr, price, cfg)
   piv <- zigzag_pivots(d, th)
-  res <- nearest_zone(build_zones(piv, "H", atr, cfg), price, "res")
-  sup <- nearest_zone(build_zones(piv, "L", atr, cfg), price, "sup")
+  zones_h <- build_zones(piv, "H", atr, cfg)
+  zones_l <- build_zones(piv, "L", atr, cfg)
+  res <- nearest_zone(zones_h, price, "res")
+  sup <- nearest_zone(zones_l, price, "sup")
   fb <- fib_levels(d, piv)
 
+  # Containment is tested against EVERY zone, not the selected one. A zone that
+  # contains spot can lose the touches test in nearest_zone() and never be
+  # selected (KTOS, 2026-09-21), and price would still be sitting in it.
+  in_res_zone <- !is.null(zones_h) && any(zones_h$lo <= price & zones_h$hi >= price)
+  in_sup_zone <- !is.null(zones_l) && any(zones_l$lo <= price & zones_l$hi >= price)
+
   # ── Targets: repetition-validated zone, and the geometric measured move ──
-  target_zone <- if (!is.null(res)) res$lo else NA_real_
+  # With spot inside the zone the target is its upper edge — the level price
+  # must clear — rather than the lower edge it is already past.
+  res_in <- !is.null(res) && isTRUE(res$in_zone)
+  target_zone <- zone_ref(res, "res")
   target_fib <- if (!is.null(fb)) unname(fb$ext[1]) else NA_real_
   target_fib_far <- if (!is.null(fb)) unname(fb$ext[2]) else NA_real_
   target <- if (is.finite(target_zone)) target_zone else target_fib
-  target_source <- if (is.finite(target_zone)) "zone" else
+  target_source <- if (is.finite(target_zone)) (if (res_in) "in_zone" else "zone") else
     if (is.finite(target_fib)) "fib_ext" else "none"
 
   # ── Stops: support zone, and the retracement band of the current leg ──
@@ -210,12 +268,18 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   # enough to be worth placing.
   usable <- function(lvl) is.finite(lvl) && lvl < price &&
     (price - lvl) >= cfg$near_stop * atr && (price - lvl) <= cfg$far_stop * atr
+  # The stop was always the zone's lower edge — below the whole band — so the
+  # in-zone case changes the level not at all, only whether the zone is seen.
+  # The stop goes below the whole band either way, so it is `lo` whether spot is
+  # above the zone or inside it. zone_ref() is the DISTANCE reference (first
+  # contact), which is a different level — do not wire the stop to it.
+  sup_in <- !is.null(sup) && isTRUE(sup$in_zone)
   stop_zone <- if (!is.null(sup)) sup$lo else NA_real_
-  zone_usable <- !is.null(sup) && usable(sup$lo)
+  zone_usable <- !is.null(sup) && usable(stop_zone)
   stop_fib <- if (!is.null(fb)) unname(fb$ret[3]) else NA_real_   # .618, deepest
   fib_usable <- usable(stop_fib)
   if (zone_usable) {
-    stop_px <- stop_zone; stop_source <- "zone_stop"
+    stop_px <- stop_zone; stop_source <- if (sup_in) "in_zone_stop" else "zone_stop"
   } else if (fib_usable) {
     stop_px <- stop_fib; stop_source <- "fib_retr_stop"
   } else {
@@ -238,6 +302,7 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   list(
     price = price, atr = atr, zz_th = th, n_pivots = if (is.null(piv)) 0L else nrow(piv),
     res = res, sup = sup, fib = fb,
+    in_res_zone = in_res_zone, in_sup_zone = in_sup_zone,
     target = target, target_source = target_source,
     target_zone = target_zone, target_fib = target_fib, target_fib_far = target_fib_far,
     stop_px = stop_px, stop_source = stop_source,

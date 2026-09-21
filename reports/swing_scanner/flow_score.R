@@ -33,20 +33,17 @@
 score_breakout <- function(last, price, etf_ret) {
   rs <- round(last$ret20 - etf_ret, 1)
 
-  # ── SETUP phase (6 criteria) ───────────────────────────────────────────
-  S1 <- !is.na(last$ma50)          && price > last$ma50
-  S2 <- !is.na(last$ma50_slope)    && last$ma50_slope > 0
-  S3 <- rs > 0
-  S4 <- !is.na(last$obv_slope)     && last$obv_slope > 0
-  S5 <- !is.na(last$squeeze_ratio) && last$squeeze_ratio < 0.65
-  S6 <- !is.na(last$vol_decline)   && last$vol_decline < 0.95
-
-  # ── BREAKOUT phase (4 criteria) ────────────────────────────────────────
-  BK1 <- !is.na(last$rsi14)      && last$rsi14 > 50 &&
-         !is.na(last$rsi_slope)  && last$rsi_slope > 0
-  BK2 <- !is.na(last$updn_ratio) && last$updn_ratio > 1.1
-  BK3 <- !is.na(last$rng_pct)    && last$rng_pct >= 70
-  BK4 <- !is.na(last$vol_surge)  && last$vol_surge >= 1.2
+  # Thresholds live in gates.R, not here. This function keeps the scanner's
+  # scoring and flag string; the pass/fail comes from the one implementation.
+  # It also fixes an NA path: `S3 <- rs > 0` was NA when rs was NA, which made
+  # setup_score itself NA. eval_gates() fails a gate on missing data instead.
+  if (!exists("eval_gates", mode = "function"))
+    stop("score_breakout() needs shared/gates.R sourced by the caller")
+  g <- eval_gates(gate_inputs(last, rs), price, "long")
+  S1 <- isTRUE(g[["S1"]]); S2 <- isTRUE(g[["S2"]]); S3 <- isTRUE(g[["S3"]])
+  S4 <- isTRUE(g[["S4"]]); S5 <- isTRUE(g[["S5"]]); S6 <- isTRUE(g[["S6"]])
+  BK1 <- isTRUE(g[["BK1"]]); BK2 <- isTRUE(g[["BK2"]])
+  BK3 <- isTRUE(g[["BK3"]]); BK4 <- isTRUE(g[["BK4"]])
 
   setup_score    <- sum(c(S1, S2, S3, S4, S5, S6))
   breakout_score <- sum(c(BK1, BK2, BK3, BK4))
