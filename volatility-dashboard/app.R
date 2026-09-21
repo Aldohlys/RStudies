@@ -352,6 +352,10 @@ server <- function(input, output, session) {
       webshot2::webshot(temp_html, file = file, vwidth = 1200, vheight = 800)
     }
   )
+
+  # Closing the browser tab stops the R process instead of leaving an
+  # orphan Rscript holding the port and the console window open.
+  session$onSessionEnded(stopApp)
 }
 
 # Run the application
