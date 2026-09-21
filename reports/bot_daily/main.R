@@ -161,6 +161,33 @@ one_row <- function(row, direction, bench_ret20) {
   f1 <- is.finite(atr_pctile) && atr_pctile >= 75
   f2 <- is.finite(prior20_atr) && abs(prior20_atr) >= 2
 
+  # Overnight gap risk, measured against THIS trade's stop rather than against
+  # the name's peers. Tickers.GapShare is the overnight SHARE of variance and
+  # #82 A.3 established it as a stable name attribute, but across these 169
+  # rows it does not predict whether a gap clears the stop: Spearman 0.073,
+  # inside one standard error of zero. What does is the stop distance itself
+  # (Spearman -0.889), which the zone engine sets per session. So the quantity
+  # is trade-specific and belongs here, not in monthly membership. gap_share
+  # still tracks gap SIZE as designed (Spearman 0.477 against gap_p95_atr).
+  gdat <- utils::tail(d, 505)   # NOT `gd` - that is the gate vector from eval_gates()
+  r_on <- log(gdat$Open[-1] / gdat$Close[-nrow(gdat)])
+  r_on <- r_on[is.finite(r_on)]
+  gap_p95_pct <- if (length(r_on) >= 200)
+                   unname(stats::quantile(abs(r_on), 0.95)) * 100 else NA_real_
+  stop_dist <- px - .n(lr$stop_px)
+  gap_vs_stop <- if (is.finite(gap_p95_pct) && is.finite(stop_dist) && stop_dist > 0)
+                   gap_p95_pct / 100 * px / stop_dist else NA_real_
+
+  # Veto reasons compose: a row can be standing in a zone AND unable to hold
+  # its stop overnight, and the reader wants both.
+  veto <- character(0)
+  if (isTRUE(lr$in_res_zone) && isTRUE(lr$in_sup_zone)) veto <- "in_both"
+  else if (isTRUE(lr$in_res_zone)) veto <- "in_resistance"
+  else if (isTRUE(lr$in_sup_zone)) veto <- "in_support"
+  # >= 1 means a 95th-percentile overnight move covers the whole stop, so the
+  # stop is not a stop: price gaps through it instead of trading through it.
+  if (isTRUE(gap_vs_stop >= 1)) veto <- c(veto, "gap_through_stop")
+
   list(
     date = as.character(as.Date(tail(d$date, 1))),
     name = row$name, yahoo = row$yahoo, direction = direction,
@@ -244,13 +271,14 @@ one_row <- function(row, direction, bench_ret20) {
 
     atr_band = row$atr_band, gap_tercile = row$gap_tercile,
 
-    # Entry veto: price standing in a zone is mid-struggle, with the level that
-    # decides the move at arm's length on both sides. No BOT entry is taken
-    # there. The row is kept so the level read stays visible.
-    tradable = as.integer(!(isTRUE(lr$in_res_zone) || isTRUE(lr$in_sup_zone))),
-    veto_reason = if (isTRUE(lr$in_res_zone) && isTRUE(lr$in_sup_zone)) "in_both"
-                  else if (isTRUE(lr$in_res_zone)) "in_resistance"
-                  else if (isTRUE(lr$in_sup_zone)) "in_support" else "",
+    # Entry veto, assembled above. Price standing in a zone is mid-struggle,
+    # with the level that decides the move at arm's length on both sides; a
+    # stop a single overnight move can clear is not a stop. The row is kept
+    # either way so the level read stays visible.
+    tradable = as.integer(length(veto) == 0),
+    veto_reason = paste(veto, collapse = "+"),
+    gap_p95_pct = round(gap_p95_pct, 2),
+    gap_vs_stop = round(gap_vs_stop, 2),
 
     note = if (identical(lr$stop_source, "atr_stop"))
              sprintf("nearest support %.1f ATR away - ATR stop used",
@@ -269,6 +297,7 @@ COLS <- c("date","name","yahoo","direction","tradable","veto_reason",
   "leg_low","leg_anchor_date","leg_high",
   "fib_ret_382","fib_ret_500","fib_ret_618","fib_ext_1272","fib_ext_1618",
   "target","target_source","target_agree","stop","stop_source","stop_agree",
+  "gap_p95_pct","gap_vs_stop",
   "level_basis","asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",

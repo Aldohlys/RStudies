@@ -123,7 +123,12 @@ compute_one <- function(tk, fx_rate, tws_up) {
     # hold rows whose bid/ask are NaN, which would read as a spurious miss.
     q <- tryCatch(resolve_option_spread(tk$Name, px, target_dte = 30, tws_ok = TRUE),
                   error = function(e) NULL)
-    v <- if (!is.null(q) && is.list(q)) (q$value %||% NULL) else NULL
+    # NOT `q$value %||% NULL`: the %||% above is scalar-only (length(a) != 1
+    # falls through to b), and q$value is an 8-element list, so it returned
+    # NULL for every ticker on every run. That is why AtmBidAskPct and
+    # BOT_VehicleHint were NULL on all 352 rows even with TWS connected, while
+    # the note recorded "bid-ask: LIVE" — the fetch had genuinely succeeded.
+    v <- if (!is.null(q) && is.list(q)) q$value else NULL
     if (!is.null(v) && is.finite(.n(v$atm_bid_ask_pct))) {
       ba <- .n(v$atm_bid_ask_pct); ba_asof <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     } else {
@@ -219,10 +224,16 @@ rows <- lapply(res, function(r) {
   hint <- if (is.finite(.n(r$atm_bid_ask)))
             (if (.n(r$atm_bid_ask) > BIDASK_STOCK) "stock_only" else "options") else NA_character_
 
+  # GapShare_Tercile is NOT a membership criterion (TODO 88.4, closed
+  # 2026-09-21). It was meant to keep out names whose price gaps THROUGH a
+  # stop, but across 169 daily rows GapShare does not predict that: Spearman
+  # 0.073 against the share of the stop a p95 overnight move covers, while the
+  # stop distance itself correlates -0.889. The risk is per-trade, so BOT_daily
+  # tests it directly as gap_vs_stop and vetoes with gap_through_stop.
+  # GapShare and its tercile are still computed and written, as sizing context.
   reason <- if (identical(r$status, "FAILED")) "no_data"
             else if (is.na(.s(r$atr_band))) "no_atr"
             else if (identical(.s(r$atr_band), "low")) "atr_band"
-            else if (identical(gs_t, "high")) "gap_share"
             else if (identical(adv_pass, 0L)) "adv"
             else if (is.finite(.n(r$opp_n)) && r$opp_n < 1) "no_opportunity"
             else "eligible"
