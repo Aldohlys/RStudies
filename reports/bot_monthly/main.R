@@ -10,7 +10,11 @@
 #
 # Run from the RStudies project root (renv):
 #   Rscript reports/bot_monthly/main.R [--dry-run] [--db PATH] [--no-tws]
-#                                      [--out PATH] [--limit N] [SYM ...]
+#                                      [--out PATH] [--limit N] [--resume] [SYM ...]
+#
+# --resume skips phase 1 and rebuilds membership from data/bot_monthly_phase1.rds,
+# which the previous run wrote. Phase 1 is ~95% of the runtime, so a failure in
+# phases 2-3 is a seconds-long recovery rather than another three hours.
 #
 # --dry-run computes and writes the CSV but does not touch Tickers.
 # --db runs against a copy of the database; use it before the first real run.
@@ -39,6 +43,7 @@ OUT_DIR      <- "C:/Users/aldoh/Documents/NewTrading/reports"
 args    <- commandArgs(trailingOnly = TRUE)
 dry_run <- "--dry-run" %in% args
 no_tws  <- "--no-tws"  %in% args
+resume  <- "--resume"  %in% args
 opt <- function(flag, default = NA_character_) {
   i <- match(flag, args); if (!is.na(i) && length(args) > i) args[i + 1L] else default
 }
@@ -186,18 +191,40 @@ for (cur in unique(stats::na.omit(tickers$Currency))) {
   }, error = function(e) NA_real_)
 }
 
-res <- list()
-for (i in seq_len(nrow(tickers))) {
-  tk <- tickers[i, , drop = FALSE]
-  r <- tryCatch(compute_one(tk, fx[[tk$Currency]] %||% NA_real_, tws_up),
-                error = function(e) { message(sprintf("  %s: %s", tk$Name, conditionMessage(e))); NULL })
-  if (!is.null(r)) res[[length(res) + 1]] <- r
-  if (i %% 25 == 0) message(sprintf("  ... %d/%d", i, nrow(tickers)))
+# Phase 1 is ~95% of the runtime (2h46m for 312 rows on 2026-09-21) and phases
+# 2-3 are seconds, so the cache lives beside the database rather than in
+# tempdir(). It used to be written to tempdir(), which R deletes when the
+# session exits: a crash anywhere in the cheap half destroyed the expensive
+# half. That happened - a phase-3 parse error threw away the whole fetch.
+# `--resume` re-derives membership from the cache without touching TWS.
+CACHE_PATH <- local({
+  d <- dirname(Sys.getenv("R_DB_PATH", unset = ""))
+  if (!nzchar(d) || !dir.exists(d)) d <- file.path(SCRIPT_DIR, "..", "..", "..", "data")
+  file.path(normalizePath(d, mustWork = FALSE), "bot_monthly_phase1.rds")
+})
+
+if (resume) {
+  if (!file.exists(CACHE_PATH)) stop("--resume: no phase-1 cache at ", CACHE_PATH)
+  cached <- readRDS(CACHE_PATH)
+  res <- cached$res
+  message(sprintf("--resume: %d rows from phase 1 of %s (no TWS, no fetch)",
+                  length(res), as.character(cached$asof)))
+  if (!identical(as.Date(cached$asof), Sys.Date()))
+    message("  NOTE: that cache is not from today; terciles and membership ",
+            "will be computed on its prices.")
+} else {
+  res <- list()
+  for (i in seq_len(nrow(tickers))) {
+    tk <- tickers[i, , drop = FALSE]
+    r <- tryCatch(compute_one(tk, fx[[tk$Currency]] %||% NA_real_, tws_up),
+                  error = function(e) { message(sprintf("  %s: %s", tk$Name, conditionMessage(e))); NULL })
+    if (!is.null(r)) res[[length(res) + 1]] <- r
+    if (i %% 25 == 0) message(sprintf("  ... %d/%d", i, nrow(tickers)))
+  }
+  if (!length(res)) { message("nothing computed"); quit(status = 1) }
+  saveRDS(list(asof = Sys.Date(), res = res), CACHE_PATH)
+  message("phase 1 cached at ", CACHE_PATH, " (", length(res), " rows)")
 }
-if (!length(res)) { message("nothing computed"); quit(status = 1) }
-cache_path <- file.path(tempdir(), "bot_monthly_phase1.rds")
-saveRDS(res, cache_path)
-message("phase 1 cached at ", cache_path, " (", length(res), " rows)")
 
 # ── Phase 2: cross-sectional terciles ──────────────────────────────────────
 # Cut against the universe, which is why this cannot be a per-ticker decision.
