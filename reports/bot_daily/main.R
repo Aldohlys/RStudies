@@ -8,7 +8,8 @@
 #   Rscript reports/bot_daily/main.R [--detail] [--direction long|short|both]
 #                                    [--out PATH] [SYM ...]
 #
-# --detail emits all 86 fields; the default emits the 56 key/decision fields.
+# The default emits the 12 columns read daily (BOT_READ_DEFAULT); --detail
+# emits every field.
 # The per-name read itself lives in shared/bot_read.R, shared with /analyze.
 # Naming an explicit symbol list bypasses universe membership.
 
@@ -118,26 +119,25 @@ if (!length(rows)) { message("No rows produced."); quit(status = 1) }
 
 df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 df <- df[, BOT_READ_COLS, drop = FALSE]
-if (!detail) df <- df[, setdiff(BOT_READ_COLS, BOT_READ_DETAIL_ONLY), drop = FALSE]
 
-# Reading order: tradable rows first, then trend_state desc, then
-# res_pct_of_em10 asc. Not a ranking. Vetoed rows keep their level read and sit
-# below the block that can actually be traded today.
-# asym is NOT a sort key (TODO 88.3): it is unbounded, anti-correlated with the
-# trend cluster (Spearman -0.335 on 69 names) and highest on rows whose target
-# rests on no observed level, so sorting on it put 0/6-trend names with
-# unreachable targets at the top while the book enters S1 at 79.8% of trades.
-trend_n <- suppressWarnings(as.integer(sub("/.*$", "", df$trend_state)))
+# Reading order: tradable rows first, then asym_em desc, then res_pct_of_em10
+# asc. Not a ranking. Vetoed rows keep their level read below the block that
+# can be traded today. The edge is asymmetry over many bets, so asymmetry is
+# the key, in its bounded form (asym_em, shared/bot_read.R): raw asym is
+# unbounded and let unreachable or geometric targets lead the file (TODO 88.3).
+# asym_em still runs against trend (asym vs trend count Spearman -0.335), so
+# trend_state stays a default column for the reader to weigh.
 df <- df[order(-df$tradable,
-               -ifelse(is.na(trend_n), -1L, trend_n),
+               -ifelse(is.na(df$asym_em), -Inf, df$asym_em),
                ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
 
 if (is.na(out_path))
   out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.csv", format(Sys.Date(), "%Y%m%d")))
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
-utils::write.table(df, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
+out <- if (detail) df else df[, BOT_READ_DEFAULT, drop = FALSE]
+utils::write.table(out, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
 
-message(sprintf("Wrote %d rows x %d cols -> %s", nrow(df), ncol(df), out_path))
+message(sprintf("Wrote %d rows x %d cols -> %s", nrow(out), ncol(out), out_path))
 stale <- unique(df$name[df$bar_lag > 0])
 if (length(stale))
   message(sprintf("Stale last bar (weekdays missing, holidays included) for %d name(s): %s",
@@ -145,5 +145,4 @@ if (length(stale))
 message(sprintf("Tradable: %d of %d  (vetoed: %s)", sum(df$tradable == 1L), nrow(df),
                 paste(sprintf("%s %d", names(table(df$veto_reason[df$tradable == 0L])),
                               table(df$veto_reason[df$tradable == 0L])), collapse = ", ")))
-print(utils::head(df[, intersect(c("name","direction","px","target","target_source",
-  "stop","stop_source","asym","trend_state","confluence"), names(df))], 12))
+print(utils::head(df[, BOT_READ_DEFAULT], 12))

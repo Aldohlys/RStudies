@@ -157,6 +157,21 @@ bot_read_row <- function(row, direction, bench_ret20) {
   gap_vs_stop <- if (is.finite(gap_p95_pct) && is.finite(stop_dist) && stop_dist > 0)
                    gap_p95_pct / 100 * px / stop_dist else NA_real_
 
+  # Bounded asymmetry, the reading-order key. BOT's edge is payoff asymmetry
+  # over many bets, not win rate, so the sheet sorts on asymmetry, but raw asym
+  # is unbounded: a far target (ALB 8.8 needing 3 typical 10-session moves) or
+  # an unconstrained Fibonacci extension dominates it (TODO 88.3). The reward
+  # is capped at the typical 10-session move toward the target, the horizon a
+  # 1-4 week trade can expect to cover. The risk is the real stop, but never
+  # less than one ATR: a stop inside a typical day's range is taken out by
+  # noise, and #94 found the support zones such stops sit under break as often
+  # as a random level. Without the floor the top of the file was tight stops
+  # (SRE 4.53 on a stop 1.3% below px).
+  tgt_dist <- sgn * (.br_n(lr$target) - px)
+  risk <- if (is.finite(stop_dist) && stop_dist > 0) max(stop_dist, atr) else NA_real_
+  asym_em <- if (is.finite(tgt_dist) && tgt_dist > 0 && is.finite(em_abs) && is.finite(risk))
+               min(tgt_dist, em_abs) / risk else NA_real_
+
   # Spot standing inside a zone is reported, not vetoed (TODO 94). Over 284
   # names, a long entered inside any zone reached +1.5 ATR before -1.5 ATR in
   # 53.3% of cases against 53.6% outside (difference -0.003, SE 0.009), while
@@ -231,6 +246,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
     stop_agree = if (is.na(lr$fib_confirms_sup)) NA_integer_
                  else as.integer(isTRUE(lr$fib_confirms_sup)),
     asym = round(.br_n(lr$asym), 3), asym_fib = round(.br_n(lr$asym_fib), 3),
+    asym_em = round(asym_em, 3),
 
     em10_lo = em_lo, em10_hi = em_hi, em10_regime_div = em_div,
 
@@ -288,12 +304,16 @@ BOT_READ_COLS <- c("date","bar_lag","name","yahoo","direction","tradable","veto_
   "fib_ret_382","fib_ret_500","fib_ret_618","fib_ext_1272","fib_ext_1618",
   "target","target_source","target_agree","stop","stop_source","stop_agree",
   "gap_p95_pct","gap_vs_stop",
-  "level_basis","asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
+  "level_basis","asym_em","asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",
   "trend_state","compression_state","supply_state","rs_state","confluence",
   "atr_band","gap_tercile","note")
+# Default output: the few columns read every day. BOT_daily is a daily sheet,
+# so it stays short; --detail emits every field.
+BOT_READ_DEFAULT <- c("name","direction","px","tradable","asym_em","asym",
+  "target","target_source","stop","res_pct_of_em10","trend_state","zone_state")
 BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng_dyn",
   "res_first","res_dist_pct","sup_first","sup_dist_pct",
   "fib_ret_382","fib_ret_500","em10_lo","ema50","ema50_slope","w_ema50",

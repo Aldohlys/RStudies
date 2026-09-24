@@ -1157,7 +1157,7 @@ render_analyze_html <- function(ctx, out_dir) {
     row("zone behind", band(r$sup_zone_lo, r$sup_zone_hi), f(r$sup_dist_atr), f(r$sup_pct_of_em10, 0),
         f(r$sup_touches, 0), f(r$sup_last)),
     row("target", sprintf("%s (%s)", f(r$target), r$target_source),
-        sprintf("asym %s", f(r$asym)), sprintf("basis %s", r$level_basis), "", ""),
+        sprintf("asym_em %s &middot; asym %s", f(r$asym_em), f(r$asym)), sprintf("basis %s", r$level_basis), "", ""),
     row("stop", sprintf("%s (%s)", f(r$stop), r$stop_source), "", "", "", ""),
     '</table>')
 
