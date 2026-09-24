@@ -258,11 +258,23 @@ rows <- lapply(res, function(r) {
   # stop distance itself correlates -0.889. The risk is per-trade, so BOT_daily
   # tests it directly as gap_vs_stop and vetoes with gap_through_stop.
   # GapShare and its tercile are still computed and written, as sizing context.
+  #
+  # ATR_Band is not a membership criterion either (TODO 88.2). Its 1.7% floor
+  # was the retired Python scanner's daily Gate 4 veto, carried into membership
+  # without being re-derived, and it excluded GLD while a GLD trade was open.
+  # #82 A.2 keeps atr_pct as a name attribute for sizing, not for exclusion.
+  # A missing band still means the ATR history could not be computed.
+  #
+  # BOT_Opportunities_2y is not a membership criterion (TODO 88.1). Measured
+  # 2026-09-24 over 335 names x 504 sessions, no definition built from gate
+  # firings separates names: sessions in the condition min 55, transitions
+  # into it min 8, episodes min 8. The full nine gates reach zero on 62
+  # names, but the per-name counts are Poisson (dispersion 1.17, mean 1.95;
+  # chance alone gives ~48 zeros), so that cut would exclude by noise. The
+  # count is still computed and written, as a reported attribute.
   reason <- if (identical(r$status, "FAILED")) "no_data"
             else if (is.na(.s(r$atr_band))) "no_atr"
-            else if (identical(.s(r$atr_band), "low")) "atr_band"
             else if (identical(adv_pass, 0L)) "adv"
-            else if (is.finite(.n(r$opp_n)) && r$opp_n < 1) "no_opportunity"
             else "eligible"
   elig <- as.integer(identical(reason, "eligible"))
 

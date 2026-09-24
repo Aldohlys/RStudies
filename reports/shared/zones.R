@@ -291,6 +291,21 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   asym_fib <- if (is.finite(target_fib) && is.finite(stop_fib) && price > stop_fib)
     (target_fib - price) / (price - stop_fib) else NA_real_
 
+  # The zone stack behind the selected resistance (TODO 88.7). `res` is only the
+  # first obstacle; KTOS showed 60.42-63.21 while the 65.33-67.97 wall the chart
+  # marks was built and dropped. res2 is the next zone wholly above `res`;
+  # n_res_to_ext counts every zone overhead or containing spot whose lower edge
+  # is below the 1.272 extension, so the row says how much supply sits between
+  # spot and the geometric target.
+  res2 <- NULL
+  if (!is.null(res) && !is.null(zones_h)) {
+    above <- zones_h[zones_h$lo > res$hi, , drop = FALSE]
+    if (nrow(above)) res2 <- above[which.min(above$lo), , drop = FALSE]
+  }
+  n_res_to_ext <- if (!is.finite(target_fib)) NA_integer_
+    else if (is.null(zones_h)) 0L
+    else sum(zones_h$hi >= price & zones_h$lo < target_fib)
+
   span_hi <- if (!is.null(res)) res$mid else target
   rng_dyn <- if (!is.null(sup) && is.finite(span_hi) && span_hi > sup$mid)
     (price - sup$mid) / (span_hi - sup$mid) * 100 else NA_real_
@@ -301,7 +316,7 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
 
   list(
     price = price, atr = atr, zz_th = th, n_pivots = if (is.null(piv)) 0L else nrow(piv),
-    res = res, sup = sup, fib = fb,
+    res = res, sup = sup, fib = fb, res2 = res2, n_res_to_ext = n_res_to_ext,
     in_res_zone = in_res_zone, in_sup_zone = in_sup_zone,
     target = target, target_source = target_source,
     target_zone = target_zone, target_fib = target_fib, target_fib_far = target_fib_far,

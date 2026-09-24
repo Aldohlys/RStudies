@@ -209,6 +209,10 @@ one_row <- function(row, direction, bench_ret20) {
     res_dist_pct    = if (!is.null(res)) round(.pct(res_ref - px, px), 3) else NA_real_,
     res_dist_atr    = if (!is.null(res)) round((res_ref - px) / atr, 3) else NA_real_,
     res_pct_of_em10 = if (!is.null(res)) round(.pct(res_ref - px, em_abs), 1) else NA_real_,
+    res2_zone_lo = if (!is.null(lr$res2)) round(lr$res2$lo, 4) else NA_real_,
+    res2_zone_hi = if (!is.null(lr$res2)) round(lr$res2$hi, 4) else NA_real_,
+    res2_touches = if (!is.null(lr$res2)) lr$res2$touches else NA_integer_,
+    n_res_to_ext = lr$n_res_to_ext,
 
     sup_zone_lo = if (!is.null(sup)) round(sup$lo, 4) else NA_real_,
     sup_zone_hi = if (!is.null(sup)) round(sup$hi, 4) else NA_real_,
@@ -292,6 +296,7 @@ COLS <- c("date","name","yahoo","direction","tradable","veto_reason",
   "rng_pct_20","rng_dyn","zone_window_sessions",
   "res_zone_lo","res_zone_hi","res_touches","res_first","res_last",
   "res_dist_pct","res_dist_atr","res_pct_of_em10",
+  "res2_zone_lo","res2_zone_hi","res2_touches","n_res_to_ext",
   "sup_zone_lo","sup_zone_hi","sup_touches","sup_first","sup_last",
   "sup_dist_pct","sup_dist_atr","sup_pct_of_em10",
   "leg_low","leg_anchor_date","leg_high",
@@ -342,11 +347,16 @@ df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors 
 df <- df[, COLS, drop = FALSE]
 if (!detail) df <- df[, setdiff(COLS, DETAIL_ONLY), drop = FALSE]
 
-# Reading order: tradable rows first, then asym desc, then res_pct_of_em10 asc.
-# Not a ranking. Vetoed rows keep their level read and sit below the block that
-# can actually be traded today.
+# Reading order: tradable rows first, then trend_state desc, then
+# res_pct_of_em10 asc. Not a ranking. Vetoed rows keep their level read and sit
+# below the block that can actually be traded today.
+# asym is NOT a sort key (TODO 88.3): it is unbounded, anti-correlated with the
+# trend cluster (Spearman -0.335 on 69 names) and highest on rows whose target
+# rests on no observed level, so sorting on it put 0/6-trend names with
+# unreachable targets at the top while the book enters S1 at 79.8% of trades.
+trend_n <- suppressWarnings(as.integer(sub("/.*$", "", df$trend_state)))
 df <- df[order(-df$tradable,
-               -ifelse(is.na(df$asym), -Inf, df$asym),
+               -ifelse(is.na(trend_n), -1L, trend_n),
                ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
 
 if (is.na(out_path))
