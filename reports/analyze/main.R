@@ -30,6 +30,8 @@ source(file.path(SCRIPT_DIR, "..", "shared", "freshness.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "indicators.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "gates.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "zones.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "weekly.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "bot_read.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "universe.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "live_sources.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "vehicle_rule.R"))
@@ -206,8 +208,20 @@ message(sprintf("  D: structures=%s chain=%s entry=%s | targets_agreeing=%s | wi
                 phase_d$entry_status_prov, phase_d$targets_agreeing,
                 phase_d$n_structures_within_cap))
 
+# ── BOT_daily per-name read (the same function bot_daily loops) ───────────
+message("BOT_daily read...")
+bot_read <- run_bot_read(args$ticker, args$direction)
+message(sprintf("  BOT: %s%s", bot_read$status,
+                if (!is.null(bot_read$row))
+                  sprintf(" | bar %s (lag %d) tradable=%s zone_state=%s target=%s stop=%s",
+                          bot_read$row$date, bot_read$row$bar_lag, bot_read$row$tradable,
+                          if (nzchar(bot_read$row$zone_state)) bot_read$row$zone_state else "-",
+                          bot_read$row$target, bot_read$row$stop)
+                else paste0(" - ", bot_read$reason)))
+
 # ── Phase E: data-coverage summary (neutral provenance, no verdict) ────────
-phase_e <- run_phase_e(phase_a, phase_b, phase_c, phase_d, config = CONFIG)
+phase_e <- run_phase_e(phase_a, phase_b, phase_c, phase_d, config = CONFIG,
+                       bot_read = bot_read)
 for (cv in phase_e$coverage)
   message(sprintf("  E coverage | %-26s %s",
                   gsub("&amp;", "&", cv$dimension), cv$status))
@@ -221,6 +235,7 @@ ctx <- list(
   phase_b   = phase_b,
   phase_c   = phase_c,
   phase_d   = phase_d,
+  bot_read  = bot_read,
   phase_e   = phase_e,
   config    = CONFIG
 )

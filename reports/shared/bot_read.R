@@ -30,6 +30,52 @@ bot_fetch_daily <- function(sym) {
 .br_n <- function(x) if (is.null(x) || length(x) != 1 || !is.finite(x)) NA_real_ else x
 .br_pct <- function(num, den) if (is.finite(num) && is.finite(den) && den != 0) num / den * 100 else NA_real_
 
+#' Universe rows for explicitly named symbols, with their Tickers attributes.
+#'
+#' A named symbol used to get NA for atr_band and gap_tercile and its own name
+#' as the Yahoo symbol, even when Tickers knows both (TODO 93.5). Names absent
+#' from Tickers keep that fallback, so a raw Yahoo symbol still works.
+#'
+#' @param names character vector of Tickers.Name values (or Yahoo symbols)
+#' @return data.frame(name, yahoo, atr_band, gap_tercile, bench)
+bot_read_ticker_rows <- function(names) {
+  out <- data.frame(name = names, yahoo = names, atr_band = NA_character_,
+                    gap_tercile = NA_character_, bench = NA_character_,
+                    stringsAsFactors = FALSE)
+  tk <- tryCatch({
+    conn <- Tdata::safe_db_connect()
+    on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    DBI::dbGetQuery(conn, sprintf(
+      "SELECT Name, YahooName, ATR_Band, GapShare_Tercile FROM Tickers WHERE Name IN (%s)",
+      paste(rep("?", length(names)), collapse = ",")), params = as.list(names))
+  }, error = function(e) NULL)
+  if (is.null(tk) || !nrow(tk)) return(out)
+  i <- match(out$name, tk$Name); ok <- !is.na(i)
+  yh <- tk$YahooName[i[ok]]
+  out$yahoo[ok] <- ifelse(!is.na(yh) & nzchar(yh), yh, out$name[ok])
+  out$atr_band[ok] <- tk$ATR_Band[i[ok]]
+  out$gap_tercile[ok] <- tk$GapShare_Tercile[i[ok]]
+  out
+}
+
+#' Weekdays missing between the last daily bar and today.
+#'
+#' 0 when the bar is today's (partial, intraday) or the previous weekday's.
+#' Yahoo can return an empty row for the last session, which the fetch drops
+#' silently (EL, 2026-09-22), so the read would be priced a session late with
+#' nothing but the `date` column to show it. Exchange holidays count as
+#' missing weekdays; a lag of 1 on the day after a holiday is expected.
+#'
+#' @param bar_date last bar date (Date or ISO string)
+#' @param today reference date
+#' @return integer
+bot_bar_lag <- function(bar_date, today = Sys.Date()) {
+  bar_date <- as.Date(bar_date)
+  if (is.na(bar_date) || bar_date >= today - 1) return(0L)
+  days <- seq(bar_date + 1, today - 1, by = "day")
+  sum(!format(days, "%u") %in% c("6", "7"))
+}
+
 bot_read_row <- function(row, direction, bench_ret20) {
   missing <- .bot_read_deps[!vapply(.bot_read_deps, exists, logical(1), mode = "function")]
   if (length(missing))
@@ -127,6 +173,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
 
   list(
     date = as.character(as.Date(tail(d$date, 1))),
+    bar_lag = bot_bar_lag(tail(d$date, 1)),
     name = row$name, yahoo = row$yahoo, direction = direction,
     px = round(px, 4), atr = round(atr, 4), atr_pct = round(atr_pct_now, 3),
     atr_pctile = round(atr_pctile, 1), prior20_atr = round(prior20_atr, 2),
@@ -228,7 +275,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
 }
 
 # Column order and tiers are the spec's, kept here so a schema change is one edit.
-BOT_READ_COLS <- c("date","name","yahoo","direction","tradable","veto_reason","zone_state",
+BOT_READ_COLS <- c("date","bar_lag","name","yahoo","direction","tradable","veto_reason","zone_state",
   "px","atr","atr_pct","atr_pctile","prior20_atr","entry_factors",
   "zz_th","n_pivots",
   "rng_pct_20","rng_dyn","zone_window_sessions",

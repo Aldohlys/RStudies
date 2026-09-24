@@ -49,11 +49,7 @@ DIRECTIONS <- if (identical(direction_arg, "both")) c("long", "short") else dire
 # exists the curated book_BOT flag in the universe CSV is the fallback, and the
 # fallback is logged rather than silent.
 load_universe <- function() {
-  if (length(syms_arg)) {
-    return(data.frame(name = syms_arg, yahoo = syms_arg,
-                      atr_band = NA_character_, gap_tercile = NA_character_,
-                      bench = NA_character_, stringsAsFactors = FALSE))
-  }
+  if (length(syms_arg)) return(bot_read_ticker_rows(syms_arg))
   from_tickers <- tryCatch({
     conn <- Tdata::safe_db_connect()
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
@@ -142,6 +138,10 @@ dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
 utils::write.table(df, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
 
 message(sprintf("Wrote %d rows x %d cols -> %s", nrow(df), ncol(df), out_path))
+stale <- unique(df$name[df$bar_lag > 0])
+if (length(stale))
+  message(sprintf("Stale last bar (weekdays missing, holidays included) for %d name(s): %s",
+                  length(stale), paste(utils::head(stale, 30), collapse = ", ")))
 message(sprintf("Tradable: %d of %d  (vetoed: %s)", sum(df$tradable == 1L), nrow(df),
                 paste(sprintf("%s %d", names(table(df$veto_reason[df$tradable == 0L])),
                               table(df$veto_reason[df$tradable == 0L])), collapse = ", ")))

@@ -433,7 +433,7 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
 # coverage summary: one row per dimension, reporting how much of the report is
 # real (LIVE / CACHED / NO DATA / FETCH FAILED). NO TOP PICK/WATCH/SKIP, NO
 # phase_of_drop.
-run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config) {
+run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = NULL) {
   # Fold the vol-funnel's per-signal statuses into one funnel-level status:
   # the worst (most-degraded) of its parts, so a single FETCH FAILED isn't
   # hidden behind five LIVE rows.
@@ -494,6 +494,35 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config) {
                           phase_d$n_structures_within_cap %||% 0L,
                           config$risk_cap_lot_usd %||% "?"))
   )
+  if (!is.null(bot_read))
+    coverage[[length(coverage) + 1]] <- list(
+      dimension = "BOT_daily read",
+      status = bot_read$status,
+      detail = if (!is.null(bot_read$row))
+        sprintf("daily bar %s%s", bot_read$row$date,
+                if (isTRUE(bot_read$row$bar_lag > 0))
+                  sprintf(" &middot; %d weekday(s) behind", bot_read$row$bar_lag) else "")
+        else bot_read$reason %||% "")
 
   list(coverage = coverage)
+}
+
+# ── BOT_daily per-name read ──────────────────────────────────────────────
+#
+# The row bot_daily writes for this name and direction, from the same function
+# (shared/bot_read.R). No benchmark is passed yet (TODO 93.4), so rs20 is NA
+# and rs_state reads "n/a". Priced on the Yahoo daily bar, not the live spot:
+# the zone engine reads the whole daily series, and grafting a live quote onto
+# it would mix two sources. The report states the bar date instead.
+run_bot_read <- function(ticker, direction) {
+  row <- tryCatch(bot_read_ticker_rows(ticker), error = function(e) NULL)
+  if (is.null(row) || !nrow(row))
+    return(list(status = "FETCH FAILED", reason = "Tickers lookup failed"))
+  r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, NA_real_),
+                error = function(e) conditionMessage(e))
+  if (is.character(r)) return(list(status = "FETCH FAILED", reason = r))
+  if (is.null(r))
+    return(list(status = "NO DATA",
+                reason = "daily history shorter than 130 bars, or ATR unavailable"))
+  list(status = "LIVE", row = r, retrieved_at = Sys.time())
 }
