@@ -182,32 +182,43 @@ zone_ref <- function(z, side) {
 
 #' Fibonacci retracements and extensions for the current leg.
 #'
-#' Anchor is the most recent confirmed swing LOW; the leg top is the highest
-#' High since that pivot. Retracements are measured down from the leg high
-#' (support candidates); extensions are projected up from the leg low, i.e. a
+#' Long: the anchor is the most recent confirmed swing LOW and the leg top is
+#' the highest High since it. Retracements are measured down from the leg high
+#' (stop candidates); extensions are projected up from the leg low, i.e. a
 #' measured move (target candidates).
 #'
-#' @param d data.frame with High (chronological)
+#' Short mirrors it: the anchor is the most recent confirmed swing HIGH, the leg
+#' bottom is the lowest Low since, retracements are measured UP from the leg low
+#' and extensions project DOWN from the leg high. `leg_low` / `leg_high` stay
+#' the physical low and high of the leg in both directions.
+#'
+#' @param d data.frame with High, Low (chronological)
 #' @param piv data.frame from zigzag_pivots()
+#' @param direction "long" or "short"
 #' @return list(leg_low, leg_high, leg, anchor_date, ret, ext), or NULL
-fib_levels <- function(d, piv) {
+fib_levels <- function(d, piv, direction = "long") {
   if (is.null(piv)) return(NULL)
-  lows <- piv[piv$type == "L", , drop = FALSE]
-  if (!nrow(lows)) return(NULL)
-  a <- lows[which.max(lows$idx), , drop = FALSE]
+  long <- !identical(direction, "short")
+  anchors <- piv[piv$type == (if (long) "L" else "H"), , drop = FALSE]
+  if (!nrow(anchors)) return(NULL)
+  a <- anchors[which.max(anchors$idx), , drop = FALSE]
   if (a$idx >= nrow(d)) return(NULL)
-  leg_low <- a$price
-  leg_high <- max(d$High[a$idx:nrow(d)], na.rm = TRUE)
+  if (long) {
+    leg_low <- a$price
+    leg_high <- max(d$High[a$idx:nrow(d)], na.rm = TRUE)
+  } else {
+    leg_high <- a$price
+    leg_low <- min(d$Low[a$idx:nrow(d)], na.rm = TRUE)
+  }
   leg <- leg_high - leg_low
   if (!is.finite(leg) || leg <= 0) return(NULL)
+  r <- c("0.382" = 0.382, "0.500" = 0.500, "0.618" = 0.618)
+  e <- c("1.272" = 1.272, "1.618" = 1.618)
   list(
     leg_low = leg_low, leg_high = leg_high, leg = leg,
     anchor_date = as.character(a$date),
-    ret = c("0.382" = leg_high - leg * 0.382,
-            "0.500" = leg_high - leg * 0.500,
-            "0.618" = leg_high - leg * 0.618),
-    ext = c("1.272" = leg_low + leg * 1.272,
-            "1.618" = leg_low + leg * 1.618))
+    ret = if (long) leg_high - leg * r else leg_low + leg * r,
+    ext = if (long) leg_low + leg * e else leg_high - leg * e)
 }
 
 #' Full level read for one name.
@@ -225,56 +236,74 @@ fib_levels <- function(d, piv) {
 #' Agreement between the two is the high-confidence case, so both are emitted
 #' along with `target_agree` / `stop_agree` rather than being collapsed into one
 #' number. The zone target is preferred when present because it is the validated
-#' one; the Fib extension carries a name that has no overhead supply at all.
+#' one; the Fib extension carries a name that has no supply in its path at all.
+#'
+#' Direction. The result is expressed on the TRADE's axis, not the chart's:
+#' `res` is the zone on the target side and `sup` the zone on the stop side.
+#' For a long those are resistance above and support below; for a short they
+#' are support below (built from pivot lows) and resistance above (from pivot
+#' highs). Distances toward either side stay >= 0, so the same fields read the
+#' same way in both directions (docs/BOT_TOOLS_DESIGN.md: "a short mirrors
+#' them").
 #'
 #' @param d data.frame with date, High, Low, Close (chronological)
 #' @param atr numeric ATR(14) in price, from calc_ind()'s atr14
-#' @param em_upper numeric upper edge of the N-session expected move, in price
-#'   (absolute, not percent); NA when unavailable
+#' @param em_target numeric size of the N-session expected move toward the
+#'   target, in price (absolute, positive); NA when unavailable
 #' @param cfg list of tuning constants
+#' @param direction "long" or "short"
 #' @return list with both level systems, the chosen target/stop and the readings
-level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
+level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
+                       direction = "long") {
+  long <- !identical(direction, "short")
+  sgn <- if (long) 1 else -1            # +1: target above spot; -1: below
   price <- tail(d$Close, 1)
   th <- zz_threshold(atr, price, cfg)
   piv <- zigzag_pivots(d, th)
   zones_h <- build_zones(piv, "H", atr, cfg)
   zones_l <- build_zones(piv, "L", atr, cfg)
-  res <- nearest_zone(zones_h, price, "res")
-  sup <- nearest_zone(zones_l, price, "sup")
-  fb <- fib_levels(d, piv)
+  # Target-side zones (tz) and stop-side zones (sz), and the side names
+  # nearest_zone()/zone_ref() use to find them relative to spot.
+  tz <- if (long) zones_h else zones_l
+  sz <- if (long) zones_l else zones_h
+  t_side <- if (long) "res" else "sup"
+  s_side <- if (long) "sup" else "res"
+  res <- nearest_zone(tz, price, t_side)
+  sup <- nearest_zone(sz, price, s_side)
+  fb <- fib_levels(d, piv, direction)
 
   # Containment is tested against EVERY zone, not the selected one. A zone that
   # contains spot can lose the touches test in nearest_zone() and never be
   # selected (KTOS, 2026-09-21), and price would still be sitting in it.
-  in_res_zone <- !is.null(zones_h) && any(zones_h$lo <= price & zones_h$hi >= price)
-  in_sup_zone <- !is.null(zones_l) && any(zones_l$lo <= price & zones_l$hi >= price)
+  in_res_zone <- !is.null(tz) && any(tz$lo <= price & tz$hi >= price)
+  in_sup_zone <- !is.null(sz) && any(sz$lo <= price & sz$hi >= price)
 
   # ── Targets: repetition-validated zone, and the geometric measured move ──
-  # With spot inside the zone the target is its upper edge — the level price
-  # must clear — rather than the lower edge it is already past.
+  # With spot inside the zone the target is its far edge — the level price
+  # must clear — rather than the near edge it is already past.
   res_in <- !is.null(res) && isTRUE(res$in_zone)
-  target_zone <- zone_ref(res, "res")
+  target_zone <- zone_ref(res, t_side)
   target_fib <- if (!is.null(fb)) unname(fb$ext[1]) else NA_real_
   target_fib_far <- if (!is.null(fb)) unname(fb$ext[2]) else NA_real_
   target <- if (is.finite(target_zone)) target_zone else target_fib
   target_source <- if (is.finite(target_zone)) (if (res_in) "in_zone" else "zone") else
     if (is.finite(target_fib)) "fib_ext" else "none"
 
-  # ── Stops: support zone, and the retracement band of the current leg ──
-  # The nearest repetition-validated support can sit so far below that no one
+  # ── Stops: stop-side zone, and the retracement band of the current leg ──
+  # The nearest repetition-validated zone can sit so far away that no one
   # would place a stop there (MSFT: 6.6 ATR in the trial), so fall back in order
   # zone -> retracement -> plain ATR, and say which was used.
-  # A usable stop is far enough below spot to sit outside the noise and near
+  # A usable stop is far enough from spot to sit outside the noise and near
   # enough to be worth placing.
-  usable <- function(lvl) is.finite(lvl) && lvl < price &&
-    (price - lvl) >= cfg$near_stop * atr && (price - lvl) <= cfg$far_stop * atr
-  # The stop was always the zone's lower edge — below the whole band — so the
+  usable <- function(lvl) is.finite(lvl) && sgn * (price - lvl) > 0 &&
+    sgn * (price - lvl) >= cfg$near_stop * atr && sgn * (price - lvl) <= cfg$far_stop * atr
+  # The stop goes beyond the whole band (its lower edge for a long, its upper
+  # edge for a short) whether spot is outside the zone or inside it, so the
   # in-zone case changes the level not at all, only whether the zone is seen.
-  # The stop goes below the whole band either way, so it is `lo` whether spot is
-  # above the zone or inside it. zone_ref() is the DISTANCE reference (first
-  # contact), which is a different level — do not wire the stop to it.
+  # zone_ref() is the DISTANCE reference (first contact), which is a different
+  # level — do not wire the stop to it.
   sup_in <- !is.null(sup) && isTRUE(sup$in_zone)
-  stop_zone <- if (!is.null(sup)) sup$lo else NA_real_
+  stop_zone <- if (!is.null(sup)) (if (long) sup$lo else sup$hi) else NA_real_
   zone_usable <- !is.null(sup) && usable(stop_zone)
   stop_fib <- if (!is.null(fb)) unname(fb$ret[3]) else NA_real_   # .618, deepest
   fib_usable <- usable(stop_fib)
@@ -283,32 +312,37 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
   } else if (fib_usable) {
     stop_px <- stop_fib; stop_source <- "fib_retr_stop"
   } else {
-    stop_px <- price - cfg$far_stop * atr; stop_source <- "atr_stop"
+    stop_px <- price - sgn * cfg$far_stop * atr; stop_source <- "atr_stop"
   }
 
-  asym <- if (is.finite(target) && is.finite(stop_px) && price > stop_px)
-    (target - price) / (price - stop_px) else NA_real_
-  asym_fib <- if (is.finite(target_fib) && is.finite(stop_fib) && price > stop_fib)
-    (target_fib - price) / (price - stop_fib) else NA_real_
+  ratio <- function(tgt, stp) if (is.finite(tgt) && is.finite(stp) && sgn * (price - stp) > 0)
+    sgn * (tgt - price) / (sgn * (price - stp)) else NA_real_
+  asym <- ratio(target, stop_px)
+  asym_fib <- ratio(target_fib, stop_fib)
 
-  # The zone stack behind the selected resistance (TODO 88.7). `res` is only the
-  # first obstacle; KTOS showed 60.42-63.21 while the 65.33-67.97 wall the chart
-  # marks was built and dropped. res2 is the next zone wholly above `res`;
-  # n_res_to_ext counts every zone overhead or containing spot whose lower edge
-  # is below the 1.272 extension, so the row says how much supply sits between
-  # spot and the geometric target.
+  # Range position on the trade's axis: 0 at the stop-side zone, 100 at the
+  # target-side zone (or the target when there is none).
+  span_hi <- if (!is.null(res)) res$mid else target
+  rng_dyn <- if (!is.null(sup) && is.finite(span_hi) && sgn * (span_hi - sup$mid) > 0)
+    (price - sup$mid) / (span_hi - sup$mid) * 100 else NA_real_
+
+  # The zone stack behind the selected target-side zone (TODO 88.7). `res` is
+  # only the first obstacle; KTOS showed 60.42-63.21 while the 65.33-67.97 wall
+  # the chart marks was built and dropped. res2 is the next zone wholly beyond
+  # `res` in the target direction; n_res_to_ext counts every target-side zone
+  # ahead of or containing spot whose near edge is short of the 1.272
+  # extension, so the row says how much supply sits between spot and the
+  # geometric target.
   res2 <- NULL
-  if (!is.null(res) && !is.null(zones_h)) {
-    above <- zones_h[zones_h$lo > res$hi, , drop = FALSE]
-    if (nrow(above)) res2 <- above[which.min(above$lo), , drop = FALSE]
+  if (!is.null(res) && !is.null(tz)) {
+    beyond <- if (long) tz[tz$lo > res$hi, , drop = FALSE] else tz[tz$hi < res$lo, , drop = FALSE]
+    if (nrow(beyond))
+      res2 <- beyond[if (long) which.min(beyond$lo) else which.max(beyond$hi), , drop = FALSE]
   }
   n_res_to_ext <- if (!is.finite(target_fib)) NA_integer_
-    else if (is.null(zones_h)) 0L
-    else sum(zones_h$hi >= price & zones_h$lo < target_fib)
-
-  span_hi <- if (!is.null(res)) res$mid else target
-  rng_dyn <- if (!is.null(sup) && is.finite(span_hi) && span_hi > sup$mid)
-    (price - sup$mid) / (span_hi - sup$mid) * 100 else NA_real_
+    else if (is.null(tz)) 0L
+    else if (long) sum(tz$hi >= price & tz$lo < target_fib)
+    else sum(tz$lo <= price & tz$hi > target_fib)
 
   back <- suppressWarnings(min(as.Date(c(
     if (!is.null(res)) res$first else NA,
@@ -316,6 +350,7 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
 
   list(
     price = price, atr = atr, zz_th = th, n_pivots = if (is.null(piv)) 0L else nrow(piv),
+    direction = if (long) "long" else "short",
     res = res, sup = sup, fib = fb, res2 = res2, n_res_to_ext = n_res_to_ext,
     in_res_zone = in_res_zone, in_sup_zone = in_sup_zone,
     target = target, target_source = target_source,
@@ -325,8 +360,8 @@ level_read <- function(d, atr, em_upper = NA_real_, cfg = ZONE_DEFAULTS) {
     asym = asym, asym_fib = asym_fib, rng_dyn = rng_dyn,
     zone_window_from = if (is.finite(back)) as.character(back) else NA_character_,
     zone_window_sessions = if (is.finite(back)) sum(d$date >= back) else NA_integer_,
-    target_pct_of_em = if (is.finite(em_upper) && em_upper > 0 && is.finite(target))
-      (target - price) / em_upper * 100 else NA_real_,
+    target_pct_of_em = if (is.finite(em_target) && em_target > 0 && is.finite(target))
+      sgn * (target - price) / em_target * 100 else NA_real_,
     fib_confirms_res = if (!is.null(res) && !is.null(fb))
       unname(fb$ext[1] >= res$lo && fb$ext[1] <= res$hi) else NA,
     fib_confirms_sup = if (!is.null(sup) && !is.null(fb))

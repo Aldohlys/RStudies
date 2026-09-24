@@ -71,7 +71,9 @@ eval_gates <- function(gi, price, direction = "long") {
          (if (long) gi$rng_pct_20 >= 70 else gi$rng_pct_20 <= 30)
   BK4 <- ok(gi$d_vol_surge) && gi$d_vol_surge >= 1.2      # direction-neutral
 
-  S3  <- ok(gi$rs20) && (if (long) gi$rs20 > 0 else gi$rs20 < 0)
+  # NA, not FALSE, when there is no benchmark: S3 abstains rather than fails,
+  # and rs_state must be able to say "not measured" instead of "-".
+  S3  <- if (!ok(gi$rs20)) NA else if (long) gi$rs20 > 0 else gi$rs20 < 0
 
   c(S1 = S1, S2 = S2, S4 = S4, S5 = S5, S6 = S6,
     BK1 = BK1, BK2 = BK2, BK3 = BK3, BK4 = BK4, S3 = S3)
@@ -84,14 +86,15 @@ eval_gates <- function(gi, price, direction = "long") {
 #'
 #' @param g named logical vector from eval_gates()
 #' @return list(trend_state, compression_state, supply_state, rs_state) as the
-#'   display strings of section 3.10
+#'   display strings of section 3.10; rs_state is "+", "-", or "n/a" when S3
+#'   abstains for want of a benchmark
 cluster_states <- function(g) {
   cnt <- function(ids) sum(vapply(ids, function(i) isTRUE(g[[i]]), logical(1)))
   list(
     trend_state       = sprintf("%d/6", cnt(c("S1", "S2", "S4", "BK1", "BK2", "BK3"))),
     compression_state = sprintf("%d/1", cnt("S5")),
     supply_state      = sprintf("%d/2", cnt(c("S6", "BK4"))),
-    rs_state          = if (isTRUE(g[["S3"]])) "+" else "-")
+    rs_state          = if (is.na(g[["S3"]])) "n/a" else if (g[["S3"]]) "+" else "-")
 }
 
 #' Weekly-vs-daily agreement on the compression and supply clusters.
