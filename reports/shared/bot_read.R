@@ -111,12 +111,16 @@ bot_read_row <- function(row, direction, bench_ret20) {
   gap_vs_stop <- if (is.finite(gap_p95_pct) && is.finite(stop_dist) && stop_dist > 0)
                    gap_p95_pct / 100 * px / stop_dist else NA_real_
 
-  # Veto reasons compose: a row can be standing in a zone AND unable to hold
-  # its stop overnight, and the reader wants both.
+  # Spot standing inside a zone is reported, not vetoed (TODO 94). Over 284
+  # names, a long entered inside any zone reached +1.5 ATR before -1.5 ATR in
+  # 53.3% of cases against 53.6% outside (difference -0.003, SE 0.009), while
+  # the veto removed 46% of candidate entries; and price reacted at the
+  # nearest zone no more than at a placebo level. The only entry veto left is
+  # the per-trade gap risk below.
+  zone_state <- if (isTRUE(lr$in_res_zone) && isTRUE(lr$in_sup_zone)) "in_both"
+    else if (isTRUE(lr$in_res_zone)) "in_resistance"
+    else if (isTRUE(lr$in_sup_zone)) "in_support" else ""
   veto <- character(0)
-  if (isTRUE(lr$in_res_zone) && isTRUE(lr$in_sup_zone)) veto <- "in_both"
-  else if (isTRUE(lr$in_res_zone)) veto <- "in_resistance"
-  else if (isTRUE(lr$in_sup_zone)) veto <- "in_support"
   # >= 1 means a 95th-percentile overnight move covers the whole stop, so the
   # stop is not a stop: price gaps through it instead of trading through it.
   if (isTRUE(gap_vs_stop >= 1)) veto <- c(veto, "gap_through_stop")
@@ -208,12 +212,11 @@ bot_read_row <- function(row, direction, bench_ret20) {
 
     atr_band = row$atr_band, gap_tercile = row$gap_tercile,
 
-    # Entry veto, assembled above. Price standing in a zone is mid-struggle,
-    # with the level that decides the move at arm's length on both sides; a
-    # stop a single overnight move can clear is not a stop. The row is kept
-    # either way so the level read stays visible.
+    # Entry veto, assembled above: a stop a single overnight move can clear is
+    # not a stop. The row is kept either way so the level read stays visible.
     tradable = as.integer(length(veto) == 0),
     veto_reason = paste(veto, collapse = "+"),
+    zone_state = zone_state,
     gap_p95_pct = round(gap_p95_pct, 2),
     gap_vs_stop = round(gap_vs_stop, 2),
 
@@ -225,7 +228,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
 }
 
 # Column order and tiers are the spec's, kept here so a schema change is one edit.
-BOT_READ_COLS <- c("date","name","yahoo","direction","tradable","veto_reason",
+BOT_READ_COLS <- c("date","name","yahoo","direction","tradable","veto_reason","zone_state",
   "px","atr","atr_pct","atr_pctile","prior20_atr","entry_factors",
   "zz_th","n_pivots",
   "rng_pct_20","rng_dyn","zone_window_sessions",
