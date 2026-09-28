@@ -1,6 +1,6 @@
 # reports/bot_daily/main.R — BOT_daily, the technical tool.
 #
-# Writes bot_daily_<date>.csv exactly as specified in
+# Writes bot_daily_<yyyymmdd>_<hhmm>.csv (time of writing) exactly as specified in
 # docs/BOT_TOOLS_DESIGN.md section 3. Price and volume only: no TWS, no option
 # chain, no database writes.
 #
@@ -132,7 +132,7 @@ df <- df[order(-df$tradable,
                ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
 
 if (is.na(out_path))
-  out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.csv", format(Sys.Date(), "%Y%m%d")))
+  out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.csv", format(Sys.time(), "%Y%m%d_%H%M")))
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
 out <- if (detail) df else df[, BOT_READ_DEFAULT, drop = FALSE]
 utils::write.table(out, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")

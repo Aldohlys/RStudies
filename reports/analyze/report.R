@@ -1105,7 +1105,7 @@ render_analyze_html <- function(ctx, out_dir) {
 
   bar_vs <- if (isTRUE(spot > 0))
     sprintf(" &middot; /analyze spot %.2f (bar %+.2f%%)", spot, (r$px / spot - 1) * 100) else ""
-  sub <- sprintf(paste0('<p class="sub">shared/bot_read.R &mdash; the row bot_daily_&lt;date&gt;.csv ',
+  sub <- sprintf(paste0('<p class="sub">shared/bot_read.R &mdash; the row bot_daily_&lt;date&gt;_&lt;hhmm&gt;.csv ',
                         'carries for this name. Daily bar %s &middot; px %.2f%s</p>'),
                  r$date, r$px, bar_vs)
   stale <- if (isTRUE(r$bar_lag > 0))
