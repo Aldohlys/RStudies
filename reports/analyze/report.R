@@ -1136,14 +1136,15 @@ render_analyze_html <- function(ctx, out_dir) {
     '<tr><td>zone_state</td><td class="value">%s</td><td class="note">spot inside a zone &mdash; informational</td></tr>',
     '<tr><td>gap_vs_stop</td><td class="value">%s</td><td class="note">p95 overnight move %s%% of px, as a share of the stop distance</td></tr>',
     '<tr><td>entry_factors</td><td class="value">%s</td><td class="note">ATR percentile %s &middot; prior 20 sessions %s ATR</td></tr>',
+    '<tr><td>trend daily / weekly</td><td class="value">%s / %s</td><td class="note">trend gates S1 S2 S4 BK1 BK2 BK3 on daily and on weekly bars</td></tr>',
     '<tr><td>confluence</td><td class="value">%s</td><td class="note">daily vs weekly agreement on S5 / S6 / BK4</td></tr>',
     '<tr><td>rs_state</td><td class="value">%s</td><td class="note">%s</td></tr>',
     '</table>'),
     r$tradable, if (nzchar(r$veto_reason)) r$veto_reason else "&mdash;",
     if (nzchar(r$zone_state)) r$zone_state else "&mdash;",
     f(r$gap_vs_stop), f(r$gap_p95_pct), r$entry_factors, f(r$atr_pctile, 0), f(r$prior20_atr),
-    r$confluence, r$rs_state,
-    if (identical(r$rs_state, "n/a")) "no benchmark wired (TODO 93.4)" else "S3 vs benchmark")
+    r$trend_state, r$w_trend_state %||% "n/a", r$confluence, r$rs_state,
+    if (identical(r$rs_state, "n/a")) "no benchmark (Tickers.BOT_Bench)" else "S3 vs Tickers.BOT_Bench")
 
   row <- function(lab, lvl, dist, pem, touch, last)
     sprintf('<tr><td>%s</td><td class="value">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>',

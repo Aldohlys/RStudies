@@ -370,7 +370,11 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
     updn_ratio = round(.br_n(gi$updn_ratio), 3), ret20 = round(.br_n(gi$ret20), 3),
     rs20 = round(.br_n(gi$rs20), 3), adx10 = round(.br_n(gi$adx10), 2),
 
-    trend_state = cs$trend_state, compression_state = cs$compression_state,
+    trend_state = cs$trend_state,
+    # Weekly trend cluster (TODO 72a): shown beside the daily one so a daily
+    # setup against the weekly trend reads at a glance; not a veto, not scored.
+    w_trend_state = if (!is.null(gw)) cluster_states(gw)$trend_state else "n/a",
+    compression_state = cs$compression_state,
     supply_state = cs$supply_state, rs_state = cs$rs_state,
     confluence = confluence_state(gd, gw),
 
@@ -409,7 +413,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",
-  "trend_state","compression_state","supply_state","rs_state","confluence",
+  "trend_state","w_trend_state","compression_state","supply_state","rs_state","confluence",
   "atr_band","gap_tercile","note")
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
 # so it stays short; --detail emits every field.
