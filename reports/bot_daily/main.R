@@ -57,9 +57,10 @@ load_universe <- function() {
     cols <- DBI::dbGetQuery(conn, "SELECT * FROM Tickers LIMIT 1")
     if (!"BOT_Eligible" %in% names(cols)) NULL else
       DBI::dbGetQuery(conn,
-        "SELECT Name AS name, YahooName AS yahoo, ATR_Band AS atr_band,
-                GapShare_Tercile AS gap_tercile
-           FROM Tickers WHERE BOT_Eligible = 1")
+        sprintf("SELECT Name AS name, YahooName AS yahoo, ATR_Band AS atr_band,
+                GapShare_Tercile AS gap_tercile, ATR_MoveCoefHi AS coef_hi, %s AS coef_lo
+           FROM Tickers WHERE BOT_Eligible = 1",
+          if ("ATR_MoveCoefLo" %in% names(cols)) "ATR_MoveCoefLo" else "NULL"))
   }, error = function(e) NULL)
 
   if (!is.null(from_tickers) && nrow(from_tickers)) {
@@ -74,6 +75,7 @@ load_universe <- function() {
   u <- u[u$book_BOT %in% c("Y", "y", "YES", "Yes"), , drop = FALSE]
   out <- data.frame(name = u$ibkr_name, yahoo = u$yahoo,
                     atr_band = NA_character_, gap_tercile = NA_character_,
+                    coef_hi = NA_real_, coef_lo = NA_real_,
                     bench = u$bench, stringsAsFactors = FALSE)
   # A name is never its own benchmark: rs20 would be identically zero and S3
   # could never pass. Carried over from bot_scan_universe.py::resolve_bench()

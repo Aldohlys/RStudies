@@ -51,13 +51,16 @@ bot_fetch_daily <- function(sym, adjusted = TRUE) {
 #' @return data.frame(name, yahoo, atr_band, gap_tercile, bench)
 bot_read_ticker_rows <- function(names) {
   out <- data.frame(name = names, yahoo = names, atr_band = NA_character_,
-                    gap_tercile = NA_character_, bench = NA_character_,
-                    stringsAsFactors = FALSE)
+                    gap_tercile = NA_character_, coef_hi = NA_real_, coef_lo = NA_real_,
+                    bench = NA_character_, stringsAsFactors = FALSE)
   tk <- tryCatch({
     conn <- Tdata::safe_db_connect()
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    have <- names(DBI::dbGetQuery(conn, "SELECT * FROM Tickers LIMIT 1"))
     DBI::dbGetQuery(conn, sprintf(
-      "SELECT Name, YahooName, ATR_Band, GapShare_Tercile FROM Tickers WHERE Name IN (%s)",
+      "SELECT Name, YahooName, ATR_Band, GapShare_Tercile, ATR_MoveCoefHi, %s AS ATR_MoveCoefLo
+         FROM Tickers WHERE Name IN (%s)",
+      if ("ATR_MoveCoefLo" %in% have) "ATR_MoveCoefLo" else "NULL",
       paste(rep("?", length(names)), collapse = ",")), params = as.list(names))
   }, error = function(e) NULL)
   if (is.null(tk) || !nrow(tk)) return(out)
@@ -66,6 +69,8 @@ bot_read_ticker_rows <- function(names) {
   out$yahoo[ok] <- ifelse(!is.na(yh) & nzchar(yh), yh, out$name[ok])
   out$atr_band[ok] <- tk$ATR_Band[i[ok]]
   out$gap_tercile[ok] <- tk$GapShare_Tercile[i[ok]]
+  out$coef_hi[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefHi[i[ok]]))
+  out$coef_lo[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefLo[i[ok]]))
   out
 }
 
@@ -101,9 +106,26 @@ bot_read_row <- function(row, direction, bench_ret20) {
   if (!is.finite(px) || !is.finite(atr) || atr <= 0) return(NULL)
 
   # Expected move: the denominator for every "% of a typical 10-day move".
-  em  <- tryCatch(atr_expected_move(row$yahoo, BOT_EM_DAYS, conf = 0.80, spot = px),
-                  error = function(e) NULL)
-  em_lo  <- .br_n(em$move_lower_pct);  em_hi <- .br_n(em$move_upper_pct)
+  # em10 = today's ATR% x sqrt(10) x the name's 10-session move coefficient
+  # (10th / 90th percentile of its standardised signed moves over 8 years).
+  # The coefficient is a ratio, so it moves little in a month and dividend
+  # adjustment leaves it unchanged: BOT_monthly stores it in Tickers and this
+  # reads it, instead of re-fetching 8 years per name every day (~25% of the
+  # run). Named symbols without a stored coefficient fall back to the live
+  # computation.
+  atr_pct_now <- atr / px * 100
+  k_em  <- atr_pct_now * sqrt(BOT_EM_DAYS)
+  c_hi  <- .br_n(suppressWarnings(as.numeric(row$coef_hi)))
+  c_lo  <- .br_n(suppressWarnings(as.numeric(row$coef_lo)))
+  need  <- if (identical(direction, "short")) c_lo else c_hi
+  if (is.finite(need)) {
+    em_hi <- if (is.finite(c_hi)) round(c_hi * k_em, 2) else NA_real_
+    em_lo <- if (is.finite(c_lo)) round(c_lo * k_em, 2) else NA_real_
+  } else {
+    em <- tryCatch(atr_expected_move(row$yahoo, BOT_EM_DAYS, conf = 0.80, spot = px),
+                   error = function(e) NULL)
+    em_lo <- .br_n(em$move_lower_pct); em_hi <- .br_n(em$move_upper_pct)
+  }
   # Every level field is on the trade's axis (level_read(): `res` is the target
   # side, `sup` the stop side), so a short measures against the DOWN move.
   # move_lower_pct is signed negative.
@@ -111,7 +133,6 @@ bot_read_row <- function(row, direction, bench_ret20) {
   sgn  <- if (long) 1 else -1
   em_t   <- if (long) em_hi else abs(em_lo)
   em_abs <- if (is.finite(em_t)) px * em_t / 100 else NA_real_
-  em_div <- .br_n(em$regime_divergence)
 
   # Zones read the last BOT_ZONE_YEARS of the series; the rest of the fetch exists
   # for indicator warm-up and for the weekly resample.
@@ -140,7 +161,6 @@ bot_read_row <- function(row, direction, bench_ret20) {
   # scanner was retired. Validated on 93 realised trades (bot_book_design
   # 20260827.md 9b): ATR in its own top quartile carried 20.7R of 42.9R, and a
   # prior move of 2-3 ATR returned 0.76R per trade. Reported, never gated.
-  atr_pct_now <- atr / px * 100
   atr_hist <- utils::tail(d$atr14 / d$Close * 100, 504)
   atr_hist <- atr_hist[is.finite(atr_hist)]
   atr_pctile <- if (length(atr_hist) > 250) mean(atr_hist < atr_pct_now) * 100 else NA_real_
@@ -251,7 +271,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
                  else as.integer(isTRUE(lr$fib_confirms_sup)),
     asym = round(.br_n(lr$asym), 3), asym_fib = round(.br_n(lr$asym_fib), 3),
 
-    em10_lo = em_lo, em10_hi = em_hi, em10_regime_div = em_div,
+    em10_lo = em_lo, em10_hi = em_hi,
 
     ema50 = round(.br_n(gi$ema50), 4),
     ema50_disp_pct = round(.br_pct(px - .br_n(gi$ema50), .br_n(gi$ema50)), 3),
@@ -307,7 +327,7 @@ BOT_READ_COLS <- c("date","bar_lag","name","yahoo","direction","tradable","veto_
   "fib_ret_382","fib_ret_500","fib_ret_618","fib_ext_1272","fib_ext_1618",
   "target","target_source","target_agree","stop","stop_source","stop_agree",
   "gap_p95_pct","gap_vs_stop",
-  "level_basis","asym","asym_fib","em10_lo","em10_hi","em10_regime_div",
+  "level_basis","asym","asym_fib","em10_lo","em10_hi",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",

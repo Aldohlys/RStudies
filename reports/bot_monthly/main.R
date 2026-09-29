@@ -67,7 +67,7 @@ SCHEMA <- c(
   VoV = "REAL", VoV_Pctile = "REAL", VoV_Tercile = "TEXT",
   AtmBidAskPct = "REAL", AtmBidAsk_AsOf = "TEXT",
   ADV_CHF_M = "REAL", ADV_Pass = "INTEGER",
-  ATR_MoveCoefHi = "REAL", EM10_Hi_Pct = "REAL",
+  ATR_MoveCoefHi = "REAL", ATR_MoveCoefLo = "REAL", EM10_Hi_Pct = "REAL",
   BOT_ModelSigma = "REAL", BOT_IVSource = "TEXT", BOT_ModelCallCost = "REAL",
   BOT_BreakevenPct = "REAL", BOT_BreakevenAtr = "REAL", BOT_BreakevenPctEm10 = "REAL",
   BOT_Opportunities_2y = "INTEGER", BOT_LastOpportunity = "TEXT")
@@ -108,6 +108,7 @@ compute_one <- function(tk, fx_rate, tws_up) {
   vv  <- tryCatch(Tdata::compute_vol_of_vol(yh), error = function(e) NULL)
   em  <- tryCatch(atr_expected_move(yh, EM_DAYS, conf = 0.80, spot = px), error = function(e) NULL)
   coef_hi <- .n(em$coef_upper); em_hi <- .n(em$move_upper_pct)
+  coef_lo <- .n(em$coef_lower)
   em_abs  <- if (is.finite(em_hi)) px * em_hi / 100 else NA_real_
   if (!is.finite(coef_hi)) notes <- c(notes, "expected-move: insufficient history")
 
@@ -160,7 +161,7 @@ compute_one <- function(tk, fx_rate, tws_up) {
     atr_band = if (!is.null(ap)) ap$band else NA_character_,
     gap_share = gs, vov = .n(vv$vol_of_vol), vov_pctile = .n(vv$vov_percentile),
     adv = adv, atm_bid_ask = ba, atm_bid_ask_asof = ba_asof,
-    coef_hi = coef_hi, em_hi = em_hi, sigma = sigma, iv_src = iv_src,
+    coef_hi = coef_hi, coef_lo = coef_lo, em_hi = em_hi, sigma = sigma, iv_src = iv_src,
     call_cost = bk$call_cost, be_pct = bk$breakeven_pct,
     be_atr = bk$breakeven_atr, be_pct_em10 = bk$breakeven_pct_em10,
     opp_n = opp$n, opp_last = opp$last_date))
@@ -285,7 +286,8 @@ rows <- lapply(res, function(r) {
        vov = round(.n(r$vov), 4), vov_pctile = round(.n(r$vov_pctile), 1), vov_tercile = .s(vov_t),
        atm_bid_ask_pct = round(.n(r$atm_bid_ask), 3),
        adv_chf_m = round(.n(r$adv), 1), adv_pass = .i(adv_pass),
-       atr_move_coef_hi = round(.n(r$coef_hi), 3), em10_hi_pct = round(.n(r$em_hi), 3),
+       atr_move_coef_hi = round(.n(r$coef_hi), 3), atr_move_coef_lo = round(.n(r$coef_lo), 3),
+       em10_hi_pct = round(.n(r$em_hi), 3),
        model_sigma = round(.n(r$sigma), 4), iv_source = .s(r$iv_src),
        model_call_cost = round(.n(r$call_cost), 2),
        breakeven_pct = round(.n(r$be_pct), 3), breakeven_atr = round(.n(r$be_atr), 3),
@@ -300,7 +302,7 @@ df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors 
 
 CSV_COLS <- c("name","yahoo","type","currency","bot_eligible","bot_reason","vehicle_hint",
   "atr_pct","atr_band","gap_share","gap_tercile","vov","vov_pctile","vov_tercile",
-  "atm_bid_ask_pct","adv_chf_m","adv_pass","atr_move_coef_hi","em10_hi_pct",
+  "atm_bid_ask_pct","adv_chf_m","adv_pass","atr_move_coef_hi","atr_move_coef_lo","em10_hi_pct",
   "model_sigma","iv_source","model_call_cost","breakeven_pct","breakeven_atr",
   "breakeven_pct_em10","opportunities_2y","last_opportunity","gate_version",
   "fetch_status","fetch_note")
@@ -326,7 +328,8 @@ if (dry_run) {
     VoV = df$vov, VoV_Pctile = df$vov_pctile, VoV_Tercile = df$vov_tercile,
     AtmBidAskPct = df$atm_bid_ask_pct, AtmBidAsk_AsOf = df$.ba_asof,
     ADV_CHF_M = df$adv_chf_m, ADV_Pass = df$adv_pass,
-    ATR_MoveCoefHi = df$atr_move_coef_hi, EM10_Hi_Pct = df$em10_hi_pct,
+    ATR_MoveCoefHi = df$atr_move_coef_hi, ATR_MoveCoefLo = df$atr_move_coef_lo,
+    EM10_Hi_Pct = df$em10_hi_pct,
     BOT_ModelSigma = df$model_sigma, BOT_IVSource = df$iv_source,
     BOT_ModelCallCost = df$model_call_cost, BOT_BreakevenPct = df$breakeven_pct,
     BOT_BreakevenAtr = df$breakeven_atr, BOT_BreakevenPctEm10 = df$breakeven_pct_em10,
