@@ -42,6 +42,7 @@ source(file.path(SCRIPT_DIR, "phases.R"))
 source(file.path(SCRIPT_DIR, "funnel.R"))
 source(file.path(SCRIPT_DIR, "structures.R"))
 source(file.path(SCRIPT_DIR, "report.R"))
+source(file.path(SCRIPT_DIR, "valuation.R"))
 
 # ── Config: defaults + optional override from RStudies/config.yml ─────────
 # config.yml is instance-specific (may contain secrets) and is NOT tracked
@@ -237,7 +238,13 @@ message(sprintf("  BOT: %s%s", bot_read$status,
                 else paste0(" - ", bot_read$reason)))
 
 # ── Phase E: data-coverage summary (neutral provenance, no verdict) ────────
+# ── Valuation (context, not a BOT input; PE_History, TODO 92) ─────────────
+valuation <- tryCatch(run_valuation(args$ticker),
+                      error = function(e) list(status = "FETCH FAILED", reason = conditionMessage(e)))
+message(sprintf("  Valuation: %s", valuation$status))
+
 phase_e <- run_phase_e(phase_a, phase_b, phase_c, phase_d, config = CONFIG,
+                       valuation = valuation,
                        bot_read = bot_read)
 for (cv in phase_e$coverage)
   message(sprintf("  E coverage | %-26s %s",
@@ -250,6 +257,7 @@ ctx <- list(
   date      = Sys.Date(),
   phase_a   = phase_a,
   phase_b   = phase_b,
+  valuation = valuation,
   phase_c   = phase_c,
   phase_d   = phase_d,
   bot_read  = bot_read,

@@ -454,7 +454,8 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
 # coverage summary: one row per dimension, reporting how much of the report is
 # real (LIVE / CACHED / NO DATA / FETCH FAILED). NO TOP PICK/WATCH/SKIP, NO
 # phase_of_drop.
-run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = NULL) {
+run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = NULL,
+                        valuation = NULL) {
   # Fold the vol-funnel's per-signal statuses into one funnel-level status:
   # the worst (most-degraded) of its parts, so a single FETCH FAILED isn't
   # hidden behind five LIVE rows.
@@ -515,6 +516,15 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = N
                           phase_d$n_structures_within_cap %||% 0L,
                           config$risk_cap_lot_usd %||% "?"))
   )
+  if (!is.null(valuation))
+    coverage[[length(coverage) + 1]] <- list(
+      dimension = "Valuation (PE_History)",
+      status = valuation$status,
+      detail = if (identical(valuation$status, "LIVE"))
+        sprintf("own history %s &middot; Yahoo snapshots %s day(s)",
+                if (!is.null(valuation$own)) paste("since", valuation$own$from) else "n/a",
+                valuation$yahoo_days)
+        else valuation$reason %||% "")
   if (!is.null(bot_read))
     coverage[[length(coverage) + 1]] <- list(
       dimension = "BOT_daily read",
