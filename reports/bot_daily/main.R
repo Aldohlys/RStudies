@@ -120,15 +120,15 @@ if (!length(rows)) { message("No rows produced."); quit(status = 1) }
 df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 df <- df[, BOT_READ_COLS, drop = FALSE]
 
-# Reading order: tradable rows first, then asym_em desc, then res_pct_of_em10
+# Reading order: tradable rows first, then asym desc, then res_pct_of_em10
 # asc. Not a ranking. Vetoed rows keep their level read below the block that
 # can be traded today. The edge is asymmetry over many bets, so asymmetry is
-# the key, in its bounded form (asym_em, shared/bot_read.R): raw asym is
-# unbounded and let unreachable or geometric targets lead the file (TODO 88.3).
-# asym_em still runs against trend (asym vs trend count Spearman -0.335), so
-# trend_state stays a default column for the reader to weigh.
+# the key. asym is bounded (target capped at the 10-session expected move,
+# risk floored at one ATR; shared/zones.R), so unreachable or geometric
+# targets no longer lead the file (TODO 88.3). It still runs against trend,
+# so trend_state stays a default column for the reader to weigh.
 df <- df[order(-df$tradable,
-               -ifelse(is.na(df$asym_em), -Inf, df$asym_em),
+               -ifelse(is.na(df$asym), -Inf, df$asym),
                ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
 
 if (is.na(out_path))

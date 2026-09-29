@@ -31,9 +31,18 @@ ZONE_DEFAULTS <- list(
   zz_floor  = 0.025,  # ... but never less than 2.5%
   zz_ceil   = 0.100,  # ... and never more than 10%
   far_stop  = 3.00,   # beyond this many ATR a support zone is not a usable stop
-  near_stop = 0.50    # nor is one closer than this: it sits inside the noise,
+  near_stop = 0.50,   # nor is one closer than this: it sits inside the noise,
                       # and it collapses the denominator of asym (SNOW produced
                       # 18.5:1 from a .618 retracement a hair below spot)
+  max_stop  = 2.50,   # the stop is never farther than this many ATR from px:
+                      # whatever level was chosen, the worst-case loss is
+                      # max_stop x ATR
+  min_stop  = 1.00,   # nor nearer than this: one ATR is a typical day's range,
+                      # so a nearer stop is taken out by an ordinary session
+  polarity  = TRUE    # a zone wholly beyond spot plays the role its side gives
+                      # it, whatever pivots built it: a broken support above
+                      # spot is resistance (TDG 2026-09-25: the 1119-1161 band
+                      # of lows was skipped for a 1244 band of highs)
 )
 
 #' ZigZag reversal threshold for a name, as a fraction.
@@ -264,8 +273,21 @@ level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
   zones_l <- build_zones(piv, "L", atr, cfg)
   # Target-side zones (tz) and stop-side zones (sz), and the side names
   # nearest_zone()/zone_ref() use to find them relative to spot.
-  tz <- if (long) zones_h else zones_l
-  sz <- if (long) zones_l else zones_h
+  # Polarity: a zone wholly beyond spot joins the side it now sits on. A band
+  # of lows that price has broken below is overhead supply for a long; a band
+  # of highs price has cleared is support. Containment keeps the building
+  # type, so `in_res_zone` / `in_sup_zone` mean what they meant.
+  tag <- function(z, f) if (is.null(z) || !nrow(z)) NULL else cbind(z, flip = f)
+  zh <- tag(zones_h, FALSE); zl <- tag(zones_l, FALSE)
+  if (isTRUE(cfg$polarity)) {
+    l_above <- if (!is.null(zl)) tag(zones_l[zones_l$lo > price, , drop = FALSE], TRUE) else NULL
+    h_below <- if (!is.null(zh)) tag(zones_h[zones_h$hi < price, , drop = FALSE], TRUE) else NULL
+    up <- rbind(zh, l_above); dn <- rbind(zl, h_below)
+  } else {
+    up <- zh; dn <- zl
+  }
+  tz <- if (long) up else dn
+  sz <- if (long) dn else up
   t_side <- if (long) "res" else "sup"
   s_side <- if (long) "sup" else "res"
   res <- nearest_zone(tz, price, t_side)
@@ -286,8 +308,19 @@ level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
   target_fib <- if (!is.null(fb)) unname(fb$ext[1]) else NA_real_
   target_fib_far <- if (!is.null(fb)) unname(fb$ext[2]) else NA_real_
   target <- if (is.finite(target_zone)) target_zone else target_fib
-  target_source <- if (is.finite(target_zone)) (if (res_in) "in_zone" else "zone") else
+  target_source <- if (is.finite(target_zone))
+      (if (res_in) "in_zone" else if (isTRUE(res$flip)) "flip_zone" else "zone") else
     if (is.finite(target_fib)) "fib_ext" else "none"
+  # A BOT trade lasts 1-4 weeks, so no target lies beyond the 90th-percentile
+  # 10-session move toward it (em_target), whatever set it: a Fibonacci
+  # extension has no horizon, and a zone can sit far off (DUOL 2026-09-28: a
+  # broken-support band at 261 over a 143.51 spot). The level that was capped
+  # stays visible in the res_* / fib_* fields.
+  if (target_source != "none" && is.finite(em_target) && em_target > 0 &&
+      sgn * (target - price) > em_target) {
+    target <- price + sgn * em_target
+    target_source <- "em10_cap"
+  }
 
   # ── Stops: stop-side zone, and the retracement band of the current leg ──
   # The nearest repetition-validated zone can sit so far away that no one
@@ -308,16 +341,30 @@ level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
   stop_fib <- if (!is.null(fb)) unname(fb$ret[3]) else NA_real_   # .618, deepest
   fib_usable <- usable(stop_fib)
   if (zone_usable) {
-    stop_px <- stop_zone; stop_source <- if (sup_in) "in_zone_stop" else "zone_stop"
+    stop_px <- stop_zone
+    stop_source <- if (sup_in) "in_zone_stop" else if (isTRUE(sup$flip)) "flip_zone_stop" else "zone_stop"
   } else if (fib_usable) {
     stop_px <- stop_fib; stop_source <- "fib_retr_stop"
   } else {
     stop_px <- price - sgn * cfg$far_stop * atr; stop_source <- "atr_stop"
   }
+  # Maximum stop distance: a zone or retracement stop can sit farther than
+  # max_stop ATR, and the worst-case loss is then set there instead. The level
+  # that was pulled in stays visible in the sup_* / fib_* fields.
+  if (is.finite(stop_px) && sgn * (price - stop_px) > cfg$max_stop * atr) {
+    stop_px <- price - sgn * cfg$max_stop * atr
+    stop_source <- "max_stop"
+  }
+  if (is.finite(stop_px) && sgn * (price - stop_px) < cfg$min_stop * atr) {
+    stop_px <- price - sgn * cfg$min_stop * atr
+    stop_source <- "min_stop"
+  }
 
   ratio <- function(tgt, stp) if (is.finite(tgt) && is.finite(stp) && sgn * (price - stp) > 0)
     sgn * (tgt - price) / (sgn * (price - stp)) else NA_real_
-  asym <- ratio(target, stop_px)
+  # `target` is capped at the 10-session expected move and `stop` lies between
+  # min_stop and max_stop ATR, so the plain ratio is read directly.
+  asym <- if (is.finite(target) && sgn * (target - price) > 0) ratio(target, stop_px) else NA_real_
   asym_fib <- ratio(target_fib, stop_fib)
 
   # Range position on the trade's axis: 0 at the stop-side zone, 100 at the
