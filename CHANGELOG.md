@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-09-29] - Sector layer runs on correlation groups (TODO 71)
+
+### Changed
+- **Swing scanner sector layer and /analyze Phase B read `ScannerUniverse.Cluster` instead of `Sector`.** The hand-set sectors were a weak proxy for co-movement. Over 250 sessions a stock correlated 0.345 on average with its sector peers and 0.096 with the rest of the universe; the sector gate reads one ETF per sector, which assumes the members track it. `scripts/cluster_universe.py` (RApplication) groups the scanner stocks by return correlation: at most 10 names per group, each group anchored on an ETF or, when none tracks it, on its most central member. Groups raise the peer-minus-rest correlation from 0.249 to 0.471 over 56 groups. Technology splits into semiconductors, software, cloud and a speculative/crypto group; NVDA, AVGO and SMCI join uranium and nuclear power.
+- `shared/universe.R`: new `get_groups()`, `get_group_anchors()`, `get_group_stocks()`, `get_group_sectors()`, `get_symbol_group()`, `get_unclassified()`. The `get_sector*()` functions are unchanged; macro_context still uses them.
+- `swing_scanner/main.R`: gate, RS rank and `sector_pts` run per group. Names with no group (`Unclassified`) are scanned without a sector gate, and the run prints them as a warning.
+- `swing_scanner/sector_gate.R`: `evaluate_sector_gates()` takes an optional `macro_keys` (group -> rule key). Each group uses its family's rules: the majority `Sector` of its members, mapped by the new `SECTOR_RULE_KEY`.
+- `shared/live_sources.R`: "Sector" in Phase B is the ticker's group and its "ETF" the group anchor. The rank walks all group anchors from one Yahoo call (`.ret20_batch()`) instead of one fetch per ETF.
+- `analyze/report.R`: tooltips describe the group and its anchor.
+
+### Fixed
+- **Macro tailwind/headwind rules and macro_context mismatches were inactive for 6 of 10 families.** `SECTOR_MACRO_RULES` and the mismatch table are keyed `PreciousMetals`, `Financials`, `Industrials`, `Materials`, `Agriculture`, `ConsumerStaples`; the scanner looked them up with the `Sector` labels `Precious Metals`, `Financial`, `Industrial`, `Basic Materials`, `Agricultural`, `Consumer non cyclical`, which never matched. `SECTOR_RULE_KEY` maps one to the other, so these families now receive their rules and mismatch boosts. Real Estate, Utilities, Consumer cyclical, China stocks and Communications have no rules, as before.
+
+### Notes
+- `sector_pts` still gives 3 points to ranks 1-3 and 2 points to ranks 4-6 among LONG-passing groups. With 56 groups instead of 16 sectors, those ranks are a smaller share of the universe.
+
 ## [2026-09-01] - BOT criteria reported as three clusters, not one flat count
 
 ### Changed

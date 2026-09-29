@@ -108,31 +108,32 @@ resolve_spot <- function(ticker) {
   .ok(v, source = "live")
 }
 
-# ── Sector / Sector ETF ──────────────────────────────────────────────────
+# ── Sector (correlation group) / anchor ──────────────────────────────────
+# "Sector" in Phase B is the ticker's correlation group (ScannerUniverse.Cluster,
+# scripts/cluster_universe.py) and its "ETF" is the group's anchor (ClusterETF):
+# the names the ticker actually moves with.
 
-#' Look up sector membership via ScannerUniverse (DB table populated from Tickers).
-#' Returns NA with reason if ticker not in ScannerUniverse.
+#' Look up the correlation group of a scanner name.
+#' Returns NA with reason if the ticker is not a scanner name or is Unclassified.
 resolve_sector <- function(ticker) {
-  u <- tryCatch(get_universe(), error = function(e) NULL)
-  if (is.null(u)) return(.miss("ScannerUniverse not accessible"))
-  hit <- u[u$Symbol == ticker, , drop = FALSE]
-  if (nrow(hit) == 0)
-    return(.miss(sprintf("%s not in ScannerUniverse", ticker)))
-  sec <- hit$Sector[1]
-  if (is.na(sec) || !nzchar(sec))
-    return(.miss(sprintf("%s has no Sector field", ticker)))
-  .ok(sec, source = "db")
+  g <- tryCatch(get_symbol_group(ticker), error = function(e) NULL)
+  if (is.null(g)) return(.miss("ScannerUniverse not accessible"))
+  if (is.na(g))
+    return(.miss(sprintf("%s is not a scanner name in ScannerUniverse", ticker)))
+  if (!nzchar(g) || g == UNCLASSIFIED_GROUP)
+    return(.miss(sprintf("%s has no correlation group (Unclassified)", ticker)))
+  .ok(g, source = "db")
 }
 
-#' Resolve the sector ETF symbol for a ticker via its sector membership.
+#' Resolve the anchor of a ticker's correlation group.
 resolve_sector_etf <- function(ticker) {
   sec <- resolve_sector(ticker)
   if (is.na(sec$value)) return(.miss(sec$reason))
-  etfs <- tryCatch(get_sector_etfs(), error = function(e) NULL)
-  if (is.null(etfs)) return(.miss("get_sector_etfs failed"))
-  etf <- unname(etfs[sec$value])
+  anchors <- tryCatch(get_group_anchors(), error = function(e) NULL)
+  if (is.null(anchors)) return(.miss("get_group_anchors failed"))
+  etf <- unname(anchors[sec$value])
   if (is.null(etf) || length(etf) == 0 || is.na(etf) || !nzchar(etf))
-    return(.miss(sprintf("no ETF mapped to sector '%s'", sec$value)))
+    return(.miss(sprintf("no anchor for group '%s'", sec$value)))
   .ok(etf, source = "db")
 }
 
@@ -777,6 +778,27 @@ resolve_returns <- function(ticker) {
   .ok(list(ret20 = ret20, ret60 = ret60), source = "live")
 }
 
+#' 20-day return of several tickers from one Yahoo call (named, NA if missing).
+.ret20_batch <- function(tickers) {
+  yn <- vapply(tickers, function(t) {
+    y <- tryCatch(Tdata::getYahooName(t), error = function(e) t)
+    if (length(y) == 0 || is.na(y) || y == "BASE_CURRENCY") t else y
+  }, "")
+  raw <- tryCatch(Tdata::getYahooData(tickers = unique(unname(yn)),
+                                      from_date = Sys.Date() - 300, to_date = Sys.Date()),
+                  error = function(e) NULL)
+  out <- stats::setNames(rep(NA_real_, length(tickers)), tickers)
+  if (is.null(raw) || nrow(raw) == 0) return(out)
+  if (!"date" %in% names(raw) && "Date" %in% names(raw)) names(raw)[names(raw) == "Date"] <- "date"
+  for (t in tickers) {
+    d <- raw[raw$ticker == yn[[t]], , drop = FALSE]
+    if (nrow(d) < 70) next
+    ind <- tryCatch(calc_ind(d), error = function(e) NULL)
+    if (!is.null(ind) && nrow(ind) > 0) out[[t]] <- as.numeric(tail(ind, 1)$ret20)
+  }
+  out
+}
+
 #' Compute Phase B sector-RS context for a single ticker.
 #'
 #' Returns:
@@ -786,12 +808,12 @@ resolve_returns <- function(ticker) {
 #'   - spy_ret20  / spy_ret60:    SPY returns
 #'   - rs_vs_sector_20d / 60d:    stock_ret - etf_ret (leader-vs-laggard)
 #'   - sector_rs_vs_spy_20d / 60d: etf_ret - spy_ret  (strong-vs-weak sector)
-#'   - sector_rank: rank among all sectors of (etf_ret20 - spy_ret20),
+#'   - sector_rank: rank among all groups of (anchor ret20 - spy_ret20),
 #'     direction-aware: descending for long (rank 1 = strongest), ascending
 #'     for short (rank 1 = weakest).
-#'   - n_sectors: total sector count walked.
+#'   - n_sectors: number of groups ranked.
 #'
-#' Walks every sector ETF (~11 yfinance fetches; ~5-15s on first run).
+#' Fetches every group anchor in one Yahoo call.
 compute_sector_rs_context <- function(ticker, direction,
                                        stock_ret20 = NA_real_,
                                        stock_ret60 = NA_real_) {
@@ -834,16 +856,12 @@ compute_sector_rs_context <- function(ticker, direction,
   spy_ret20 <- if (is.list(spy_r$value)) spy_r$value$ret20 else NA_real_
   spy_ret60 <- if (is.list(spy_r$value)) spy_r$value$ret60 else NA_real_
 
-  # Walk all sectors for rank
-  all_etfs <- tryCatch(get_sector_etfs(), error = function(e) NULL)
+  # Rank every group by its anchor's 20d return vs SPY
+  all_etfs <- tryCatch(get_group_anchors(), error = function(e) NULL)
   sector_rank <- NA_integer_; n_sectors <- NA_integer_
   if (!is.null(all_etfs) && length(all_etfs) > 0 && !is.na(spy_ret20)) {
-    rs_per_sector <- vapply(unname(all_etfs), function(e) {
-      r <- resolve_returns(e)
-      if (is.list(r$value) && !is.na(r$value$ret20)) {
-        r$value$ret20 - spy_ret20
-      } else NA_real_
-    }, numeric(1))
+    anchor_ret20 <- .ret20_batch(unique(unname(all_etfs)))
+    rs_per_sector <- unname(anchor_ret20[all_etfs]) - spy_ret20
     names(rs_per_sector) <- names(all_etfs)
     rs_per_sector <- rs_per_sector[!is.na(rs_per_sector)]
     n_sectors <- length(rs_per_sector)

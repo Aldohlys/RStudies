@@ -15,6 +15,16 @@ SECTOR_MACRO_RULES <- list(
   ConsumerStaples = list(tw = c("vix_stress","s5fi_bear"), hw = c("rates_high","s5fi_bull"))
 )
 
+# ScannerUniverse.Sector label -> key of SECTOR_MACRO_RULES and of the
+# macro_context mismatch table. Families without rules (Real Estate,
+# Utilities, China stocks, ...) get none.
+SECTOR_RULE_KEY <- c(
+  "Energy" = "Energy", "Precious Metals" = "PreciousMetals", "Technology" = "Technology",
+  "Financial" = "Financials", "Industrial" = "Industrials", "Basic Materials" = "Materials",
+  "Agricultural" = "Agriculture", "Defence" = "Defence", "Healthcare" = "Healthcare",
+  "Consumer non cyclical" = "ConsumerStaples"
+)
+
 # Human-readable labels for macro flags
 MACRO_FLAG_LABELS <- c(
   vix_stress    = "VIX stress",
@@ -83,14 +93,18 @@ get_macro_modifier <- function(sec, mm_sectors, macro_bias, macro = NULL) {
 #' @param macro_bias Character bias string
 #' @param get_last_fn Function to get last row from computed
 #' @param macro data.frame of macro_context_results (or NULL)
+#' @param macro_keys Optional named vector: group -> SECTOR_MACRO_RULES key.
+#'   Correlation groups pass their family's key; NULL uses the group name.
 #' @return Named list of sector gate results
 evaluate_sector_gates <- function(sectors, sector_etfs, computed, spy_ret,
-                                   mm_sectors, macro_bias, get_last_fn, macro = NULL) {
+                                   mm_sectors, macro_bias, get_last_fn, macro = NULL,
+                                   macro_keys = NULL) {
   sector_ok <- list()
   for (sec in sectors) {
     etf  <- sector_etfs[sec]
     last <- get_last_fn(computed, etf)
-    mmod <- get_macro_modifier(sec, mm_sectors, macro_bias, macro)
+    key  <- if (is.null(macro_keys)) sec else unname(macro_keys[sec])
+    mmod <- get_macro_modifier(if (is.na(key)) "" else key, mm_sectors, macro_bias, macro)
     if (is.null(last)) {
       sector_ok[[sec]] <- list(long = FALSE, short = FALSE, etf = etf,
         ret20 = NA, rs = NA, macro_mod = mmod)

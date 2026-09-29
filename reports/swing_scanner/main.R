@@ -64,11 +64,21 @@ if (is.null(macro) || nrow(macro) == 0) {
 macro_bias <- macro$bias[1]
 
 # ── Load universe ──────────────────────────────────────────────────────────
-sectors     <- get_sectors()
-sector_etfs <- get_sector_etfs()
+# The sector layer runs on correlation groups (ScannerUniverse.Cluster, max 10
+# co-moving names, anchor = ClusterETF); each group's family (majority Sector)
+# keys the macro rules. Unclassified names are scanned without a sector gate.
+sectors      <- get_groups()
+sector_etfs  <- get_group_anchors()
+group_family <- get_group_sectors()
+unclassified <- get_unclassified()
+if (length(unclassified) > 0)
+  message(sprintf("WARNING: %d scanner names have no correlation group, so no sector gate: %s. Run scripts/cluster_universe.py or set ScannerUniverse.Cluster in DB Browser.",
+                  length(unclassified), paste(unclassified, collapse = ", ")))
+group_stocks <- c(setNames(lapply(sectors, get_group_stocks), sectors),
+                  setNames(list(unclassified), UNCLASSIFIED_GROUP))
 SPY <- "SPY"
-all_etfs   <- c(SPY, unname(sector_etfs))
-all_stocks <- unique(unlist(lapply(sectors, get_sector_stocks)))
+all_etfs   <- unique(c(SPY, unname(sector_etfs)))
+all_stocks <- unique(unlist(group_stocks))
 all_tix    <- unique(c(all_etfs, all_stocks))
 message(sprintf("Universe: %d tickers", length(all_tix)))
 
@@ -87,7 +97,8 @@ computed <- compute_all_indicators(raw, all_tix)
 # ── Sector RS rank (B.2 input) ─────────────────────────────────────────────
 spy_ret <- { l <- get_last(computed, SPY); if (!is.null(l)) l$ret20 else 0 }
 sector_ok <- evaluate_sector_gates(sectors, sector_etfs, computed, spy_ret,
-                                    mm_sectors, macro_bias, get_last, macro)
+                                    mm_sectors, macro_bias, get_last, macro,
+                                    macro_keys = setNames(unname(SECTOR_RULE_KEY[group_family]), names(group_family)))
 long_sectors <- names(Filter(function(x) x$long, sector_ok))
 sector_rs <- sapply(sector_ok[long_sectors], function(x) x$rs)
 sector_rank_map <- setNames(rank(-sector_rs, ties.method = "first"), long_sectors)
@@ -100,10 +111,10 @@ rich_pass_set <- rich_eval$sym[rich_eval$passes_gate == 1]
 trend_cache <- list()
 results <- list()
 
-for (sec in sectors) {
+for (sec in names(group_stocks)) {
   sect_gate <- sector_ok[[sec]]
   etf_ret <- if (!is.null(sect_gate)) sect_gate$ret20 else 0
-  stocks <- intersect(get_sector_stocks(sec), rich_pass_set)
+  stocks <- intersect(group_stocks[[sec]], rich_pass_set)
   for (tk in stocks) {
     last <- get_last(computed, tk)
     if (is.null(last)) next

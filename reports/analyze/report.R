@@ -60,7 +60,7 @@ td.note{color:#555;font-size:13px}
 .TOOLTIPS <- list(
   # Header / classification
   "Spot"                 = "Latest IBKR last-trade price for the underlying.",
-  "Sector"               = "GICS-style sector membership from the ScannerUniverse table.",
+  "Sector"               = "Correlation group: up to 10 scanner names that move together (ScannerUniverse.Cluster, scripts/cluster_universe.py).",
   # Phase B aggregate
   "Sector x-rank"        = "Cross-sectional context (see Phase B sector_rs_rank).",
   # Phase C aggregate
@@ -454,16 +454,16 @@ render_analyze_html <- function(ctx, out_dir) {
     .row(.tt("Direction alignment", "Long ALIGNED iff price > MA50; short ALIGNED iff price < MA50."),
          pb$direction_match %||% "n/a",
          sprintf("user direction <code>%s</code>", direction)),
-    .row(.tt("Sector", "GICS sector from ScannerUniverse."),
+    .row(.tt("Sector", "Correlation group from ScannerUniverse.Cluster: up to 10 scanner names that move together. Its anchor is the group's ETF, or its most central member when no ETF tracks the group."),
          ctx$sector %||% "n/a",
-         sprintf("ETF: <code>%s</code>", ctx$etf_sym %||% "n/a")),
-    .row(.tt("Stock vs Sector ETF (20d)", "Stock 20d return minus sector ETF 20d return. Positive = leader within sector; negative = laggard."),
+         sprintf("anchor: <code>%s</code>", ctx$etf_sym %||% "n/a")),
+    .row(.tt("Stock vs Sector ETF (20d)", "Stock 20d return minus the group anchor's 20d return. Positive = leader within the group; negative = laggard."),
          .fmt_pct(ctx$rs_vs_sector_20d),
          rs_sec_20_note),
-    .row(.tt("Stock vs Sector ETF (60d)", "Stock 60d return minus sector ETF 60d return. Captures slower rotation than 20d."),
+    .row(.tt("Stock vs Sector ETF (60d)", "Stock 60d return minus the group anchor's 60d return. Captures slower rotation than 20d."),
          .fmt_pct(ctx$rs_vs_sector_60d),
          rs_sec_60_note),
-    .row(.tt("Sector vs SPY (20d)", "Sector ETF 20d return minus SPY 20d return. Positive = strong sector; negative = weak."),
+    .row(.tt("Sector vs SPY (20d)", "Group anchor 20d return minus SPY 20d return. Positive = strong group; negative = weak."),
          .fmt_pct(ctx$sector_rs_vs_spy_20d),
          rs_spy_20_note),
     .row(.tt("Sector rank (direction-aware)",
