@@ -31,6 +31,7 @@ source(file.path(SCRIPT_DIR, "..", "shared", "indicators.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "gates.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "zones.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "weekly.R"))
+source(file.path(SCRIPT_DIR, "..", "shared", "market_calendar.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "bot_read.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "universe.R"))
 source(file.path(SCRIPT_DIR, "..", "shared", "live_sources.R"))
@@ -151,9 +152,25 @@ if (!TWS_REACHABLE) {
 }
 CONFIG$tws_reachable <- TWS_REACHABLE
 
+# ── Options market session (TODO 101) ─────────────────────────────────────
+# Outside the session of the name's options market, quotes are frozen or
+# absent and bid/ask widths mean nothing: Phase A, the vol funnel and the
+# option part of Phase D are skipped (provenance SKIPPED) rather than fetched.
+.tk_row <- tryCatch(Tdata::getTicker(args$ticker), error = function(e) NULL)
+OPT_MARKET <- option_market_of(if (!is.null(.tk_row)) .tk_row$OptExchange[1] else NA,
+                               if (!is.null(.tk_row)) .tk_row$Currency[1] else "USD")
+OPT_OPEN <- market_is_open(OPT_MARKET)
+CONFIG$options_open <- OPT_OPEN
+CONFIG$options_closed_reason <- if (OPT_OPEN) NULL else options_closed_reason(OPT_MARKET)
+message(sprintf("Options market %s: %s", OPT_MARKET,
+                if (OPT_OPEN) "open" else "CLOSED - option steps skipped"))
+
 # ── Phase A: option liquidity (informational only) ────────────────────────
 message("Phase A: Option liquidity probe (informational)...")
-phase_a <- run_phase_a(args$ticker, freshness = freshness, config = CONFIG)
+phase_a <- if (OPT_OPEN) run_phase_a(args$ticker, freshness = freshness, config = CONFIG) else
+  list(result = "SKIPPED", n_expiries = NA, tradeable_expiries = NA, source = NA,
+       reason = CONFIG$options_closed_reason, spread = NULL, spread_status = "SKIPPED",
+       spread_reason = CONFIG$options_closed_reason, atm_bid_ask_pct = NA_real_)
 message(sprintf("  A: %s | %s expiries (%s tradeable in 14-90 DTE) | src=%s",
                 phase_a$result,
                 phase_a$n_expiries %||% "n/a",
@@ -186,7 +203,7 @@ message(sprintf("  B: %s | stage=%s align=%s sector=%s rank=%s/%s",
 # ── Phase C: Cheap score + Vol Funnel ─────────────────────────────────────
 message("Phase C: Cheap score + Vol Funnel...")
 phase_c <- run_phase_c(args$ticker, args$direction,
-                       run_funnel = !args$no_vol_funnel,
+                       run_funnel = !args$no_vol_funnel && OPT_OPEN,
                        config = CONFIG,
                        spot = phase_b$price,
                        freshness = freshness,

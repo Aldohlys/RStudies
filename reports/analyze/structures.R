@@ -19,7 +19,10 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     spot <- tryCatch(.live_price(ticker), error = function(e) NA_real_)
   }
 
-  tws_ok <- isTRUE(config$tws_reachable)
+  # Option steps need TWS and an open options market (TODO 101); the price-based
+  # targets below need neither.
+  opt_closed <- config$options_closed_reason
+  tws_ok <- isTRUE(config$tws_reachable) && is.null(opt_closed)
 
   # Resolve TWO expiries — ~30 DTE (faster decay) and ~55 DTE (time cushion).
   # Step 4 rewrite 2026-05-12 (project_analyze_redesign_2026_05.md).
@@ -144,12 +147,12 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
                               else NA_character_,
     strike            = rr_obj$strike,
     expiry            = expiry,
-    expiry_reason     = expiry_reason,
+    expiry_reason     = opt_closed %||% expiry_reason,
     earnings_expiry   = earnings_expiry,
     targets           = targets,
     targets_agreeing  = targets$targets_agreeing,
     chain_state       = chain$chain_state,
-    chain_reason      = chain$reason,
+    chain_reason      = opt_closed %||% chain$reason,
     oi_cap_call       = chain$oi_cap_call,
     oi_cap_put        = chain$oi_cap_put,
     effective_target  = rr_obj$effective_target,
@@ -158,7 +161,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     entry_ceiling     = rr_obj$entry_ceiling,
     headroom_band     = rr_obj$headroom_band,
     entry_state       = rr_obj$entry_state,
-    entry_reason      = rr_obj$reason,
+    entry_reason      = opt_closed %||% rr_obj$reason,
     entry_source      = rr_obj$source,
     structures        = structures,
     n_structures_within_cap = n_within,
@@ -167,9 +170,9 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     stock_struct      = stock_struct,
     spot              = spot,
     # Neutral provenance for the coverage summary (Phase E)
-    chain_status_prov      = chain_status_prov,
-    entry_status_prov      = entry_status_prov,
-    structures_status_prov = structures_status_prov
+    chain_status_prov      = if (is.null(opt_closed)) chain_status_prov else "SKIPPED",
+    entry_status_prov      = if (is.null(opt_closed)) entry_status_prov else "SKIPPED",
+    structures_status_prov = if (is.null(opt_closed)) structures_status_prov else "SKIPPED"
   )
 }
 
@@ -279,6 +282,13 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 }
 
 #' Look up the IBKR option TradingClass for a symbol, defaulting to the symbol.
+#' Contract multiplier from Tickers, defaulting to 100 (equity options).
+.ticker_multiplier <- function(ticker) {
+  m <- suppressWarnings(as.integer(tryCatch(Tdata::getTicker(ticker)$Multiplier[1],
+                                            error = function(e) NA)))
+  if (length(m) != 1 || is.na(m) || m <= 0) 100L else m
+}
+
 .trading_class <- function(ticker) {
   tc <- tryCatch(Tdata::getTicker(ticker)$TradingClass[1],
                  error = function(e) NA_character_)
@@ -512,7 +522,8 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
   right <- if (direction == "long") "C" else "P"
 
   if (!isTRUE(tws_ok)) return(.fetch_failed_structures(
-    "TWS not reachable — cannot price spreads"))
+    config$options_closed_reason %||% "TWS not reachable — cannot price spreads",
+    status = if (is.null(config$options_closed_reason)) "FETCH FAILED" else "SKIPPED"))
   if (is.na(spot)) return(.fetch_failed_structures(
     "spot price unavailable — cannot price spreads"))
   expiries <- expiries[!is.na(expiries) & nzchar(expiries)]
@@ -546,8 +557,11 @@ enumerate_structures <- function(ticker, direction, spot, expiries, vehicle,
         sym = ticker, trading_class = tclass, expiration = exp,
         current_price = spot, moneyness_pct = eff_moneyness,
         spread_width = as.integer(w), right = right,
-        multiplier = 100L, currency = "USD",
-        exchangeSec = "SMART", exchangeOpt = "SMART",
+        # Currency and exchanges resolve from Tickers inside tdata_py (NULL);
+        # hard-coding USD / SMART asked for UBSG as a USD stock on SMART and
+        # every chain request failed after a 60 s timeout (TODO 100).
+        multiplier = .ticker_multiplier(ticker), currency = NULL,
+        exchangeSec = NULL, exchangeOpt = NULL,
         force_refresh = TRUE),
         error = function(e) {
           failures <<- c(failures,

@@ -26,13 +26,13 @@ BOT_ZONE_YEARS  <- 2
 # factor 0.9357) left every earlier pivot 6.9% too high against the chart.
 # Adjusting also removes the ex-date gap from ATR and from the overnight-gap
 # measure. The last bar is unaffected (factor 1), so `px` is the traded price.
-bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL) {
+bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL, market = NULL) {
   d <- tryCatch(getSymIntervalDate(sym, Sys.Date() - round(BOT_FETCH_YEARS * 365), Sys.Date()),
                 error = function(e) NULL)
   if (is.null(d) || nrow(d) < 130) return(NULL)
   d <- d[is.finite(d$Close), , drop = FALSE]
   d$bar_source <- "yahoo"
-  if (!is.null(ib_name)) d <- bot_fill_from_ibkr(d, ib_name)
+  if (!is.null(ib_name)) d <- bot_fill_from_ibkr(d, ib_name, market = market)
   if (adjusted && "Adjusted" %in% names(d)) {
     f <- d$Adjusted / d$Close
     f[!is.finite(f) | f <= 0] <- 1
@@ -61,9 +61,11 @@ bot_read_ticker_rows <- function(names) {
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
     have <- names(DBI::dbGetQuery(conn, "SELECT * FROM Tickers LIMIT 1"))
     DBI::dbGetQuery(conn, sprintf(
-      "SELECT Name, YahooName, ATR_Band, GapShare_Tercile, ATR_MoveCoefHi, %s AS ATR_MoveCoefLo
+      "SELECT Name, YahooName, ATR_Band, GapShare_Tercile, ATR_MoveCoefHi, %s AS ATR_MoveCoefLo,
+              %s AS BOT_Bench
          FROM Tickers WHERE Name IN (%s)",
       if ("ATR_MoveCoefLo" %in% have) "ATR_MoveCoefLo" else "NULL",
+      if ("BOT_Bench" %in% have) "BOT_Bench" else "NULL",
       paste(rep("?", length(names)), collapse = ",")), params = as.list(names))
   }, error = function(e) NULL)
   if (is.null(tk) || !nrow(tk)) return(out)
@@ -74,8 +76,28 @@ bot_read_ticker_rows <- function(names) {
   out$gap_tercile[ok] <- tk$GapShare_Tercile[i[ok]]
   out$coef_hi[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefHi[i[ok]]))
   out$coef_lo[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefLo[i[ok]]))
+  out$bench[ok] <- as.character(tk$BOT_Bench[i[ok]])
   out
 }
+
+#' 20-session return of a benchmark, in percent, for S3 (rs20).
+#'
+#' The benchmark is Tickers.BOT_Bench, a Yahoo symbol (SMH, ^SSMI, EXV1.DE…),
+#' fetched as such. Dividend-adjusted like the names it is compared with.
+#'
+#' @param bench Yahoo symbol, or NA
+#' @return numeric, or NA_real_
+bot_bench_ret20 <- function(bench) {
+  if (is.null(bench) || length(bench) != 1 || is.na(bench) || !nzchar(bench)) return(NA_real_)
+  bd <- tryCatch(getSymIntervalDate(bench, Sys.Date() - 120, Sys.Date(), sym_yahoo = bench),
+                 error = function(e) NULL)
+  if (is.null(bd) || !nrow(bd)) return(NA_real_)
+  cl <- if ("Adjusted" %in% names(bd)) bd$Adjusted else bd$Close
+  cl <- cl[is.finite(cl)]
+  if (length(cl) <= 21) return(NA_real_)
+  (cl[length(cl)] / cl[length(cl) - 20] - 1) * 100
+}
+
 
 #' Append completed sessions Yahoo has not delivered, from IBKR daily bars.
 #'
@@ -93,9 +115,9 @@ bot_read_ticker_rows <- function(names) {
 #' @param d data.frame from getSymIntervalDate(), NA-price rows removed
 #' @param ib_name Tickers.Name, the symbol tdata_py resolves the contract from
 #' @return d, with any appended rows marked bar_source = "ibkr"
-bot_fill_from_ibkr <- function(d, ib_name) {
+bot_fill_from_ibkr <- function(d, ib_name, market = NULL) {
   last <- as.Date(max(d$date))
-  if (bot_bar_lag(last) == 0) return(d)
+  if (bot_bar_lag(last, market = market) == 0) return(d)
   py <- tryCatch(Tdata::tdata_py, error = function(e) NULL)
   if (is.null(py)) return(d)
   b <- tryCatch(py$get_historical_bars(ib_name, duration = "15 D", bar_size = "1 day"),
@@ -127,21 +149,31 @@ bot_fill_from_ibkr <- function(d, ib_name) {
 #' nothing but the `date` column to show it. Exchange holidays count as
 #' missing weekdays; a lag of 1 on the day after a holiday is expected.
 #'
+#' With `market` given and shared/market_calendar.R sourced, the count uses
+#' that listing's business days, so an exchange holiday is not a missing
+#' session; otherwise it counts weekdays.
+#'
 #' @param bar_date last bar date (Date or ISO string)
 #' @param today reference date
+#' @param market MARKETS key of the listing (market_calendar.R), or NULL
 #' @return integer
-bot_bar_lag <- function(bar_date, today = Sys.Date()) {
+bot_bar_lag <- function(bar_date, today = Sys.Date(), market = NULL) {
   bar_date <- as.Date(bar_date)
   if (is.na(bar_date) || bar_date >= today - 1) return(0L)
+  if (!is.null(market) && exists("market_days_between", mode = "function"))
+    return(market_days_between(market, bar_date, today))
   days <- seq(bar_date + 1, today - 1, by = "day")
   sum(!format(days, "%u") %in% c("6", "7"))
 }
+
+.bot_listing <- function(yahoo) if (exists("stock_market_of", mode = "function")) stock_market_of(yahoo) else NULL
 
 bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
   missing <- .bot_read_deps[!vapply(.bot_read_deps, exists, logical(1), mode = "function")]
   if (length(missing))
     stop("bot_read_row() needs these sourced by the caller: ", paste(missing, collapse = ", "))
-  d <- bot_fetch_daily(row$yahoo, ib_name = if (isTRUE(ibkr_fill)) row$name else NULL)
+  listing <- .bot_listing(row$yahoo)
+  d <- bot_fetch_daily(row$yahoo, ib_name = if (isTRUE(ibkr_fill)) row$name else NULL, market = listing)
   if (is.null(d)) return(NULL)
   last <- get_last(list(x = d), "x")
   if (is.null(last) || !nrow(last)) return(NULL)
@@ -257,7 +289,7 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
 
   list(
     date = as.character(as.Date(tail(d$date, 1))),
-    bar_lag = bot_bar_lag(tail(d$date, 1)),
+    bar_lag = bot_bar_lag(tail(d$date, 1), market = listing),
     bar_source = if ("bar_source" %in% names(d)) tail(d$bar_source, 1) else "yahoo",
     name = row$name, yahoo = row$yahoo, direction = direction,
     px = round(px, 4), atr = round(atr, 4), atr_pct = round(atr_pct_now, 3),
@@ -381,7 +413,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "atr_band","gap_tercile","note")
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
 # so it stays short; --detail emits every field.
-BOT_READ_DEFAULT <- c("name","direction","px","tradable","asym",
+BOT_READ_DEFAULT <- c("name","direction","px","atr","tradable","asym",
   "target","target_source","stop","res_pct_of_em10","trend_state","zone_state")
 BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng_dyn",
   "res_first","res_dist_pct","sup_first","sup_dist_pct",

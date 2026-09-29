@@ -333,7 +333,7 @@ run_phase_c <- function(ticker, direction, run_funnel = TRUE, config,
   # PASS/SKIP: LIVE when the funnel produced cheap-score components, a SKIPPED
   # note when the funnel was switched off, FETCH FAILED otherwise.
   result <- if (!is.null(components)) "LIVE"
-            else if (!run_funnel) "SKIPPED (--no-vol-funnel)"
+            else if (!run_funnel) sprintf("SKIPPED (%s)", config$options_closed_reason %||% "--no-vol-funnel")
             else "FETCH FAILED"
 
   vol_character <- .compute_vol_character(ticker, spot, config, want_skew = want_skew)
@@ -468,7 +468,7 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = N
     funnel_detail <- sprintf("%d favorable / %d unfavorable / %d unavailable",
                              t$favorable, t$unfavorable, t$unavailable)
   } else if (isTRUE(grepl("SKIPPED", phase_c$result %||% ""))) {
-    funnel_status <- "SKIPPED"; funnel_detail <- "--no-vol-funnel"
+    funnel_status <- "SKIPPED"; funnel_detail <- config$options_closed_reason %||% "--no-vol-funnel"
   }
 
   # Phase A bid/ask-spread liquidity provenance.
@@ -531,15 +531,15 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = N
 # ── BOT_daily per-name read ──────────────────────────────────────────────
 #
 # The row bot_daily writes for this name and direction, from the same function
-# (shared/bot_read.R). No benchmark is passed yet (TODO 93.4), so rs20 is NA
-# and rs_state reads "n/a". Priced on the Yahoo daily bar, not the live spot:
+# (shared/bot_read.R), with the benchmark from Tickers.BOT_Bench for S3. Priced on the Yahoo daily bar, not the live spot:
 # the zone engine reads the whole daily series, and grafting a live quote onto
 # it would mix two sources. The report states the bar date instead.
 run_bot_read <- function(ticker, direction, ibkr_fill = FALSE) {
   row <- tryCatch(bot_read_ticker_rows(ticker), error = function(e) NULL)
   if (is.null(row) || !nrow(row))
     return(list(status = "FETCH FAILED", reason = "Tickers lookup failed"))
-  r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, NA_real_, ibkr_fill = ibkr_fill),
+  br <- tryCatch(bot_bench_ret20(row$bench[1]), error = function(e) NA_real_)
+  r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, br, ibkr_fill = ibkr_fill),
                 error = function(e) conditionMessage(e))
   if (is.character(r)) return(list(status = "FETCH FAILED", reason = r))
   if (is.null(r))

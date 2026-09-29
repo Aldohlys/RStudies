@@ -32,6 +32,7 @@ source(file.path(SH, "indicators.R"))
 source(file.path(SH, "gates.R"))
 source(file.path(SH, "name_attributes.R"))
 source(file.path(SH, "live_sources.R"))
+source(file.path(SH, "market_calendar.R"))
 
 GATE_VERSION <- "v1"   # bump when eval_gates() changes; makes a stale count detectable
 EM_DAYS      <- 10
@@ -92,6 +93,9 @@ compute_one <- function(tk, fx_rate, tws_up) {
 
   d <- tryCatch(getSymIntervalDate(yh, Sys.Date() - round(FETCH_YEARS * 365), Sys.Date()),
                 error = function(e) NULL)
+  # Yahoo can deliver the last session of a European listing as an all-NA row
+  # (TODO 96); TTR then fails on "non-leading NAs" and the name was lost.
+  if (!is.null(d)) d <- d[is.finite(d$Close) & is.finite(d$High) & is.finite(d$Low), , drop = FALSE]
   if (is.null(d) || nrow(d) < 150)
     return(c(base, list(status = "FAILED", notes = "no price history")))
 
@@ -119,10 +123,24 @@ compute_one <- function(tk, fx_rate, tws_up) {
   bk <- model_call_breakeven(px, sigma, atr_abs, em_abs, dte = 30, multiplier = mult)
 
   ba <- NA_real_; ba_asof <- NA_character_; status <- "OK"
+  # When the probe cannot run — TWS down, or the options market of this name
+  # closed (TODO 101: frozen quotes give meaningless bid/ask) — the previous
+  # month's value is kept rather than overwritten with NULL; its AsOf date
+  # says how old it is.
+  keep_prev <- function(why) {
+    prev <- suppressWarnings(as.numeric(tk$AtmBidAskPct))
+    if (length(prev) == 1 && is.finite(prev)) {
+      ba <<- prev; ba_asof <<- tk$AtmBidAsk_AsOf
+      notes <<- c(notes, sprintf("bid-ask: %s - kept value of %s", why, tk$AtmBidAsk_AsOf))
+    } else notes <<- c(notes, sprintf("bid-ask: %s", why))
+  }
+  opt_mkt <- option_market_of(tk$OptExchange, tk$Currency)
   if (identical(tk$Type, "FUT")) {
     status <- "NA_TYPE"; notes <- c(notes, "bid-ask: not applicable to a future")
   } else if (!tws_up) {
-    notes <- c(notes, "bid-ask: TWS not reachable")
+    keep_prev("TWS not reachable")
+  } else if (!market_is_open(opt_mkt)) {
+    keep_prev(options_closed_reason(opt_mkt))
   } else {
     # resolve_option_spread() prices only the ATM strike and the 30-delta wings
     # rather than the whole chain, and force-refreshes: the parquet cache can
@@ -171,7 +189,7 @@ compute_one <- function(tk, fx_rate, tws_up) {
 conn <- connect()
 migrate(conn)
 tickers <- DBI::dbGetQuery(conn,
-  "SELECT Name, YahooName, Type, Currency, Multiplier FROM Tickers
+  "SELECT Name, YahooName, Type, Currency, Multiplier, OptExchange, AtmBidAskPct, AtmBidAsk_AsOf FROM Tickers
     WHERE Type IN ('STK','ETF','FUT') OR IV = 'YES'")
 DBI::dbDisconnect(conn)
 

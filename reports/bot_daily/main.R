@@ -25,6 +25,7 @@ source(file.path(SH, "indicators.R"))
 source(file.path(SH, "weekly.R"))
 source(file.path(SH, "zones.R"))
 source(file.path(SH, "gates.R"))
+source(file.path(SH, "market_calendar.R"))
 source(file.path(SH, "bot_read.R"))
 
 OUT_DIR    <- "C:/Users/aldoh/Documents/NewTrading/reports"
@@ -58,14 +59,16 @@ load_universe <- function() {
     if (!"BOT_Eligible" %in% names(cols)) NULL else
       DBI::dbGetQuery(conn,
         sprintf("SELECT Name AS name, YahooName AS yahoo, ATR_Band AS atr_band,
-                GapShare_Tercile AS gap_tercile, ATR_MoveCoefHi AS coef_hi, %s AS coef_lo
+                GapShare_Tercile AS gap_tercile, ATR_MoveCoefHi AS coef_hi, %s AS coef_lo,
+                %s AS bench
            FROM Tickers WHERE BOT_Eligible = 1",
-          if ("ATR_MoveCoefLo" %in% names(cols)) "ATR_MoveCoefLo" else "NULL"))
+          if ("ATR_MoveCoefLo" %in% names(cols)) "ATR_MoveCoefLo" else "NULL",
+          if ("BOT_Bench" %in% names(cols)) "BOT_Bench" else "NULL"))
   }, error = function(e) NULL)
 
   if (!is.null(from_tickers) && nrow(from_tickers)) {
     message(sprintf("Universe: %d names from Tickers.BOT_Eligible", nrow(from_tickers)))
-    from_tickers$bench <- NA_character_
+    from_tickers$bench <- as.character(from_tickers$bench)
     return(from_tickers)
   }
 
@@ -103,12 +106,12 @@ message(sprintf("BOT_daily: %d names x %d direction(s)", nrow(uni), length(DIREC
 # Benchmark 20-day returns for S3, one fetch per distinct benchmark.
 bench_ret <- list()
 for (b in unique(stats::na.omit(uni$bench))) {
-  bd <- tryCatch(getSymIntervalDate(b, Sys.Date() - 120, Sys.Date()), error = function(e) NULL)
-  if (!is.null(bd) && nrow(bd) > 21) {
-    cl <- bd$Close[!is.na(bd$Close)]
-    bench_ret[[b]] <- (cl[length(cl)] / cl[length(cl) - 20] - 1) * 100
-  }
+  v <- bot_bench_ret20(b)
+  if (is.finite(v)) bench_ret[[b]] <- v
 }
+message(sprintf("Benchmarks: %d of %d names have one (%d distinct, %d fetched)",
+                sum(!is.na(uni$bench)), nrow(uni), length(unique(stats::na.omit(uni$bench))),
+                length(bench_ret)))
 
 rows <- list()
 for (i in seq_len(nrow(uni))) {
@@ -151,7 +154,7 @@ if (length(filled))
                   length(filled), paste(utils::head(filled, 30), collapse = ", ")))
 stale <- unique(df$name[df$bar_lag > 0])
 if (length(stale))
-  message(sprintf("Stale last bar (weekdays missing, holidays included) for %d name(s): %s",
+  message(sprintf("Stale last bar (sessions missing on the listing's calendar) for %d name(s): %s",
                   length(stale), paste(utils::head(stale, 30), collapse = ", ")))
 message(sprintf("Tradable: %d of %d  (vetoed: %s)", sum(df$tradable == 1L), nrow(df),
                 paste(sprintf("%s %d", names(table(df$veto_reason[df$tradable == 0L])),
