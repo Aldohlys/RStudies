@@ -93,6 +93,11 @@ load_universe <- function() {
 
 # ── Run ────────────────────────────────────────────────────────────────────
 uni <- load_universe()
+# Missing last sessions (European listings on Yahoo) are filled from IBKR when
+# TWS is reachable; one probe per run.
+ibkr_fill <- tryCatch(isTRUE(Tdata::isIBAvailable()), error = function(e) FALSE)
+message(if (ibkr_fill) "TWS reachable - missing last sessions filled from IBKR daily bars"
+        else "TWS not reachable - missing last sessions stay missing (bar_lag > 0)")
 message(sprintf("BOT_daily: %d names x %d direction(s)", nrow(uni), length(DIRECTIONS)))
 
 # Benchmark 20-day returns for S3, one fetch per distinct benchmark.
@@ -110,7 +115,7 @@ for (i in seq_len(nrow(uni))) {
   r <- uni[i, , drop = FALSE]
   br <- if (!is.na(r$bench) && !is.null(bench_ret[[r$bench]])) bench_ret[[r$bench]] else NA_real_
   for (dir in DIRECTIONS) {
-    out <- tryCatch(bot_read_row(r, dir, br), error = function(e) {
+    out <- tryCatch(bot_read_row(r, dir, br, ibkr_fill = ibkr_fill), error = function(e) {
       message(sprintf("  %s (%s): %s", r$name, dir, conditionMessage(e))); NULL })
     if (!is.null(out)) rows[[length(rows) + 1]] <- out
   }
@@ -140,6 +145,10 @@ out <- if (detail) df else df[, BOT_READ_DEFAULT, drop = FALSE]
 utils::write.table(out, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
 
 message(sprintf("Wrote %d rows x %d cols -> %s", nrow(out), ncol(out), out_path))
+filled <- unique(df$name[df$bar_source == "ibkr"])
+if (length(filled))
+  message(sprintf("Last session filled from IBKR for %d name(s): %s",
+                  length(filled), paste(utils::head(filled, 30), collapse = ", ")))
 stale <- unique(df$name[df$bar_lag > 0])
 if (length(stale))
   message(sprintf("Stale last bar (weekdays missing, holidays included) for %d name(s): %s",

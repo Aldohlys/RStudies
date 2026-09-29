@@ -210,7 +210,7 @@ message(sprintf("  D: structures=%s chain=%s entry=%s | targets_agreeing=%s | wi
 
 # ── BOT_daily per-name read (the same function bot_daily loops) ───────────
 message("BOT_daily read...")
-bot_read <- run_bot_read(args$ticker, args$direction)
+bot_read <- run_bot_read(args$ticker, args$direction, ibkr_fill = TWS_REACHABLE)
 message(sprintf("  BOT: %s%s", bot_read$status,
                 if (!is.null(bot_read$row))
                   sprintf(" | bar %s (lag %d) tradable=%s zone_state=%s target=%s stop=%s",

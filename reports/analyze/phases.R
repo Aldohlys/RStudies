@@ -271,11 +271,32 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
 #' otherwise) and falls back to Yahoo. getLastSymPrice alone is Yahoo's
 #' ADJUSTED daily close — a day stale and dividend-adjusted, so it drifts from
 #' the live quote (REMX 2026-06-03: Yahoo 102 vs IBKR 97.81).
+#'
+#' With TWS down, getStockPrice() returns the last row of the Prices table,
+#' which can be days old (XOP 2026-09-24: 167.82 against a Yahoo bar of
+#' 182.65, and Phase D computed its targets from it). So when TWS is
+#' unreachable the Yahoo last close — the bar BOT_daily reads, raw not
+#' adjusted — comes first, and the Prices table only when Yahoo has nothing.
 .live_price <- function(ticker) {
+  tws <- if (exists("TWS_REACHABLE", inherits = TRUE)) isTRUE(TWS_REACHABLE)
+         else tryCatch(isTRUE(Tdata::isIBAvailable()), error = function(e) FALSE)
+  if (!tws) {
+    y <- .yahoo_last_close(ticker)
+    if (!is.na(y) && y > 0) return(y)
+  }
   v <- .pluck_price(tryCatch(Tdata::getStockPrice(ticker, close = FALSE),
                              error = function(e) NULL))
   if (!is.na(v) && v > 0) return(v)
   .pluck_price(tryCatch(Tdata::getLastSymPrice(ticker), error = function(e) NULL))
+}
+
+#' Last non-empty Yahoo daily close (raw, not dividend-adjusted), or NA.
+.yahoo_last_close <- function(ticker) {
+  d <- tryCatch(Tdata::getSymIntervalDate(ticker, Sys.Date() - 10, Sys.Date()),
+                error = function(e) NULL)
+  if (is.null(d) || !nrow(d)) return(NA_real_)
+  cl <- d$Close[is.finite(d$Close)]
+  if (length(cl)) as.numeric(utils::tail(cl, 1)) else NA_real_
 }
 
 # ── PHASE C (C.1 cheap score; C.2 funnel handled in funnel.R) ────────────
@@ -514,11 +535,11 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = N
 # and rs_state reads "n/a". Priced on the Yahoo daily bar, not the live spot:
 # the zone engine reads the whole daily series, and grafting a live quote onto
 # it would mix two sources. The report states the bar date instead.
-run_bot_read <- function(ticker, direction) {
+run_bot_read <- function(ticker, direction, ibkr_fill = FALSE) {
   row <- tryCatch(bot_read_ticker_rows(ticker), error = function(e) NULL)
   if (is.null(row) || !nrow(row))
     return(list(status = "FETCH FAILED", reason = "Tickers lookup failed"))
-  r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, NA_real_),
+  r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, NA_real_, ibkr_fill = ibkr_fill),
                 error = function(e) conditionMessage(e))
   if (is.character(r)) return(list(status = "FETCH FAILED", reason = r))
   if (is.null(r))

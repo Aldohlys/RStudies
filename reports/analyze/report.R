@@ -1121,7 +1121,7 @@ render_analyze_html <- function(ctx, out_dir) {
                    'differ by %.1f%%%s. Phase D&rsquo;s targets are computed from that spot, ',
                    'BOT_daily&rsquo;s from the bar, so the comparison below mixes two prices.</div>'),
             r$px, spot, gap,
-            if (!isTRUE(config$tws_reachable)) " &mdash; TWS unreachable, the spot is the Prices table&rsquo;s last value" else "")
+            if (!isTRUE(config$tws_reachable)) " &mdash; TWS unreachable, the spot is Yahoo&rsquo;s last close (the Prices table only when Yahoo has none)" else "")
     else ""
   note <- paste0('<div class="warn-box">Zones describe the chart; they show no measured reaction ',
                  'edge over a random level (BOT spec &sect;3.3, TODO 94). ',

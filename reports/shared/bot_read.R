@@ -26,10 +26,13 @@ BOT_ZONE_YEARS  <- 2
 # factor 0.9357) left every earlier pivot 6.9% too high against the chart.
 # Adjusting also removes the ex-date gap from ATR and from the overnight-gap
 # measure. The last bar is unaffected (factor 1), so `px` is the traded price.
-bot_fetch_daily <- function(sym, adjusted = TRUE) {
+bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL) {
   d <- tryCatch(getSymIntervalDate(sym, Sys.Date() - round(BOT_FETCH_YEARS * 365), Sys.Date()),
                 error = function(e) NULL)
   if (is.null(d) || nrow(d) < 130) return(NULL)
+  d <- d[is.finite(d$Close), , drop = FALSE]
+  d$bar_source <- "yahoo"
+  if (!is.null(ib_name)) d <- bot_fill_from_ibkr(d, ib_name)
   if (adjusted && "Adjusted" %in% names(d)) {
     f <- d$Adjusted / d$Close
     f[!is.finite(f) | f <= 0] <- 1
@@ -74,6 +77,48 @@ bot_read_ticker_rows <- function(names) {
   out
 }
 
+#' Append completed sessions Yahoo has not delivered, from IBKR daily bars.
+#'
+#' Yahoo returns an empty row for the last session of European listings for
+#' most of the next day (UBSG, TTE, BNP, SIE, NOVN on 2026-09-29: the 09-28 row
+#' all NA), so their read lags a session. IBKR has the bar. Only sessions after
+#' the last Yahoo bar and before today are appended — today's bar is partial.
+#' The IBKR close is the last trade, not the official closing auction (within
+#' ~0.5% on those names), and IBKR volume misses part of the auction and, for
+#' US names, off-exchange volume (ratio ~0.56 on AAPL); volume is therefore
+#' rescaled by the median IBKR/Yahoo ratio over the overlapping days, so the
+#' volume gates read the added bar on Yahoo's scale. Adjusted = Close on the
+#' new rows: the adjustment factor of the latest bars is 1.
+#'
+#' @param d data.frame from getSymIntervalDate(), NA-price rows removed
+#' @param ib_name Tickers.Name, the symbol tdata_py resolves the contract from
+#' @return d, with any appended rows marked bar_source = "ibkr"
+bot_fill_from_ibkr <- function(d, ib_name) {
+  last <- as.Date(max(d$date))
+  if (bot_bar_lag(last) == 0) return(d)
+  py <- tryCatch(Tdata::tdata_py, error = function(e) NULL)
+  if (is.null(py)) return(d)
+  b <- tryCatch(py$get_historical_bars(ib_name, duration = "15 D", bar_size = "1 day"),
+                error = function(e) NULL)
+  if (is.null(b)) return(d)
+  b <- as.data.frame(b)
+  if (!nrow(b) || !all(c("datetime", "open", "high", "low", "close", "volume") %in% names(b))) return(d)
+  b$date <- as.Date(b$datetime)
+  ov <- merge(d[, c("date", "Volume")], b[, c("date", "volume")], by = "date")
+  ratio <- stats::median(ov$volume / ov$Volume, na.rm = TRUE)
+  if (!is.finite(ratio) || ratio <= 0) ratio <- 1
+  new <- b[b$date > last & b$date < Sys.Date() & is.finite(b$close), , drop = FALSE]
+  if (!nrow(new)) return(d)
+  add <- d[rep(nrow(d), nrow(new)), , drop = FALSE]
+  add$date <- if (inherits(d$date, "Date")) new$date else as.character(new$date)
+  add$Open <- new$open; add$High <- new$high; add$Low <- new$low; add$Close <- new$close
+  if ("Adjusted" %in% names(add)) add$Adjusted <- new$close
+  add$Volume <- round(new$volume / ratio)
+  add$bar_source <- "ibkr"
+  out <- rbind(d, add)
+  out[order(as.Date(out$date)), , drop = FALSE]
+}
+
 #' Weekdays missing between the last daily bar and today.
 #'
 #' 0 when the bar is today's (partial, intraday) or the previous weekday's.
@@ -92,11 +137,11 @@ bot_bar_lag <- function(bar_date, today = Sys.Date()) {
   sum(!format(days, "%u") %in% c("6", "7"))
 }
 
-bot_read_row <- function(row, direction, bench_ret20) {
+bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
   missing <- .bot_read_deps[!vapply(.bot_read_deps, exists, logical(1), mode = "function")]
   if (length(missing))
     stop("bot_read_row() needs these sourced by the caller: ", paste(missing, collapse = ", "))
-  d <- bot_fetch_daily(row$yahoo)
+  d <- bot_fetch_daily(row$yahoo, ib_name = if (isTRUE(ibkr_fill)) row$name else NULL)
   if (is.null(d)) return(NULL)
   last <- get_last(list(x = d), "x")
   if (is.null(last) || !nrow(last)) return(NULL)
@@ -213,6 +258,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
   list(
     date = as.character(as.Date(tail(d$date, 1))),
     bar_lag = bot_bar_lag(tail(d$date, 1)),
+    bar_source = if ("bar_source" %in% names(d)) tail(d$bar_source, 1) else "yahoo",
     name = row$name, yahoo = row$yahoo, direction = direction,
     px = round(px, 4), atr = round(atr, 4), atr_pct = round(atr_pct_now, 3),
     atr_pctile = round(atr_pctile, 1), prior20_atr = round(prior20_atr, 2),
@@ -314,7 +360,7 @@ bot_read_row <- function(row, direction, bench_ret20) {
 }
 
 # Column order and tiers are the spec's, kept here so a schema change is one edit.
-BOT_READ_COLS <- c("date","bar_lag","name","yahoo","direction","tradable","veto_reason","zone_state",
+BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tradable","veto_reason","zone_state",
   "px","atr","atr_pct","atr_pctile","prior20_atr","entry_factors",
   "zz_th","n_pivots",
   "rng_pct_20","rng_dyn","zone_window_sessions",
