@@ -75,10 +75,10 @@ td.note{color:#555;font-size:13px}
   "Skew (RR 25Δ)"   = "Risk-reversal at 25-delta in vol-points: (call25 IV - put25 IV) * 100. Positive = calls bid.",
   "Earnings"             = "Days until next earnings (from yfinance). Negative = past, 0-14 = inside event window.",
   # Phase D
-  "spot_target_low"      = "NEAREST structural target to spot (drives effective target & R:R), from prior swing high/low, 52w high/low, or round number. Long: lower price; short: higher price (first downside level).",
-  "spot_target_high"     = "FARTHER structural target. Long: higher price; short: lower price. '—' when a single corroborated level (e.g. swing high == 52w high).",
-  "targets_agreeing"     = "Count of consensus sources agreeing within ±2% (range 0-3). More agreement = a sharper structural target.",
-  "fib_confirms"         = "TRUE if Fibonacci 1.272/1.618 lands within ±2% of the structural target.",
+  "spot_target_low" = "Target from the level engine (zone, flipped zone, zone spot stands in, or Fibonacci 1.272), capped at the expected move over the option horizon; drives the effective target and R:R. Same engine as BOT_daily.",
+  "spot_target_high" = "Next level beyond the target: the next zone, else the Fibonacci 1.618, with the same cap. Blank when there is none.",
+  "targets_agreeing" = "Level systems agreeing on the target: 2 when the Fibonacci 1.272 falls inside the target zone, else 1.",
+  "fib_confirms" = "TRUE if the Fibonacci 1.272 falls inside the target zone.",
   "move_position"        = "Move maturity: how far the move has travelled from its swing base to the nearest structural target — (a) % of that leg, (b) the nearest Fibonacci rung, and the next extension rung priced out as a forward level. The base is the most recent swing pivot (local low for longs / high for shorts) within the move_lookback_days window (default 40d, sized to the 2-4 week breakout horizon; tunable in config.yml), NOT the multi-month swing low. High % / near the 1.0 rung = an extended move with little room left to the wall; low % = early. Descriptive only — does not feed scoring or flow.",
   "expiry"               = "Selected expiration (YYYYMMDD). Picked live from IBKR ~45 DTE if scanner CSV is silent.",
   "oi_cap_call"          = "Strike with the largest call open interest in [-25%, +25%] of spot — magnetic resistance.",
@@ -702,7 +702,7 @@ render_analyze_html <- function(ctx, out_dir) {
   # as "—" with a note, distinct from a genuine fetch failure.
   single_target <- !is.na(t$spot_target_low) && is.na(t$spot_target_high)
   high_cell <- if (single_target) "&mdash;" else .fmt_cell(t$spot_target_high, t_reason)
-  high_note <- if (single_target) "single corroborated target (see agreeing)" else ""
+  high_note <- if (single_target) "no next level beyond the target" else ""
 
   # Move position — how far the move has travelled from its swing base toward the
   # nearest target (1a: % of leg), expressed on the Fib ladder (1b: rung + next
@@ -710,21 +710,22 @@ render_analyze_html <- function(ctx, out_dir) {
   mv_pct <- t$move_pct; mv_base <- t$move_base
   mv_fib <- t$move_fib; mv_next <- t$move_next_ext; mv_lb <- t$move_lookback
   move_val <- if (is.null(mv_pct) || is.na(mv_pct)) .fmt_cell(NA, t_reason)
-    else sprintf("%.1f%% of base&rarr;target leg &middot; ~%s rung%s",
-                 mv_pct, mv_fib %||% "n/a",
+    else sprintf("%.1f%% of base&rarr;target leg%s%s",
+                 mv_pct,
+                 if (!is.null(mv_fib) && !is.na(mv_fib)) sprintf(" &middot; ~%s rung", mv_fib) else "",
                  if (!is.null(mv_next) && !is.na(mv_next))
-                   sprintf(" &middot; next ext %s", mv_next) else "")
+                   sprintf(" &middot; Fibonacci 1.618 at %s", mv_next) else "")
   move_note <- if (!is.null(mv_base) && !is.na(mv_base))
     sprintf("base = swing %s %.2f%s", if (direction == "long") "low" else "high", mv_base,
             if (!is.null(mv_lb) && !is.na(mv_lb)) sprintf(" (%dd lookback)", as.integer(mv_lb)) else "")
     else ""
 
   targets_html <- paste0(src_caption, sprintf(paste0(
-    '<h3>Structural target sources</h3>',
+    sprintf('<h3>Targets &mdash; %s</h3>', t$source %||% 'level engine'),
     '<table><tr><th>Field</th><th>Value</th><th>Note</th></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note"></td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
-    '<tr><td>%s</td><td class="value">%s</td><td class="note">cutoff &ge; 2</td></tr>',
+    '<tr><td>%s</td><td class="value">%s</td><td class="note">zone + Fibonacci 1.272</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">overlay only</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
     '<tr><td>%s</td><td class="value">%s</td><td class="note">%s</td></tr>',
@@ -738,7 +739,8 @@ render_analyze_html <- function(ctx, out_dir) {
       if (is.na(t$fib_confirms)) (.fmt_cell(NA, t_reason)) else as.character(t$fib_confirms),
     .tt("Move position", override = .TOOLTIPS[["move_position"]]),
       move_val, move_note,
-    .tt("expiry"), .fmt_cell(pd$expiry, pd$expiry_reason),
+    .tt("expiry"), .fmt_cell(pd$expiry, pd$expiry_reason,
+                           status = if (isTRUE(grepl("options market closed", pd$expiry_reason))) "SKIPPED" else "FETCH FAILED"),
     if (!is.null(pd$expiry_reason)) "live-picked from IBKR" else "from scanner CSV"))
 
   c_reason <- pd$chain_reason
@@ -1161,28 +1163,6 @@ render_analyze_html <- function(ctx, out_dir) {
     row("stop", sprintf("%s (%s)", f(r$stop), r$stop_source), "", "", "", ""),
     '</table>')
 
-  # Second BOT level: the next zone's near edge, else the next Fibonacci rung.
-  long <- direction != "short"
-  nxt <- if (!is.na(r$res2_zone_lo)) (if (long) r$res2_zone_lo else r$res2_zone_hi) else
-    if (identical(r$target_source, "fib_ext")) r$fib_ext_1618 else r$fib_ext_1272
-  nxt_src <- if (!is.na(r$res2_zone_lo)) "next zone" else
-    if (identical(r$target_source, "fib_ext")) "fib 1.618" else "fib 1.272"
-  t <- pd$targets %||% list()
-  stop_pct <- as.numeric(config$stock_stop_pct %||% 0.05) * 100
-  cmp <- sprintf(paste0(
-    '<h3>Targets compared</h3>',
-    '<p class="sub">Distances from the /analyze spot for both engines. Which one to keep is TODO 93.6.</p>',
-    '<table><tr><th></th><th>BOT_daily (zones / Fibonacci)</th><th>Phase D (structural)</th></tr>',
-    '<tr><td>target</td><td class="value">%s %s &nbsp;%s</td><td class="value">%s &nbsp;%s</td></tr>',
-    '<tr><td>next level</td><td class="value">%s %s &nbsp;%s</td><td class="value">%s &nbsp;%s</td></tr>',
-    '<tr><td>stop</td><td class="value">%s %s &nbsp;%s</td><td class="note">none &mdash; the stock row uses a fixed %.0f%% parameter</td></tr>',
-    '</table>'),
-    f(r$target), r$target_source, vs_spot(r$target),
-    f(t$spot_target_low), vs_spot(t$spot_target_low),
-    f(nxt), nxt_src, vs_spot(nxt),
-    f(t$spot_target_high), vs_spot(t$spot_target_high),
-    f(r$stop), r$stop_source, vs_spot(r$stop), stop_pct)
-
   all_rows <- paste0(vapply(names(r), function(k)
     sprintf('<tr><td>%s</td><td class="value">%s</td></tr>', k,
             if (is.null(r[[k]]) || all(is.na(r[[k]]))) "n/a" else as.character(r[[k]])),
@@ -1190,5 +1170,5 @@ render_analyze_html <- function(ctx, out_dir) {
   all_tbl <- sprintf('<details><summary>All %d fields</summary><table><tr><th>Field</th><th>Value</th></tr>%s</table></details>',
                      length(r), all_rows)
 
-  paste0(head, sub, stale, mixed, note, entry, levels, cmp, all_tbl)
+  paste0(head, sub, stale, mixed, note, entry, levels, all_tbl)
 }

@@ -65,9 +65,10 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 
   # Targets: ALWAYS live-compute (direction-aware). Scanner CSV is LONG-only
   # and can't be reused for shorts (wrong tail). Step 4 rewrite 2026-05-12.
-  move_lookback <- as.integer(config$move_lookback_days %||% 40L)
-  targets <- .live_targets(ticker, spot, direction = direction,
-                           move_lookback = move_lookback)
+  # One target engine with BOT_daily (TODO 93.6): level_read() on the same
+  # dividend-adjusted series, the target capped at the expected move over the
+  # horizon of the primary expiry rather than BOT_daily's 10 sessions.
+  targets <- .level_targets(ticker, direction = direction, expiry = expiry)
 
   # Chain / OI: resolver (DB-fresh → live get_chain_oi). CSV oi_cap_call/_put
   # in scanner row are last-resort fallback if both DB and live fail.
@@ -214,16 +215,17 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
 }
 
 #' Build a one-row stock-only structure (vehicle == "stock"). R:R is computed
-#' off a mechanical stop band: 5% adverse for the entry stop, structural target
-#' for the reward. Returns a data.frame or NULL when spot/targets are missing.
+#' off the level engine's stop and target (see .level_targets()). Returns a data.frame or NULL when spot/targets are missing.
 .stock_structure <- function(direction, spot, targets, config) {
   if (is.null(spot) || is.na(spot)) return(NULL)
   tgt <- if (direction == "long") targets$spot_target_low
          else targets$spot_target_low  # both tails use the closer level
   if (is.null(tgt) || is.na(tgt)) return(NULL)
+  # The level engine's stop (1.0 - 2.5 ATR) when it has one; the fixed
+  # percentage only as a fallback.
   stop_pct <- as.numeric(config$stock_stop_pct %||% 0.05)
-  stop_lvl <- if (direction == "long") spot * (1 - stop_pct)
-              else                      spot * (1 + stop_pct)
+  stop_lvl <- if (is.finite(targets$stop %||% NA_real_)) targets$stop
+              else if (direction == "long") spot * (1 - stop_pct) else spot * (1 + stop_pct)
   risk_ps   <- abs(spot - stop_lvl)
   reward_ps <- abs(tgt - spot)
   rr <- if (risk_ps > 0) reward_ps / risk_ps else NA_real_
@@ -240,45 +242,67 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   )
 }
 
-#' Live-compute direction-aware structural targets via 300-day OHLC + shared
-#' compute_structural_target(). For shorts, targets are below current price
-#' (prior swing lows / 52w low / round below). For longs, above.
-.live_targets <- function(ticker, spot, direction = "long",
-                          move_lookback = 40) {
-  if (is.na(spot)) return(list(
+#' Targets and stop for Phase D from level_read(), the BOT_daily level engine.
+#'
+#' Same construction as BOT_daily (zones with polarity, Fibonacci fallback,
+#' stop held between 1.0 and 2.5 ATR), with one difference: the target is
+#' capped at the 80%-band expected move over the option horizon — the sessions
+#' to the primary expiry (about 21 for 30 DTE), not 10 — since Phase D prices
+#' 30 / 55 DTE structures. Replaces compute_structural_target() here: over 274
+#' names the two engines' targets were unrelated (Spearman -0.04) and 32% of
+#' the structural ones lay beyond even the 10-session move (TODO 93.6).
+#'
+#' @return list(spot_target_low, spot_target_high, targets_agreeing,
+#'   fib_confirms, move_*, stop, stop_source, target_source, horizon_sessions,
+#'   source, reason) — the fields Phase D and the report read
+.level_targets <- function(ticker, direction = "long", expiry = NA_character_) {
+  empty <- function(reason) list(
     spot_target_low = NA_real_, spot_target_high = NA_real_,
-    targets_agreeing = NA_integer_, fib_confirms = NA,
-    source = "live", reason = "spot price unavailable"))
-  raw <- tryCatch(fetch_single_ohlcv(ticker), error = function(e) NULL)
-  if (is.null(raw) || nrow(raw) < 60) return(list(
-    spot_target_low = NA_real_, spot_target_high = NA_real_,
-    targets_agreeing = NA_integer_, fib_confirms = NA,
-    source = "live",
-    reason = "OHLC history insufficient (<60 days) for structural targets"))
-  raw <- raw[order(raw$date), ]
-  res <- tryCatch(compute_structural_target(spot, raw$Close, raw$High,
-                                             hist_low = raw$Low,
-                                             direction = direction,
-                                             move_lookback = move_lookback),
-                  error = function(e) NULL)
-  if (is.null(res)) return(list(
-    spot_target_low = NA_real_, spot_target_high = NA_real_,
-    targets_agreeing = NA_integer_, fib_confirms = NA,
-    source = "live", reason = "compute_structural_target failed"))
+    targets_agreeing = NA_integer_, fib_confirms = NA, stop = NA_real_,
+    source = "level_read", reason = reason)
+  row <- tryCatch(bot_read_ticker_rows(ticker)[1, , drop = FALSE], error = function(e) NULL)
+  if (is.null(row)) return(empty("Tickers lookup failed"))
+  d <- tryCatch(bot_fetch_daily(row$yahoo), error = function(e) NULL)
+  if (is.null(d) || nrow(d) < 130) return(empty("daily history too short for level_read"))
+  long <- !identical(direction, "short")
+  px <- tail(d$Close, 1); atr <- tail(d$atr14, 1)
+  dte <- if (!is.null(expiry) && !is.na(expiry) && nzchar(expiry))
+           as.numeric(as.Date(as.character(expiry), "%Y%m%d") - Sys.Date()) else 30
+  if (!is.finite(dte) || dte < 1) dte <- 30
+  n <- max(5L, as.integer(round(dte * 252 / 365)))
+  em <- tryCatch(atr_expected_move(row$yahoo, n, conf = 0.80, spot = px), error = function(e) NULL)
+  em_pct <- if (is.null(em)) NA_real_ else if (long) em$move_upper_pct else abs(em$move_lower_pct)
+  em_abs <- if (length(em_pct) == 1 && is.finite(em_pct)) px * em_pct / 100 else NA_real_
+  zd <- d[as.Date(d$date) >= Sys.Date() - round(BOT_ZONE_YEARS * 365), , drop = FALSE]
+  lr <- tryCatch(level_read(if (nrow(zd) >= 130) zd else d, atr, em_abs, direction = direction),
+                 error = function(e) NULL)
+  if (is.null(lr) || !is.finite(lr$target)) return(empty("level_read found no target"))
+  sgn <- if (long) 1 else -1
+  cap <- function(x) if (is.finite(x) && is.finite(em_abs) && sgn * (x - px) > em_abs) px + sgn * em_abs else x
+  # Second level: the next zone's near edge, else the far Fibonacci rung.
+  nxt <- if (!is.null(lr$res2)) (if (long) lr$res2$lo else lr$res2$hi) else lr$target_fib_far
+  nxt <- cap(nxt)
+  if (!is.finite(nxt) || abs(nxt - lr$target) < 1e-9 || sgn * (nxt - lr$target) <= 0) nxt <- NA_real_
+  fb <- lr$fib
+  base <- if (!is.null(fb)) (if (long) fb$leg_low else fb$leg_high) else NA_real_
+  mv <- if (is.finite(base) && abs(lr$target - base) > 0) (px - base) / (lr$target - base) * 100 else NA_real_
   list(
-    spot_target_low  = res$spot_target_low,
-    spot_target_high = res$spot_target_high,
-    targets_agreeing = res$targets_agreeing,
-    fib_confirms     = res$fib_confirms,
-    move_base        = res$move_base,
-    move_pct         = res$move_pct,
-    move_fib         = res$move_fib,
-    move_next_ext    = res$move_next_ext,
-    move_lookback    = res$move_lookback %||% move_lookback,
+    spot_target_low  = lr$target,
+    spot_target_high = nxt,
+    targets_agreeing = 1L + as.integer(isTRUE(lr$fib_confirms_res)),
+    fib_confirms     = isTRUE(lr$fib_confirms_res),
+    move_base        = base,
+    move_pct         = round(mv, 1),
+    move_fib         = NA_character_,
+    move_next_ext    = if (!is.null(fb)) round(unname(fb$ext[2]), 2) else NA_real_,
+    move_lookback    = NA_integer_,
+    stop             = lr$stop_px,
+    stop_source      = lr$stop_source,
+    target_source    = lr$target_source,
+    horizon_sessions = n,
     direction        = direction,
-    source           = "live OHLC",
-    reason           = NULL
-  )
+    source           = sprintf("level_read, %d-session horizon", n),
+    reason           = NULL)
 }
 
 #' Look up the IBKR option TradingClass for a symbol, defaulting to the symbol.
