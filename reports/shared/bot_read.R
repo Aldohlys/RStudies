@@ -182,7 +182,8 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
   atr <- as.numeric(tail(d$atr14, 1))
   if (!is.finite(px) || !is.finite(atr) || atr <= 0) return(NULL)
 
-  # Expected move: the denominator for every "% of a typical 10-day move".
+  # Expected move: the denominator for every "% of em10" - the 90th-percentile
+  # 10-session move, the size of a winning BOT trade (spec §3.7).
   # em10 = today's ATR% x sqrt(10) x the name's 10-session move coefficient
   # (10th / 90th percentile of its standardised signed moves over 8 years).
   # The coefficient is a ratio, so it moves little in a month and dividend
