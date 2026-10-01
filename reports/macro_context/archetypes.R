@@ -82,10 +82,16 @@ ARCHETYPES <- list(
     movie = "Energy prices rise for supply reasons, not demand. Inflation goes up while growth goes down; the central bank cannot cut. The consumer is squeezed (discretionary underperforms staples), margins compress, and the curve flattens as policy stays tight.",
     analogs = "1973-74 (oil quadrupled, S&P -48%, gold up strongly); 1979-80 (Iran, gold to $850, Volcker); August 1990 (Iraq invades Kuwait, oil doubles, recession); H1 2008 (oil to $147 in July just before the crash); H1 2022 (Russia-Ukraine).",
     after = "Supply shocks end in demand destruction: oil peaks, then growth slows and the regime hands over to a growth scare or recession. In 1990 and 2008 the oil peak preceded the equity low by months.",
-    tells = "Oil up while copper falls; inflation expectations (TIPS vs Treasuries) up; discretionary vs staples down; consumer sentiment down.",
+    tells = "Oil up while copper falls; inflation expectations (TIPS vs Treasuries) up; discretionary vs staples down; consumer sentiment down; Treasuries sold with the dollar up as oil importers raise dollars.",
     invalid = "Oil up with copper and breadth up (demand-driven reflation).",
     bot = list(long = c("XOP", "OIH", "FCG", "XLE", "GDX", "DBA", "MOO"), short = c("XLY", "XRT", "CARZ", "ITB", "IGV"),
-               note = "Energy and real-asset breakouts work; consumer and long-duration shorts work. Exit energy longs on the first sign of demand destruction (oil down while copper down).")
+               note = "Energy and real-asset breakouts work; consumer and long-duration shorts work. Exit energy longs on the first sign of demand destruction (oil down while copper down)."),
+    # Conditional chain, shown under the scenario cards whatever this scenario's rank:
+    # each step is a fingerprint asset that must be clearly up (z >= CHAIN_ON); the first one is the trigger.
+    chain = list(
+      name = "Oil to yields (petrodollar)",
+      steps = c("OIL", "USD", "US10Y"),
+      text = "Oil is paid in dollars. When it rises, importers need more dollars; their central banks and reserve holders raise them by selling US Treasuries, so long US yields rise with the dollar even without a change in inflation expectations. A bond market already under stress then reprices equities.")
   ),
   list(
     id = "reflation", name = "Reflation / global recovery",
@@ -228,6 +234,22 @@ describe_z <- function(k, zv) {
   dir <- if (zv > 0) "up" else "down"
   if (k %in% c("US10Y", "BUND", "GILT", "CURVE")) dir <- if (zv > 0) "higher" else "lower"
   sprintf("%s %s %s", fp_label(k), word, dir)
+}
+
+CHAIN_ON <- 1   # z-score at which a chain step counts as moving ("clearly up")
+
+#' Status of an archetype's conditional chain against today's z-scores
+chain_status <- function(ch, z) {
+  zs <- z[ch$steps]
+  on <- !is.na(zs) & zs >= CHAIN_ON
+  rest <- paste(vapply(ch$steps[-1], fp_label, ""), collapse = " and ")
+  status <- if (all(on)) "Firing: every link is moving."
+    else if (on[1]) sprintf("Triggered: %s is up; %s are the next links.", tolower(fp_label(ch$steps[1])), rest)
+    else if (all(on[-1])) sprintf("Not triggered: %s already up without %s, for another reason; a rally in %s would add to it.",
+                                  rest, tolower(fp_label(ch$steps[1])), tolower(fp_label(ch$steps[1])))
+    else "Not triggered."
+  list(on = on, status = status,
+       steps = vapply(seq_along(ch$steps), function(i) sprintf("%s (z %+.1f)", fp_label(ch$steps[i]), zs[i]), ""))
 }
 
 # ── Persistence: how long has each scenario been in place? ──────────────────

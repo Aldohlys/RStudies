@@ -76,11 +76,13 @@ SECTIONS <- list(
       c("HG=F", "Copper", "price"),
       c("ZW=F", "Wheat", "price"),
       c("ZC=F", "Corn", "price"),
-      c("URA", "Uranium", "price"),
+      c("SRUUF", "Uranium (Sprott physical trust)", "price"),
+      c("URA", "Uranium miners", "price"),
       c("DBC", "Broad commodities", "price")
     ),
     ratios = list(
       c("HG=F", "GC=F", "Copper / Gold", "Up = growth expectations rising; tracks the 10-year yield"),
+      c("URA", "SRUUF", "Uranium miners / uranium", "Up = equity investors confirm the uranium move"),
       c("DBC", "^GSPC", "Commodities / S&P 500", "Up = real assets beat financial assets (inflation regime)")
     )
   ),
@@ -143,7 +145,7 @@ SECTOR_GROUPS <- list(
   list(group = "Gold miners", bench = "GDX", drivers = c("GC=F" = 1, "DX-Y.NYB" = -1, "TIP/IEF" = 1)),
   list(group = "Silver miners", bench = "SIL", drivers = c("SI=F" = 1, "GC=F/SI=F" = -1, "DX-Y.NYB" = -1)),
   list(group = "Lithium / battery", bench = "LIT", drivers = c("000001.SS" = 1, "CNY=X" = -1)),
-  list(group = "Uranium", bench = "URA", drivers = c()),
+  list(group = "Uranium", bench = "URA", drivers = c("SRUUF" = 1)),
   list(group = "Agriculture", bench = "MOO", drivers = c("ZC=F" = 1, "ZW=F" = 1)),
   list(group = "Ag futures", bench = "DBA", drivers = c("ZC=F" = 1, "ZW=F" = 1, "DX-Y.NYB" = -1)),
   list(group = "Staples / tobacco / alcohol", bench = "XLP", drivers = c("XLY/XLP" = -1, "^TNX" = -1)),

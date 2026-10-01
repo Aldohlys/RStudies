@@ -107,7 +107,22 @@ scenario_card <- function(m, sectors, rank) {
     a$movie, a$analogs, a$after, a$tells, a$invalid, a$bot$note, impl(a$bot$long), impl(a$bot$short))
 }
 
-movie_html <- function(movie, matches, sectors) {
+#' Conditional chains (archetypes with a `chain`), shown whatever the scenario's rank
+chains_html <- function(z) {
+  if (is.null(z)) return("")
+  rows <- lapply(Filter(function(a) !is.null(a$chain), ARCHETYPES), function(a) {
+    cs <- chain_status(a$chain, z)
+    links <- paste(sprintf("<span class='%s'>%s</span>", ifelse(cs$on, "im-chain-on", "im-sub"), cs$steps),
+                   collapse = " &rarr; ")
+    sprintf("<p><b>%s</b> <span class='im-sub'>(%s)</span>. %s<br>%s<br><b>%s</b></p>",
+            esc(a$chain$name), esc(a$name), a$chain$text, links, cs$status)
+  })
+  if (!length(rows)) return("")
+  paste0("<div class='im-chains'><p class='im-sub'>Chains to watch: a link counts as moving when its 1-month z-score is +",
+         CHAIN_ON, " or more.</p>", paste(rows, collapse = ""), "</div>")
+}
+
+movie_html <- function(movie, matches, sectors, z = NULL) {
   paras <- paste(vapply(names(MOVIE_TITLES), function(k)
     sprintf("<p><b>%s.</b> %s</p>", MOVIE_TITLES[[k]], movie[[k]]), ""), collapse = "\n")
   all_scores <- paste(vapply(matches, function(m) sprintf(
@@ -118,7 +133,7 @@ movie_html <- function(movie, matches, sectors) {
   paste0(
     "<div class='im-movie'>", paras,
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
-    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>",
+    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>", chains_html(z),
     "<details class='im-details'><summary>All scenarios: match score</summary><table>",
     "<tr class='im-head'><td>Scenario</td><td>1 month</td><td>3 months</td><td>Age</td><td>Days in place</td><td>Previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table>",
     "<div class='im-legend'>Match = weighted agreement between today's moves and the scenario's typical moves, ",

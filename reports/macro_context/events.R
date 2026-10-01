@@ -133,6 +133,31 @@ SKIP_PATTERNS <- c(
   "^IMF Meetings"
 )
 
+# ── Scheduled political events (not in the economic calendar) ────────────────
+# Shown from `lead` days before the date, so positions can be sized ahead of them.
+# boost = FALSE: listed in the table but no catalyst boost to the US regime scores.
+SCHEDULED_EVENTS <- list(
+  list(date = as.Date("2026-10-04"), event = "Brazil general election, first round (BRL)", impact = "HIGH",
+       lead = 30, boost = FALSE,
+       action = "Binary for Bovespa, BRL and EWZ: the gap comes Monday. Runoff Oct-25 if no candidate tops 50%. Size Brazil exposure for either result; no new positions into the weekend."),
+  list(date = as.Date("2026-10-25"), event = "Brazil presidential runoff (BRL)", impact = "HIGH",
+       lead = 30, boost = FALSE,
+       action = "Binary for Bovespa, BRL and EWZ: the gap comes Monday. Size Brazil exposure for either result; no new positions into the weekend."),
+  list(date = as.Date("2026-11-03"), event = "US midterm elections (USD)", impact = "CRITICAL",
+       lead = 30, boost = TRUE,
+       action = "Control of Congress sets the fiscal path (deficits, issuance, term premium). Index IV is bid into the date and falls after; avoid short-dated options that straddle it.")
+)
+
+#' Scheduled events whose lead window covers today
+scheduled_events <- function(today = Sys.Date()) {
+  old_lc <- Sys.getlocale("LC_TIME")
+  Sys.setlocale("LC_TIME", "C")
+  on.exit(Sys.setlocale("LC_TIME", old_lc), add = TRUE)
+  due <- Filter(function(ev) ev$date >= today && ev$date <= today + ev$lead, SCHEDULED_EVENTS)
+  lapply(due, function(ev) list(date = format(ev$date, "%b-%d"), event = ev$event, impact = ev$impact,
+                                action = ev$action, boost = ev$boost))
+}
+
 # ── Parsing functions ────────────────────────────────────────────────────────
 
 #' Classify impact level for an event name
@@ -255,8 +280,8 @@ fetch_events <- function(today = Sys.Date()) {
   }
 
   if (length(all_events) == 0) {
-    log_warn("No events fetched — report will show empty events section", namespace = "RStudies")
-    return(list())
+    log_warn("No events fetched — events section shows scheduled events only", namespace = "RStudies")
+    return(scheduled_events(today))
   }
 
   # Filter to next 7 days (force C locale for English month parsing)
@@ -273,7 +298,9 @@ fetch_events <- function(today = Sys.Date()) {
   }, all_events)
 
   log_info("Events: {length(all_events)} total parsed, {length(filtered)} in next 7 days", namespace = "RStudies")
-  filtered
+  merged <- c(filtered, scheduled_events(today))
+  ev_dates <- vapply(merged, function(ev) as.numeric(as.Date(paste0(ev$date, "-", year), format = "%b-%d-%Y")), 0)
+  merged[order(ev_dates)]
 }
 
 # ── Fetch events at source time ──────────────────────────────────────────────

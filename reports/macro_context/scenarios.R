@@ -237,7 +237,7 @@ compute_catalyst_boost <- function(events, today = Sys.Date()) {
   for (ev in events) {
     ev_date <- tryCatch(as.Date(paste0(ev$date, "-", year), format = "%b-%d-%Y"),
                          error = function(e) NA)
-    if (is.na(ev_date)) next
+    if (is.na(ev_date) || isFALSE(ev$boost)) next
     days_until <- as.integer(ev_date - today)
     if (days_until < 0 || days_until > 5) next
     boost <- switch(ev$impact,

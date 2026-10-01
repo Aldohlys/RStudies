@@ -218,7 +218,7 @@ render_macro_html <- function(sections, synthesis, breadth, out_dir, im = NULL) 
     "{{SL}}"          = as.character(synthesis$sl),
     "{{SS}}"          = as.character(synthesis$ss),
     "{{BIAS_EXPLAIN}}" = synthesis$bias_explain,
-    "{{MOVIE}}"       = if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else movie_html(im$movie, im$matches, im$sectors),
+    "{{MOVIE}}"       = if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else movie_html(im$movie, im$matches, im$sectors, im$z1),
     "{{PANELS}}"      = if (is.null(im)) "" else panels_html(im$sections),
     "{{SECTOR_MAP}}"  = if (is.null(im)) "" else sectors_html(im$sectors),
     "{{SEC1}}"        = sections$sec1,
