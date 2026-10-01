@@ -206,7 +206,7 @@ message(sprintf("BOT_monthly: %d tickers", nrow(tickers)))
 
 tws_up <- if (no_tws) FALSE else isTRUE(tryCatch(Tdata::isIBAvailable(), error = function(e) FALSE))
 message(if (tws_up) "TWS reachable - fetching ATM bid-ask"
-        else "TWS not reachable - AtmBidAskPct stays NULL, with a reason per row")
+        else "TWS not used - AtmBidAskPct keeps its previous value (dated by AtmBidAsk_AsOf), with a reason per row")
 
 # getLastCHFValue() returns a data.frame(date, currency, chf_value), not a scalar.
 fx <- list()
