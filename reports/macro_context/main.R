@@ -40,6 +40,11 @@ source(file.path(SCRIPT_DIR, "render_html.R"))
 source(file.path(SCRIPT_DIR, "positioning.R"))
 source(file.path(SCRIPT_DIR, "macro_outcomes.R"))
 source(file.path(SCRIPT_DIR, "scenarios.R"))
+source(file.path(SCRIPT_DIR, "intermarket_config.R"))
+source(file.path(SCRIPT_DIR, "intermarket.R"))
+source(file.path(SCRIPT_DIR, "archetypes.R"))
+source(file.path(SCRIPT_DIR, "intermarket_reads.R"))
+source(file.path(SCRIPT_DIR, "intermarket_render.R"))
 
 message("=== MACRO CONTEXT REPORT ===")
 message("Run date: ", format(Sys.Date(), "%d %B %Y"))
@@ -77,10 +82,14 @@ conn <- safe_db_connect()
 scenario_scores <- run_scenarios(raw, vix_res, rates_res, breadth, comm_res, EVENTS, conn)
 dbDisconnect(conn)
 
+# 5b. Intermarket: global movie, scenario match, asset-class panels, BOT sector map
+im <- tryCatch(run_intermarket(breadth), error = function(e) { message("Intermarket failed: ", conditionMessage(e)); NULL })
+if (!is.null(im)) message("Closest scenario: ", im$matches[[1]]$name, sprintf(" (%+.0f%%)", 100 * im$matches[[1]]$score))
+
 # 6. Render HTML
 out_dir  <- file.path("C:/Users/aldoh/Documents/NewTrading/reports")
 sections <- build_sections(vix_res, rates_res, breadth, spy_res, comm_res, mismatches, synthesis, EVENTS, scenario_scores)
-out_file <- render_macro_html(sections, synthesis, breadth, out_dir)
+out_file <- render_macro_html(sections, synthesis, breadth, out_dir, im)
 if (interactive()) utils::browseURL(out_file)
 
 # 6. Export macro context to DB for swing_scanner
@@ -124,5 +133,19 @@ dbWriteTable(conn, "macro_context_results", .macro_results, append = TRUE)
 tryCatch(dbExecute(conn, "DELETE FROM macro_context_mismatches WHERE cache_date = ?",
                    params = list(.today)), error = function(e) NULL)
 if (nrow(.mm_export) > 0) dbWriteTable(conn, "macro_context_mismatches", .mm_export, append = TRUE)
+if (!is.null(im)) {
+  tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_sectors WHERE cache_date = ?", params = list(.today)),
+           error = function(e) NULL)
+  dbWriteTable(conn, "macro_intermarket_sectors", cbind(cache_date = .today, im$sectors), append = TRUE)
+  .sc <- data.frame(cache_date = .today, scenario = vapply(im$matches, `[[`, "", "id"),
+                    score_1m = vapply(im$matches, `[[`, 0, "score"), score_3m = vapply(im$matches, `[[`, 0, "score3m"),
+                    age = vapply(im$matches, function(m) m$age$status, ""),
+                    days_in_place = vapply(im$matches, function(m) m$age$run, 0))
+  tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_scenarios WHERE cache_date = ?", params = list(.today)),
+           error = function(e) NULL)
+  dbWriteTable(conn, "macro_intermarket_scenarios", .sc, append = TRUE)
+  write.csv(im$sectors, file.path("C:/Users/aldoh/Documents/NewTrading/Reports",
+                                  sprintf("intermarket_sectors_%s.csv", format(Sys.Date(), "%Y%m%d"))), row.names = FALSE)
+}
 dbDisconnect(conn)
 message("Macro context exported to DB")

@@ -138,6 +138,36 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 
 .footer{margin-top:16px;padding:10px 0;border-top:1px solid var(--border);
   font-size:12px;color:var(--dim);display:flex;justify-content:space-between}
+
+/* Intermarket: global movie, scenarios, panels, BOT sector map */
+.im-body{padding:12px 16px}
+.im-movie p{margin:0 0 8px;font-size:13.5px;line-height:1.55}
+.im-fit{background:rgba(51,122,183,.07);border-left:3px solid var(--accent);padding:8px 12px;border-radius:3px}
+.im-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.im-card{border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:13px}
+.im-card p{margin:0 0 6px}
+.im-top{border:2px solid var(--accent);background:rgba(51,122,183,.04)}
+.im-card-h{display:flex;align-items:baseline;gap:8px;margin-bottom:6px}
+.im-card-name{font-weight:700;font-size:14px}.im-score{margin-left:auto;font-weight:700;white-space:nowrap}
+.im-details{margin-top:12px;font-size:13px}.im-details summary{cursor:pointer;color:var(--accent);font-weight:600}
+.im-panel{margin-bottom:14px}.im-h2{font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin:6px 0}
+.im-h3{font-weight:600;font-size:12px;color:var(--dim);margin:8px 0 4px}
+.im-tw{overflow-x:auto}.im-tw table{min-width:760px}
+.im-head td{font-weight:600;color:var(--dim);font-size:12px;background:var(--bg2)}
+.im-num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.im-pos{color:#1a7f4b}.im-neg{color:var(--red-bg)}.im-sub{color:var(--dim);font-size:12px}
+.im-badge{display:inline-block;padding:1px 7px;border-radius:9px;font-size:11px;font-weight:700;background:var(--bg2);color:var(--dim)}
+.im-t-up,.im-v-long{background:var(--green-light);color:#1a7f4b}.im-t-down,.im-v-short{background:var(--red-light);color:var(--red-bg)}
+.im-v-watch{background:var(--orange-light);color:#92400e}
+.im-bar{position:relative;width:80px;height:6px;border-radius:3px;background:var(--border)}
+.im-bar i{position:absolute;top:-3px;width:3px;height:12px;margin-left:-1px;background:var(--text);border-radius:1px}
+.im-spark polyline{fill:none;stroke-width:1.4}.im-sp-px{stroke:var(--accent)}.im-sp-ema{stroke:var(--dim);stroke-dasharray:3 2}
+.im-age{background:var(--bg2);padding:6px 8px;border-radius:4px}.im-age svg{vertical-align:middle}
+.im-age-new{background:var(--orange-light);color:#92400e}.im-age-building{background:var(--green-light);color:#1a7f4b}
+.im-age-established{background:rgba(51,122,183,.12);color:var(--accent)}.im-age-mature{background:var(--red-light);color:var(--red-bg)}
+.im-age-wavering,.im-age-faded{background:var(--bg2);color:var(--dim)}
+.im-legend{color:var(--dim);font-size:12px;margin-top:8px}
+@media (max-width:800px){.grid,.im-cards{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -145,7 +175,7 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 <div>
   <span class="run-date">{{RUN_DATE}}</span>
   <h1>Macro Context</h1>
-  <div class="subtitle">VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis</div>
+  <div class="subtitle">Global movie &middot; VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis &middot; Intermarket &middot; BOT sector map</div>
 </div>
 
 <div class="bias-bar">
@@ -156,6 +186,11 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 
 {{STRESS_BANNER}}
 {{DATA_BANNER}}
+
+<div class="section" style="margin-bottom:20px">
+  <div class="stitle"><span class="snum">00</span>The global movie &mdash; how markets fit together</div>
+  <div class="im-body">{{MOVIE}}</div>
+</div>
 
 <div class="grid">
 
@@ -199,6 +234,16 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
   <table>{{SEC7}}</table>
 </div>
 
+</div>
+
+<div class="section" style="margin-bottom:20px">
+  <div class="stitle"><span class="snum">09</span>Intermarket panels &mdash; stocks, currencies, metals, oil, commodities, rates, world</div>
+  <div class="im-body">{{PANELS}}</div>
+</div>
+
+<div class="section" style="margin-bottom:20px">
+  <div class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</div>
+  <div class="im-body">{{SECTOR_MAP}}</div>
 </div>
 
 <div class="footer">

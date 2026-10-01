@@ -207,7 +207,7 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
 }
 
 # ── Render final HTML ───────────────────────────────────────────────────────
-render_macro_html <- function(sections, synthesis, breadth, out_dir) {
+render_macro_html <- function(sections, synthesis, breadth, out_dir, im = NULL) {
   template_file <- file.path(SCRIPT_DIR, "template.html")
   template <- paste(readLines(template_file, encoding = "UTF-8"), collapse = "\n")
 
@@ -218,6 +218,9 @@ render_macro_html <- function(sections, synthesis, breadth, out_dir) {
     "{{SL}}"          = as.character(synthesis$sl),
     "{{SS}}"          = as.character(synthesis$ss),
     "{{BIAS_EXPLAIN}}" = synthesis$bias_explain,
+    "{{MOVIE}}"       = if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else movie_html(im$movie, im$matches, im$sectors),
+    "{{PANELS}}"      = if (is.null(im)) "" else panels_html(im$sections),
+    "{{SECTOR_MAP}}"  = if (is.null(im)) "" else sectors_html(im$sectors),
     "{{SEC1}}"        = sections$sec1,
     "{{SEC2}}"        = sections$sec2,
     "{{SEC3}}"        = sections$sec3,
