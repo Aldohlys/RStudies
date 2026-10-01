@@ -58,19 +58,15 @@ load_universe <- function() {
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
     cols <- DBI::dbGetQuery(conn, "SELECT * FROM Tickers LIMIT 1")
     if (!"BOT_Eligible" %in% names(cols)) NULL else
-      DBI::dbGetQuery(conn,
-        sprintf("SELECT Name AS name, YahooName AS yahoo, ATR_Band AS atr_band,
-                GapShare_Tercile AS gap_tercile, ATR_MoveCoefHi AS coef_hi, %s AS coef_lo,
-                %s AS bench
-           FROM Tickers WHERE BOT_Eligible = 1",
-          if ("ATR_MoveCoefLo" %in% names(cols)) "ATR_MoveCoefLo" else "NULL",
-          if ("BOT_Bench" %in% names(cols)) "BOT_Bench" else "NULL"))
+      DBI::dbGetQuery(conn, "SELECT Name FROM Tickers WHERE BOT_Eligible = 1")$Name
   }, error = function(e) NULL)
 
-  if (!is.null(from_tickers) && nrow(from_tickers)) {
-    message(sprintf("Universe: %d names from Tickers.BOT_Eligible", nrow(from_tickers)))
-    from_tickers$bench <- as.character(from_tickers$bench)
-    return(from_tickers)
+  # The per-name attributes (coefficients, benchmark, ...) come from
+  # bot_read_ticker_rows(), the same reader as a named-symbol run, so a column
+  # added to Tickers is read in one place for both paths.
+  if (length(from_tickers)) {
+    message(sprintf("Universe: %d names from Tickers.BOT_Eligible", length(from_tickers)))
+    return(bot_read_ticker_rows(from_tickers))
   }
 
   message("Universe: Tickers.BOT_Eligible not populated - falling back to ",
