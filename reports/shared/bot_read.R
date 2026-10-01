@@ -44,6 +44,10 @@ bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL, market = NULL)
 .br_n <- function(x) if (is.null(x) || length(x) != 1 || !is.finite(x)) NA_real_ else x
 .br_pct <- function(num, den) if (is.finite(num) && is.finite(den) && den != 0) num / den * 100 else NA_real_
 
+# Tickers columns written by BOT_monthly (touch_coefs), named by the row field.
+TOUCH_COLS <- c(touch_up75 = "ATR_TouchCoefUp75", touch_up90 = "ATR_TouchCoefUp90",
+                touch_dn75 = "ATR_TouchCoefDn75", touch_dn90 = "ATR_TouchCoefDn90")
+
 #' Universe rows for explicitly named symbols, with their Tickers attributes.
 #'
 #' A named symbol used to get NA for atr_band and gap_tercile and its own name
@@ -52,10 +56,6 @@ bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL, market = NULL)
 #'
 #' @param names character vector of Tickers.Name values (or Yahoo symbols)
 #' @return data.frame(name, yahoo, atr_band, gap_tercile, bench)
-# Tickers columns written by BOT_monthly (touch_coefs), named by the row field.
-TOUCH_COLS <- c(touch_up75 = "ATR_TouchCoefUp75", touch_up90 = "ATR_TouchCoefUp90",
-                touch_dn75 = "ATR_TouchCoefDn75", touch_dn90 = "ATR_TouchCoefDn90")
-
 bot_read_ticker_rows <- function(names) {
   out <- data.frame(name = names, yahoo = names, atr_band = NA_character_,
                     gap_tercile = NA_character_, coef_hi = NA_real_, coef_lo = NA_real_,
