@@ -663,6 +663,67 @@ resolve_option_spread <- function(ticker, spot, target_dte = 45, tws_ok = TRUE) 
       source = "live")
 }
 
+#' ATM-only bid/ask probe (BOT_monthly).
+#'
+#' BOT_monthly stores only AtmBidAskPct, the mean of the ATM call and ATM put
+#' spreads. resolve_option_spread() also prices the 30-delta wings for
+#' /analyze, which BOT_monthly discarded, and the illiquid OTM strikes are what
+#' kept the snapshot open: ~15 s per request on most names, against ~5 s on
+#' liquid ones. This prices one strike, the listed strike nearest spot, call
+#' and put, with live quotes (market_data_type = 1): a liquidity judgment needs
+#' live bid/ask, frozen ones say nothing about tradability.
+#'
+#' @return .ok(list(expiration, dte, atm_strike, atm_call, atm_put,
+#'   atm_bid_ask_pct)) or a .miss()/.nodata() whose value is NA
+resolve_atm_spread <- function(ticker, spot, target_dte = 30, tws_ok = TRUE) {
+  if (!isTRUE(tws_ok))
+    return(.miss("TWS not reachable; cannot probe option bid/ask spreads"))
+  py <- .tdata_py()
+  if (is.null(py))
+    return(.miss("tdata_py unavailable; cannot probe option bid/ask spreads"))
+  if (is.na(spot) || spot <= 0) return(.miss("spot price unavailable"))
+
+  expiries <- tryCatch(py$getExpirationDates(ticker),
+                       error = function(e) conditionMessage(e))
+  if (is.character(expiries) && length(expiries) == 1)
+    return(.miss(paste("getExpirationDates:", expiries)))
+  if (is.null(expiries) || length(expiries) == 0)
+    return(.miss("no expirations from IBKR"))
+  expiration <- .pick_expiry_for_dte(expiries, target_dte)
+  if (is.na(expiration))
+    return(.miss(sprintf("no expiry near %dd DTE", target_dte)))
+  dte <- tryCatch(as.integer(as.Date(expiration, "%Y%m%d") - Sys.Date()),
+                  error = function(e) NA_integer_)
+
+  all_strikes <- tryCatch(py$getStrikesInRange(
+    sym = ticker, expiration = expiration, center_strike = spot, range_pct = 0.05),
+    error = function(e) conditionMessage(e))
+  if (is.character(all_strikes) && length(all_strikes) == 1)
+    return(.miss(paste("getStrikesInRange:", all_strikes)))
+  all_strikes <- as.numeric(unlist(all_strikes))
+  all_strikes <- all_strikes[is.finite(all_strikes)]
+  if (length(all_strikes) == 0) return(.miss("no strikes from IBKR within 5% of spot"))
+  k <- all_strikes[which.min(abs(all_strikes - spot))]
+
+  fetch_df <- function(right)
+    tryCatch(py$getOptValue(sym = ticker, expiration = expiration, strikes = list(k),
+                            right = right, force_refresh = TRUE, market_data_type = 1L),
+             error = function(e) NULL)
+  df_c <- fetch_df("C"); df_p <- fetch_df("P")
+  if ((is.null(df_c) || nrow(df_c) == 0) && (is.null(df_p) || nrow(df_p) == 0))
+    return(.nodata(sprintf("getOptValue empty for the ATM strike %s on %s", k, expiration)))
+
+  atm_call <- .spread_grab(.pick_atm_row(df_c, spot))
+  atm_put  <- .spread_grab(.pick_atm_row(df_p, spot))
+  sp <- c(atm_call$spread, atm_put$spread); sp <- sp[!is.na(sp)]
+  if (!length(sp))
+    return(.nodata(sprintf("quotes returned but no bid/ask spread at %s on %s", k, expiration)))
+  .ok(list(expiration = expiration, dte = dte, atm_strike = k,
+           atm_call = atm_call, atm_put = atm_put,
+           atm_bid_ask_pct = round(mean(sp) * 100, 1)),
+      source = "live")
+}
+
 # ── Chain OI ──────────────────────────────────────────────────────────────
 
 #' Reduce a per-strike/per-right OI table into oi_cap_call, oi_cap_put,

@@ -143,15 +143,24 @@ compute_one <- function(tk, fx_rate, tws_up) {
   opt_mkt <- option_market_of(tk$OptExchange, tk$Currency)
   if (identical(tk$Type, "FUT")) {
     status <- "NA_TYPE"; notes <- c(notes, "bid-ask: not applicable to a future")
+  } else if (!identical(toupper(.s(tk$IV)), "YES")) {
+    # IV = NO: no listed options tracked (bond ETFs, a SIX-only line such as
+    # AMRZ.SW, names whose chain is not followed). Probing them only produced
+    # errors and, on a non-existent symbol, a 60 s IBKR timeout. No previous
+    # value is kept: a spread measured on another listing (AMRZ's NYSE options)
+    # says nothing about this one.
+    notes <- c(notes, "bid-ask: no listed options tracked (Tickers.IV = NO)")
   } else if (!tws_up) {
     keep_prev("TWS not reachable")
   } else if (!market_is_open(opt_mkt)) {
     keep_prev(options_closed_reason(opt_mkt))
   } else {
-    # resolve_option_spread() prices only the ATM strike and the 30-delta wings
-    # rather than the whole chain, and force-refreshes: the parquet cache can
-    # hold rows whose bid/ask are NaN, which would read as a spurious miss.
-    q <- tryCatch(resolve_option_spread(tk$Name, px, target_dte = 30, tws_ok = TRUE),
+    # resolve_atm_spread() prices only the ATM strike (call and put, live
+    # quotes): AtmBidAskPct is all BOT_monthly stores. The /analyze probe,
+    # resolve_option_spread(), also prices the 30-delta wings, whose illiquid
+    # strikes held each snapshot open ~15 s. Force-refreshed: the parquet cache
+    # can hold rows whose bid/ask are NaN, which would read as a spurious miss.
+    q <- tryCatch(resolve_atm_spread(tk$Name, px, target_dte = 30, tws_ok = TRUE),
                   error = function(e) NULL)
     # NOT `q$value %||% NULL`: the %||% above is scalar-only (length(a) != 1
     # falls through to b), and q$value is an 8-element list, so it returned
@@ -159,7 +168,9 @@ compute_one <- function(tk, fx_rate, tws_up) {
     # BOT_VehicleHint were NULL on all 352 rows even with TWS connected, while
     # the note recorded "bid-ask: LIVE" — the fetch had genuinely succeeded.
     v <- if (!is.null(q) && is.list(q)) q$value else NULL
-    if (!is.null(v) && is.finite(.n(v$atm_bid_ask_pct))) {
+    # On a miss, .miss()/.nodata() carry value = NA (atomic): `v$...` on it threw
+    # "$ operator is invalid for atomic vectors", which dropped the whole row.
+    if (is.list(v) && is.finite(.n(v$atm_bid_ask_pct))) {
       ba <- .n(v$atm_bid_ask_pct); ba_asof <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
     } else {
       # paste0() on a zero-length argument yields character(0), which would
@@ -189,14 +200,15 @@ compute_one <- function(tk, fx_rate, tws_up) {
     tc_up75 = tc$up75, tc_up90 = tc$up90, tc_dn75 = tc$dn75, tc_dn90 = tc$dn90,
     call_cost = bk$call_cost, be_pct = bk$breakeven_pct,
     be_atr = bk$breakeven_atr, be_pct_em10 = bk$breakeven_pct_em10,
-    opp_n = opp$n, opp_last = opp$last_date))
+    opp_n = opp$n, opp_last = opp$last_date,
+    no_options = !identical(toupper(.s(tk$IV)), "YES")))
 }
 
 # ── Run ────────────────────────────────────────────────────────────────────
 conn <- connect()
 migrate(conn)
 tickers <- DBI::dbGetQuery(conn,
-  "SELECT Name, YahooName, Type, Currency, Multiplier, OptExchange, AtmBidAskPct, AtmBidAsk_AsOf FROM Tickers
+  "SELECT Name, YahooName, Type, Currency, Multiplier, OptExchange, IV, AtmBidAskPct, AtmBidAsk_AsOf FROM Tickers
     WHERE Type IN ('STK','ETF','FUT') OR IV = 'YES'")
 DBI::dbDisconnect(conn)
 
@@ -274,7 +286,7 @@ rows <- lapply(res, function(r) {
 
   # Bid-ask sets the vehicle, it does not exclude the name: a wide quote removes
   # the option vehicles, and plain stock is pure delta.
-  hint <- if (is.finite(.n(r$atm_bid_ask)))
+  hint <- if (isTRUE(r$no_options)) "stock_only" else if (is.finite(.n(r$atm_bid_ask)))
             (if (.n(r$atm_bid_ask) > BIDASK_STOCK) "stock_only" else "options") else NA_character_
 
   # GapShare_Tercile is NOT a membership criterion (TODO 88.4, closed

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-01] - BOT_monthly: ATM-only bid/ask probe; no probe for names without tracked options
+
+### Fixed
+- **`bot_monthly/main.R`: a missed spread dropped the whole row.** On a miss, `.miss()`/`.nodata()` return `value = NA` (atomic), and `v$atm_bid_ask_pct` threw "$ operator is invalid for atomic vectors". The guard now tests `is.list(v)`.
+- **Names with `Tickers.IV = NO` were probed for options.** Bond ETFs, SIX-only lines such as AMRZ.SW and untracked chains produced errors, and a non-existent symbol cost a 60 s IBKR timeout. They are now skipped with the note "bid-ask: no listed options tracked (Tickers.IV = NO)", keep no previous spread, and get `BOT_VehicleHint = stock_only`.
+
+### Changed
+- **`shared/live_sources.R`: new `resolve_atm_spread()`**, used by BOT_monthly. It prices only the strike nearest spot (call and put, live quotes, force-refreshed). `resolve_option_spread()`, still used by /analyze, also prices the 30-delta wings, whose illiquid strikes held each snapshot open ~15 s. Measured: ~27 s per name instead of ~35 s. The remaining time is the `reqTickers()` snapshot wait; TODO 104 (RApplication) covers streaming quotes and a stable `AtmBidAskPct`.
+
 ## [2026-09-29] - Sector layer runs on correlation groups (TODO 71)
 
 ### Changed
