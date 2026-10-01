@@ -145,3 +145,39 @@ count_opportunities <- function(d, lookback = 504, direction = "long", min_trend
   }
   list(n = n, last_date = last)
 }
+
+#' Touch coefficients: how far price reaches within n sessions, in ATR * sqrt(n).
+#'
+#' For every start session t, the maximum favourable excursion over the next n
+#' sessions — up: `max(High[t+1..t+n]) - Close[t]`; down: `Close[t] -
+#' min(Low[t+1..t+n])` — divided by `ATR14[t] * sqrt(n)`. The 75th / 90th
+#' percentiles are the reach of a good / a winning trade. A target only has to
+#' be TOUCHED: on 271 BOT names over 8 years the touch p75 / p90 at n = 10 are
+#' 0.84 / 1.24, against 0.54 / 0.97 for the close at n = 10
+#' (RStudies/bot_reach_time_trial.py, 2026-10-01). With `C` such a coefficient,
+#' a target `d` ATR away is touched after about `(d / C)^2` sessions; that
+#' matched the observed first-passage times within one session up to 3 ATR.
+#'
+#' @param d data.frame with High, Low, Close (chronological)
+#' @param n horizon in sessions (default 10)
+#' @return list(up75, up90, dn75, dn90), each NA when fewer than 250 windows
+touch_coefs <- function(d, n = 10) {
+  na <- list(up75 = NA_real_, up90 = NA_real_, dn75 = NA_real_, dn90 = NA_real_)
+  if (is.null(d) || nrow(d) < 250 + n + 14) return(na)
+  hi <- as.numeric(d$High); lo <- as.numeric(d$Low); cl <- as.numeric(d$Close)
+  atr <- tryCatch(as.numeric(TTR::ATR(cbind(hi, lo, cl), n = 14)[, "atr"]), error = function(e) NULL)
+  if (is.null(atr)) return(na)
+  len <- length(cl)
+  # runMax at index t+n is the max over [t+1, t+n]; shift it back by n.
+  fwd <- function(x) c(x[(n + 1):len], rep(NA_real_, n))
+  up <- fwd(TTR::runMax(hi, n)) - cl
+  dn <- cl - fwd(TTR::runMin(lo, n))
+  scale <- atr * sqrt(n)
+  q <- function(x) {
+    z <- (x / scale)[is.finite(x / scale) & scale > 0]
+    if (length(z) < 250) return(c(NA_real_, NA_real_))
+    unname(stats::quantile(z, c(0.75, 0.90)))
+  }
+  u <- q(up); w <- q(dn)
+  list(up75 = u[1], up90 = u[2], dn75 = w[1], dn90 = w[2])
+}

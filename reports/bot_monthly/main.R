@@ -69,6 +69,8 @@ SCHEMA <- c(
   AtmBidAskPct = "REAL", AtmBidAsk_AsOf = "TEXT",
   ADV_CHF_M = "REAL", ADV_Pass = "INTEGER",
   ATR_MoveCoefHi = "REAL", ATR_MoveCoefLo = "REAL", EM10_Hi_Pct = "REAL",
+  ATR_TouchCoefUp75 = "REAL", ATR_TouchCoefUp90 = "REAL",
+  ATR_TouchCoefDn75 = "REAL", ATR_TouchCoefDn90 = "REAL",
   BOT_ModelSigma = "REAL", BOT_IVSource = "TEXT", BOT_ModelCallCost = "REAL",
   BOT_BreakevenPct = "REAL", BOT_BreakevenAtr = "REAL", BOT_BreakevenPctEm10 = "REAL",
   BOT_Opportunities_2y = "INTEGER", BOT_LastOpportunity = "TEXT")
@@ -115,6 +117,10 @@ compute_one <- function(tk, fx_rate, tws_up) {
   coef_lo <- .n(em$coef_lower)
   em_abs  <- if (is.finite(em_hi)) px * em_hi / 100 else NA_real_
   if (!is.finite(coef_hi)) notes <- c(notes, "expected-move: insufficient history")
+  # Reach of a good / winning trade in 10 sessions (touch, not close): BOT_daily
+  # turns it into the sessions a target needs, sess_target_p75 / p90.
+  tc <- touch_coefs(d, n = EM_DAYS)
+  if (!is.finite(tc$up90)) notes <- c(notes, "touch coefficients: insufficient history")
 
   sigma <- hist_vol(d, 20);  iv_src <- "hv20"
   if (!is.finite(sigma)) { sigma <- hist_vol(d, 120); iv_src <- "hv120" }
@@ -180,6 +186,7 @@ compute_one <- function(tk, fx_rate, tws_up) {
     gap_share = gs, vov = .n(vv$vol_of_vol), vov_pctile = .n(vv$vov_percentile),
     adv = adv, atm_bid_ask = ba, atm_bid_ask_asof = ba_asof,
     coef_hi = coef_hi, coef_lo = coef_lo, em_hi = em_hi, sigma = sigma, iv_src = iv_src,
+    tc_up75 = tc$up75, tc_up90 = tc$up90, tc_dn75 = tc$dn75, tc_dn90 = tc$dn90,
     call_cost = bk$call_cost, be_pct = bk$breakeven_pct,
     be_atr = bk$breakeven_atr, be_pct_em10 = bk$breakeven_pct_em10,
     opp_n = opp$n, opp_last = opp$last_date))
@@ -306,6 +313,8 @@ rows <- lapply(res, function(r) {
        adv_chf_m = round(.n(r$adv), 1), adv_pass = .i(adv_pass),
        atr_move_coef_hi = round(.n(r$coef_hi), 3), atr_move_coef_lo = round(.n(r$coef_lo), 3),
        em10_hi_pct = round(.n(r$em_hi), 3),
+       touch_up75 = round(.n(r$tc_up75), 3), touch_up90 = round(.n(r$tc_up90), 3),
+       touch_dn75 = round(.n(r$tc_dn75), 3), touch_dn90 = round(.n(r$tc_dn90), 3),
        model_sigma = round(.n(r$sigma), 4), iv_source = .s(r$iv_src),
        model_call_cost = round(.n(r$call_cost), 2),
        breakeven_pct = round(.n(r$be_pct), 3), breakeven_atr = round(.n(r$be_atr), 3),
@@ -321,6 +330,7 @@ df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors 
 CSV_COLS <- c("name","yahoo","type","currency","bot_eligible","bot_reason","vehicle_hint",
   "atr_pct","atr_band","gap_share","gap_tercile","vov","vov_pctile","vov_tercile",
   "atm_bid_ask_pct","adv_chf_m","adv_pass","atr_move_coef_hi","atr_move_coef_lo","em10_hi_pct",
+  "touch_up75","touch_up90","touch_dn75","touch_dn90",
   "model_sigma","iv_source","model_call_cost","breakeven_pct","breakeven_atr",
   "breakeven_pct_em10","opportunities_2y","last_opportunity","gate_version",
   "fetch_status","fetch_note")
@@ -348,6 +358,8 @@ if (dry_run) {
     ADV_CHF_M = df$adv_chf_m, ADV_Pass = df$adv_pass,
     ATR_MoveCoefHi = df$atr_move_coef_hi, ATR_MoveCoefLo = df$atr_move_coef_lo,
     EM10_Hi_Pct = df$em10_hi_pct,
+    ATR_TouchCoefUp75 = df$touch_up75, ATR_TouchCoefUp90 = df$touch_up90,
+    ATR_TouchCoefDn75 = df$touch_dn75, ATR_TouchCoefDn90 = df$touch_dn90,
     BOT_ModelSigma = df$model_sigma, BOT_IVSource = df$iv_source,
     BOT_ModelCallCost = df$model_call_cost, BOT_BreakevenPct = df$breakeven_pct,
     BOT_BreakevenAtr = df$breakeven_atr, BOT_BreakevenPctEm10 = df$breakeven_pct_em10,

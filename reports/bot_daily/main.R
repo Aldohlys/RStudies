@@ -8,7 +8,7 @@
 #   Rscript reports/bot_daily/main.R [--detail] [--direction long|short|both]
 #                                    [--out PATH] [SYM ...]
 #
-# The default emits the 12 columns read daily (BOT_READ_DEFAULT); --detail
+# The default emits the 13 columns read daily (BOT_READ_DEFAULT); --detail
 # emits every field.
 # The per-name read itself lives in shared/bot_read.R, shared with /analyze.
 # Naming an explicit symbol list bypasses universe membership.
@@ -26,6 +26,7 @@ source(file.path(SH, "weekly.R"))
 source(file.path(SH, "zones.R"))
 source(file.path(SH, "gates.R"))
 source(file.path(SH, "market_calendar.R"))
+source(file.path(SH, "name_attributes.R"))   # touch_coefs(), for names without stored coefficients
 source(file.path(SH, "bot_read.R"))
 
 OUT_DIR    <- "C:/Users/aldoh/Documents/NewTrading/reports"
@@ -130,8 +131,8 @@ if (!length(rows)) { message("No rows produced."); quit(status = 1) }
 df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 df <- df[, BOT_READ_COLS, drop = FALSE]
 
-# Reading order: tradable rows first, then asym desc, then res_pct_of_em10
-# asc. Not a ranking. Vetoed rows keep their level read below the block that
+# Reading order: tradable rows first, then asym desc, then sess_target_p75
+# asc (the target a good trade touches soonest). Not a ranking. Vetoed rows keep their level read below the block that
 # can be traded today. The edge is asymmetry over many bets, so asymmetry is
 # the key. asym is bounded (target capped at the 10-session expected move,
 # risk floored at one ATR; shared/zones.R), so unreachable or geometric
@@ -139,7 +140,7 @@ df <- df[, BOT_READ_COLS, drop = FALSE]
 # so trend_state stays a default column for the reader to weigh.
 df <- df[order(-df$tradable,
                -ifelse(is.na(df$asym), -Inf, df$asym),
-               ifelse(is.na(df$res_pct_of_em10), Inf, df$res_pct_of_em10)), , drop = FALSE]
+               ifelse(is.na(df$sess_target_p75), Inf, df$sess_target_p75)), , drop = FALSE]
 
 if (is.na(out_path))
   out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.csv", format(Sys.time(), "%Y%m%d_%H%M")))

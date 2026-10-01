@@ -52,9 +52,15 @@ bot_fetch_daily <- function(sym, adjusted = TRUE, ib_name = NULL, market = NULL)
 #'
 #' @param names character vector of Tickers.Name values (or Yahoo symbols)
 #' @return data.frame(name, yahoo, atr_band, gap_tercile, bench)
+# Tickers columns written by BOT_monthly (touch_coefs), named by the row field.
+TOUCH_COLS <- c(touch_up75 = "ATR_TouchCoefUp75", touch_up90 = "ATR_TouchCoefUp90",
+                touch_dn75 = "ATR_TouchCoefDn75", touch_dn90 = "ATR_TouchCoefDn90")
+
 bot_read_ticker_rows <- function(names) {
   out <- data.frame(name = names, yahoo = names, atr_band = NA_character_,
                     gap_tercile = NA_character_, coef_hi = NA_real_, coef_lo = NA_real_,
+                    touch_up75 = NA_real_, touch_up90 = NA_real_,
+                    touch_dn75 = NA_real_, touch_dn90 = NA_real_,
                     bench = NA_character_, stringsAsFactors = FALSE)
   tk <- tryCatch({
     conn <- Tdata::safe_db_connect()
@@ -62,10 +68,12 @@ bot_read_ticker_rows <- function(names) {
     have <- names(DBI::dbGetQuery(conn, "SELECT * FROM Tickers LIMIT 1"))
     DBI::dbGetQuery(conn, sprintf(
       "SELECT Name, YahooName, ATR_Band, GapShare_Tercile, ATR_MoveCoefHi, %s AS ATR_MoveCoefLo,
-              %s AS BOT_Bench
+              %s AS BOT_Bench, %s
          FROM Tickers WHERE Name IN (%s)",
       if ("ATR_MoveCoefLo" %in% have) "ATR_MoveCoefLo" else "NULL",
       if ("BOT_Bench" %in% have) "BOT_Bench" else "NULL",
+      paste(sprintf("%s AS %s", ifelse(TOUCH_COLS %in% have, TOUCH_COLS, "NULL"), TOUCH_COLS),
+            collapse = ", "),
       paste(rep("?", length(names)), collapse = ",")), params = as.list(names))
   }, error = function(e) NULL)
   if (is.null(tk) || !nrow(tk)) return(out)
@@ -77,6 +85,8 @@ bot_read_ticker_rows <- function(names) {
   out$coef_hi[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefHi[i[ok]]))
   out$coef_lo[ok] <- suppressWarnings(as.numeric(tk$ATR_MoveCoefLo[i[ok]]))
   out$bench[ok] <- as.character(tk$BOT_Bench[i[ok]])
+  for (k in seq_along(TOUCH_COLS))
+    out[[names(TOUCH_COLS)[k]]][ok] <- suppressWarnings(as.numeric(tk[[TOUCH_COLS[k]]][i[ok]]))
   out
 }
 
@@ -288,6 +298,22 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
   if (is.finite(e_d) && is.finite(w_ema50) &&
       sgn * (px - e_d) < 0 && sgn * (px - w_ema50) < 0) veto <- c(veto, "against_trend")
 
+  # Winning interval: the sessions after which a good (p75) / winning (p90)
+  # trade TOUCHES the target, (d / C)^2 with d the distance to it in ATR and C
+  # the name's touch coefficient (spec 3.7). A vehicle that expires before
+  # sess_target_p90 cannot win; one that expires before sess_target_p75 needs
+  # a fast winner. Coefficients come from Tickers (BOT_monthly); a name without
+  # them is measured on the bars already fetched.
+  tc75 <- .br_n(suppressWarnings(as.numeric(if (long) row$touch_up75 else row$touch_dn75)))
+  tc90 <- .br_n(suppressWarnings(as.numeric(if (long) row$touch_up90 else row$touch_dn90)))
+  if (!is.finite(tc90) && exists("touch_coefs", mode = "function")) {
+    tcl <- touch_coefs(d, n = BOT_EM_DAYS)
+    tc75 <- if (long) tcl$up75 else tcl$dn75; tc90 <- if (long) tcl$up90 else tcl$dn90
+  }
+  d_tgt <- sgn * (.br_n(lr$target) - px) / atr
+  sess_at <- function(cq) if (is.finite(d_tgt) && d_tgt > 0 && is.finite(cq) && cq > 0)
+                           round((d_tgt / cq)^2, 1) else NA_real_
+
   list(
     date = as.character(as.Date(tail(d$date, 1))),
     bar_lag = bot_bar_lag(tail(d$date, 1), market = listing),
@@ -349,6 +375,7 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
     stop_agree = if (is.na(lr$fib_confirms_sup)) NA_integer_
                  else as.integer(isTRUE(lr$fib_confirms_sup)),
     asym = round(.br_n(lr$asym), 3), asym_fib = round(.br_n(lr$asym_fib), 3),
+    sess_target_p90 = sess_at(tc90), sess_target_p75 = sess_at(tc75),
 
     em10_lo = em_lo, em10_hi = em_hi,
 
@@ -410,7 +437,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "fib_ret_382","fib_ret_500","fib_ret_618","fib_ext_1272","fib_ext_1618",
   "target","target_source","target_agree","stop","stop_source","stop_agree",
   "gap_p95_pct","gap_vs_stop",
-  "level_basis","asym","asym_fib","em10_lo","em10_hi",
+  "level_basis","asym","asym_fib","sess_target_p90","sess_target_p75","em10_lo","em10_hi",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",
@@ -419,7 +446,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
 # so it stays short; --detail emits every field.
 BOT_READ_DEFAULT <- c("name","direction","px","atr","tradable","asym",
-  "target","target_source","stop","res_pct_of_em10","trend_state","zone_state")
+  "target","target_source","stop","sess_target_p90","sess_target_p75","trend_state","zone_state")
 BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng_dyn",
   "res_first","res_dist_pct","sup_first","sup_dist_pct",
   "fib_ret_382","fib_ret_500","em10_lo","ema50","ema50_slope","w_ema50",

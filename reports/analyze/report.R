@@ -77,6 +77,7 @@ td.note{color:#555;font-size:13px}
   # Phase D
   "spot_target_low" = "Target from the level engine (zone, flipped zone, zone spot stands in, or Fibonacci 1.272), capped at the expected move over the option horizon; drives the effective target and R:R. Same engine as BOT_daily.",
   "spot_target_high" = "Next level beyond the target: the next zone, else the Fibonacci 1.618, with the same cap. Blank when there is none.",
+  "Winning interval"     = "Sessions after which a winning (90th percentile) and a good (75th percentile) trade touch the near target: (distance in ATR / C)^2, C = the name's touch coefficient over 10 sessions (Tickers.ATR_TouchCoef*, BOT_monthly). An option expiring before the first number leaves no winning path.",
   "targets_agreeing" = "Level systems agreeing on the target: 2 when the Fibonacci 1.272 falls inside the target zone, else 1.",
   "fib_confirms" = "TRUE if the Fibonacci 1.272 falls inside the target zone.",
   "move_position"        = "Move maturity: how far the move has travelled from its swing base to the nearest structural target — (a) % of that leg, (b) the nearest Fibonacci rung, and the next extension rung priced out as a forward level. The base is the most recent swing pivot (local low for longs / high for shorts) within the move_lookback_days window (default 40d, sized to the 2-4 week breakout horizon; tunable in config.yml), NOT the multi-month swing low. High % / near the 1.0 rung = an extended move with little room left to the wall; low % = early. Descriptive only — does not feed scoring or flow.",
@@ -742,6 +743,23 @@ render_analyze_html <- function(ctx, out_dir) {
     .tt("expiry"), .fmt_cell(pd$expiry, pd$expiry_reason,
                            status = if (isTRUE(grepl("options market closed", pd$expiry_reason))) "SKIPPED" else "FETCH FAILED"),
     if (!is.null(pd$expiry_reason)) "live-picked from IBKR" else "from scanner CSV"))
+
+  # Winning interval: sessions after which a winning (p90) / good (p75) trade
+  # touches the near target, against the sessions each expiry leaves. Labels
+  # are mechanical (spec 3.7): an expiry before p90 leaves no winning path.
+  s90 <- t$sess_target_p90; s75 <- t$sess_target_p75
+  if (!is.null(s90) && isTRUE(is.finite(s90))) {
+    f1 <- function(x) if (isTRUE(is.finite(x))) sprintf("%.1f", x) else "n/a"
+    rc <- pd$reach
+    exp_rows <- if (is.null(rc) || !nrow(rc)) "" else paste(sprintf(
+      '<tr><td>Expiry %s</td><td class="value">%s</td><td class="note">%d sessions to expiry</td></tr>',
+      rc$expiry, rc$label, rc$sessions), collapse = "")
+    targets_html <- paste0(targets_html,
+      '<h3>Winning interval</h3><table><tr><th>Field</th><th>Value</th><th>Note</th></tr>',
+      sprintf('<tr><td>%s</td><td class="value">%s &ndash; %s sessions</td><td class="note">near target %s ATR away: a winner (p90) touches it after ~%s sessions, a good trade (p75) after ~%s</td></tr>',
+              .tt("Winning interval"), f1(s90), f1(s75), f1(t$target_dist_atr), f1(s90), f1(s75)),
+      exp_rows, '</table>')
+  }
 
   c_reason <- pd$chain_reason
   e_reason <- pd$entry_reason

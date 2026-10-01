@@ -69,6 +69,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   # dividend-adjusted series, the target capped at the expected move over the
   # horizon of the primary expiry rather than BOT_daily's 10 sessions.
   targets <- .level_targets(ticker, direction = direction, expiry = expiry)
+  reach   <- .reach_vs_expiries(targets, expiries, ticker)
 
   # Chain / OI: resolver (DB-fresh → live get_chain_oi). CSV oi_cap_call/_put
   # in scanner row are last-resort fallback if both DB and live fail.
@@ -151,6 +152,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     expiry_reason     = opt_closed %||% expiry_reason,
     earnings_expiry   = earnings_expiry,
     targets           = targets,
+    reach             = reach,
     targets_agreeing  = targets$targets_agreeing,
     chain_state       = chain$chain_state,
     chain_reason      = opt_closed %||% chain$reason,
@@ -286,6 +288,17 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   fb <- lr$fib
   base <- if (!is.null(fb)) (if (long) fb$leg_low else fb$leg_high) else NA_real_
   mv <- if (is.finite(base) && abs(lr$target - base) > 0) (px - base) / (lr$target - base) * 100 else NA_real_
+  # Winning interval on this target: sessions after which a winning (p90) / good
+  # (p75) trade touches it, (d / C)^2 with d in ATR (spec 3.7, same as BOT_daily).
+  c75 <- suppressWarnings(as.numeric(if (long) row$touch_up75 else row$touch_dn75))
+  c90 <- suppressWarnings(as.numeric(if (long) row$touch_up90 else row$touch_dn90))
+  if (!isTRUE(is.finite(c90))) {
+    tcl <- touch_coefs(d, n = 10)
+    c75 <- if (long) tcl$up75 else tcl$dn75; c90 <- if (long) tcl$up90 else tcl$dn90
+  }
+  d_tgt <- sgn * (lr$target - px) / atr
+  sess <- function(cq) if (isTRUE(is.finite(d_tgt) && d_tgt > 0 && is.finite(cq) && cq > 0))
+                        round((d_tgt / cq)^2, 1) else NA_real_
   list(
     spot_target_low  = lr$target,
     spot_target_high = nxt,
@@ -300,9 +313,40 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
     stop_source      = lr$stop_source,
     target_source    = lr$target_source,
     horizon_sessions = n,
+    target_dist_atr  = round(d_tgt, 2),
+    sess_target_p90  = sess(c90),
+    sess_target_p75  = sess(c75),
     direction        = direction,
     source           = sprintf("level_read, %d-session horizon", n),
     reason           = NULL)
+}
+
+#' Winning interval against the expiries on offer.
+#'
+#' For each expiry, the sessions left (the option market's business days, today
+#' excluded, expiry day included) against the interval: before sess_target_p90
+#' even a winner has not touched the target ("out of reach"); between p90 and
+#' p75 only a fast winner has ("fast winner only"); from p75 on, a good trade
+#' has ("within the interval"). Mechanical labels, not a verdict. Without a
+#' live expiry (market closed, TWS down) the usual 30 / 55 DTE are shown as
+#' references.
+#' @return data.frame(expiry, sessions, label, reference) or NULL
+.reach_vs_expiries <- function(targets, expiries, ticker) {
+  s90 <- targets$sess_target_p90; s75 <- targets$sess_target_p75
+  if (is.null(s90) || !isTRUE(is.finite(s90))) return(NULL)
+  tk <- tryCatch(Tdata::getTicker(ticker)[1, , drop = FALSE], error = function(e) NULL)
+  mkt <- if (!is.null(tk) && nrow(tk)) option_market_of(tk$OptExchange, tk$Currency) else "US"
+  exps <- expiries[!is.na(expiries) & nzchar(expiries)]
+  ref <- length(exps) == 0
+  dates <- if (ref) Sys.Date() + c(30, 55) else as.Date(as.character(exps), "%Y%m%d")
+  sessions <- vapply(dates, function(x) {
+    n <- tryCatch(market_days_between(mkt, Sys.Date(), x) + 1L, error = function(e) NA_integer_)
+    if (is.na(n)) as.integer(round(as.numeric(x - Sys.Date()) * 252 / 365)) else n
+  }, integer(1))
+  label <- ifelse(sessions < s90, "out of reach",
+                  ifelse(is.finite(s75) & sessions < s75, "fast winner only", "within the interval"))
+  data.frame(expiry = if (ref) c("30 DTE (reference)", "55 DTE (reference)") else as.character(exps),
+             sessions = sessions, label = label, reference = ref, stringsAsFactors = FALSE)
 }
 
 #' Look up the IBKR option TradingClass for a symbol, defaulting to the symbol.
