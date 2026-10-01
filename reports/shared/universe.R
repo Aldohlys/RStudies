@@ -52,9 +52,9 @@ get_sectors <- function() {
 # A group has at most 10 names that move together; its anchor (ClusterETF) is
 # the ticker the sector gate and RS rank read. Sector stays the family label
 # that keys the macro tailwind/headwind rules. Names no group correlates with
-# carry Cluster = "Unclassified" and have no anchor.
+# carry Cluster = "Ungrouped" and have no anchor; their Sector still applies.
 
-UNCLASSIFIED_GROUP <- "Unclassified"
+UNGROUPED <- "Ungrouped"
 
 .scanner_rows <- function() {
   u <- get_universe()
@@ -63,17 +63,17 @@ UNCLASSIFIED_GROUP <- "Unclassified"
 }
 
 #' Scanner stocks with no correlation group (Cluster NULL, empty or
-#' "Unclassified") - e.g. added to Tickers after the last clustering run.
-get_unclassified <- function() {
+#' "Ungrouped") - e.g. added to Tickers after the last clustering run.
+get_ungrouped <- function() {
   s <- .scanner_rows()
-  s$Symbol[is.na(s$Cluster) | !nzchar(s$Cluster) | s$Cluster == UNCLASSIFIED_GROUP]
+  s$Symbol[is.na(s$Cluster) | !nzchar(s$Cluster) | s$Cluster == UNGROUPED]
 }
 
-#' All correlation groups (Unclassified excluded)
+#' All correlation groups (Ungrouped excluded)
 get_groups <- function() {
   s <- .scanner_rows()
   g <- unique(s$Cluster[!is.na(s$Cluster) & nzchar(s$Cluster)])
-  sort(setdiff(g, UNCLASSIFIED_GROUP))
+  sort(setdiff(g, UNGROUPED))
 }
 
 #' Group anchors as a named vector (group -> anchor ticker)

@@ -66,16 +66,16 @@ macro_bias <- macro$bias[1]
 # ── Load universe ──────────────────────────────────────────────────────────
 # The sector layer runs on correlation groups (ScannerUniverse.Cluster, max 10
 # co-moving names, anchor = ClusterETF); each group's family (majority Sector)
-# keys the macro rules. Unclassified names are scanned without a sector gate.
+# keys the macro rules. Ungrouped names are scanned without a sector gate.
 sectors      <- get_groups()
 sector_etfs  <- get_group_anchors()
 group_family <- get_group_sectors()
-unclassified <- get_unclassified()
-if (length(unclassified) > 0)
+ungrouped    <- get_ungrouped()
+if (length(ungrouped) > 0)
   message(sprintf("WARNING: %d scanner names have no correlation group, so no sector gate: %s. Run scripts/cluster_universe.py or set ScannerUniverse.Cluster in DB Browser.",
-                  length(unclassified), paste(unclassified, collapse = ", ")))
+                  length(ungrouped), paste(ungrouped, collapse = ", ")))
 group_stocks <- c(setNames(lapply(sectors, get_group_stocks), sectors),
-                  setNames(list(unclassified), UNCLASSIFIED_GROUP))
+                  setNames(list(ungrouped), UNGROUPED))
 SPY <- "SPY"
 all_etfs   <- unique(c(SPY, unname(sector_etfs)))
 all_stocks <- unique(unlist(group_stocks))

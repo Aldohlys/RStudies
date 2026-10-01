@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-02] - Names without a correlation group are "Ungrouped"
+
+### Changed
+- **`ScannerUniverse.Cluster = 'Ungrouped'`** replaces `'Unclassified'` for scanner names with no correlation group. These names keep a well-defined `Sector`; only the group is missing. `shared/universe.R`: `UNGROUPED` (was `UNCLASSIFIED_GROUP`), `get_ungrouped()` (was `get_unclassified()`); `swing_scanner/main.R` and `shared/live_sources.R` follow. The database label changed the same day (RApplication `logs/cluster_review_20261001.sql`, which also applies the hand review of the groups: 55 groups, 336 names).
+
 ## [2026-10-01] - BOT_monthly: ATM-only bid/ask probe; no probe for names without tracked options
 
 ### Fixed

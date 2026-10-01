@@ -114,14 +114,14 @@ resolve_spot <- function(ticker) {
 # the names the ticker actually moves with.
 
 #' Look up the correlation group of a scanner name.
-#' Returns NA with reason if the ticker is not a scanner name or is Unclassified.
+#' Returns NA with reason if the ticker is not a scanner name or is Ungrouped.
 resolve_sector <- function(ticker) {
   g <- tryCatch(get_symbol_group(ticker), error = function(e) NULL)
   if (is.null(g)) return(.miss("ScannerUniverse not accessible"))
   if (is.na(g))
     return(.miss(sprintf("%s is not a scanner name in ScannerUniverse", ticker)))
-  if (!nzchar(g) || g == UNCLASSIFIED_GROUP)
-    return(.miss(sprintf("%s has no correlation group (Unclassified)", ticker)))
+  if (!nzchar(g) || g == UNGROUPED)
+    return(.miss(sprintf("%s has no correlation group (Ungrouped)", ticker)))
   .ok(g, source = "db")
 }
 
