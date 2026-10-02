@@ -201,16 +201,17 @@ compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL,
       function(c) c$asset, character(1))
   }
 
-  # COT staleness. The report covers the Tuesday close and is released the
-  # following Friday, so a promptly-maintained file sits 3-9 days old. At 10
-  # days a newer release exists, i.e. at least one has been missed.
+  # COT staleness. Each report covers a Tuesday close (T), is released that
+  # Friday 15:30 ET and loaded by the Saturday 08:00 task (T+4). The next one
+  # is loaded at T+11, so a promptly-maintained file sits 4-10 days old. At 11
+  # days (Saturday run after a failed refresh) at least one has been missed.
   age_days <- NA_real_
   missed <- 0L
   if (!is.null(cot_as_of) && !is.na(cot_as_of) && nzchar(cot_as_of)) {
     d <- suppressWarnings(as.Date(cot_as_of))
     if (!is.na(d)) {
       age_days <- as.numeric(Sys.Date() - d)
-      missed <- max(0L, as.integer(floor((age_days - 3) / 7)))
+      missed <- max(0L, as.integer(floor((age_days - 4) / 7)))
     }
   }
 

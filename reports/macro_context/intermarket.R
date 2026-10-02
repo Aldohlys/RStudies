@@ -51,11 +51,25 @@ sma <- function(x, n) as.numeric(stats::filter(x, rep(1 / n, n), sides = 1))
 #' Close series for one symbol, or "A/B" ratio of two symbols on common dates
 get_close <- function(raw, key) {
   one <- function(sym) {
-    d <- raw[raw$ticker == sym & !is.na(raw$Close), c("date", "Close")]
+    col <- if (sym %in% ADJUSTED_SYMBOLS && "Adjusted" %in% names(raw)) "Adjusted" else "Close"
+    d <- raw[raw$ticker == sym & !is.na(raw[[col]]), c("date", col)]
+    names(d)[2] <- "Close"
     d[order(d$date), ]
   }
   if (grepl("/", key, fixed = TRUE)) {
     p <- strsplit(key, "/", fixed = TRUE)[[1]]
+    is_fx <- endsWith(p, "=X")
+    if (xor(is_fx[1], is_fx[2])) {
+      # Yahoo FX bars sit on a different calendar (Sunday rows, no Friday rows while the
+      # UK is on summer time), so an inner join drops about one day in five and stretches
+      # "1M" to six weeks. Take the latest FX value on or before each date of the other leg.
+      a <- one(p[!is_fx]); b <- one(p[is_fx])
+      i <- findInterval(as.numeric(a$date), as.numeric(b$date))
+      a <- a[i > 0, ]; fxv <- b$Close[i[i > 0]]
+      if (nrow(a) == 0) return(NULL)
+      r <- if (is_fx[2]) a$Close / fxv else fxv / a$Close
+      return(data.frame(date = a$date, Close = r))
+    }
     m <- merge(one(p[1]), one(p[2]), by = "date")
     if (nrow(m) == 0) return(NULL)
     return(data.frame(date = m$date, Close = m$Close.x / m$Close.y))

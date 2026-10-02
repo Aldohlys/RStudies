@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-02] - macro_context: reading principles, commodity/credit coverage, COT staleness fix
+
+### Added
+- **Reading principles** block under the daily bias (`template.html`): Ceresna's four tenets (present, liquidity stress, consensus, actors), each pointing to the sections that cover it.
+- **Panels** (`intermarket_config.R`): VIX 3-month, palladium, heating oil / diesel, cocoa, coffee, sugar, lumber. Ratios: gold in EUR and in CHF, oil services / WTI, gas producers / natural gas, diesel / crude, copper miners / copper, agribusiness / ag futures, investment grade / Treasuries.
+- **Sector map**: Integrated energy (XLE, benchmark of XOM/BP) and Rare earths (REMX, benchmark of MP).
+
+### Fixed
+- **COT staleness banner fired every Friday.** A file is loaded on Saturday (T+4) and replaced the next Saturday (T+11), so it is legitimately 4-10 days old; `scenarios.R` now counts missed releases from `age_days - 4` (was 3).
+- **Distribution-paying bond/credit ETFs** (HYG, LQD, IEF, TIP, TLT) use dividend-adjusted closes (`ADJUSTED_SYMBOLS`), so ex-dates no longer read as credit stress. This also feeds the CREDIT fingerprint.
+- **Ratios mixing an FX leg with another asset** use an as-of join in `get_close()`. Yahoo FX bars are dated a day early during UK summer time (Sunday rows, no Friday rows), so the inner join dropped about one day in five and stretched "1M" to six weeks (gold in EUR read -7.0% instead of -1.4%).
+
 ## [2026-10-02] - Names without a correlation group are "Ungrouped"
 
 ### Changed

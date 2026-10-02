@@ -13,7 +13,8 @@ SECTIONS <- list(
       c("RSP", "S&P 500 equal weight", "price"),
       c("IWM", "Russell 2000", "price"),
       c("SMH", "Semiconductors", "price"),
-      c("^VIX", "VIX", "price")
+      c("^VIX", "VIX", "price"),
+      c("^VIX3M", "VIX 3-month", "price")
     ),
     ratios = list(
       c("^NDX", "^GSPC", "Nasdaq 100 / S&P 500", "Up = mega-cap growth leads"),
@@ -48,12 +49,15 @@ SECTIONS <- list(
       c("GC=F", "Gold", "price"),
       c("SI=F", "Silver", "price"),
       c("PL=F", "Platinum", "price"),
+      c("PA=F", "Palladium", "price"),
       c("GDX", "Gold miners", "price")
     ),
     ratios = list(
       c("GC=F", "SI=F", "Gold / Silver", "Up = defensive metal demand; down = reflation, silver leads"),
       c("GDX", "GC=F", "Miners / Gold", "Up = equity investors confirm the gold move"),
-      c("GC=F", "^GSPC", "Gold / S&P 500", "Up = gold outperforms equities (currency debasement / risk-off)")
+      c("GC=F", "^GSPC", "Gold / S&P 500", "Up = gold outperforms equities (currency debasement / risk-off)"),
+      c("GC=F", "EURUSD=X", "Gold in euros", "Gold priced in EUR; a fall smaller than in USD = the dollar, not gold, is moving"),
+      c("GC=F", "CHFUSD=X", "Gold in Swiss francs", "Gold priced in CHF (book currency)")
     )
   ),
   list(
@@ -62,12 +66,16 @@ SECTIONS <- list(
       c("CL=F", "WTI crude", "price"),
       c("BZ=F", "Brent crude", "price"),
       c("RB=F", "RBOB gasoline", "price"),
+      c("HO=F", "Heating oil / diesel (ULSD)", "price"),
       c("NG=F", "Natural gas", "price"),
       c("XLE", "Energy stocks", "price")
     ),
     ratios = list(
       c("XLE", "CL=F", "Energy stocks / WTI", "Up = equities price a durable oil level"),
-      c("XLE", "^GSPC", "Energy / S&P 500", "Up = energy sector leadership")
+      c("XLE", "^GSPC", "Energy / S&P 500", "Up = energy sector leadership"),
+      c("OIH", "CL=F", "Oil services / WTI", "Up = equity investors confirm the oil move"),
+      c("FCG", "NG=F", "Gas producers / natural gas", "Up = equity investors confirm the gas move"),
+      c("HO=F", "CL=F", "Diesel / crude", "Up = distillate cracks widening (diesel tighter than crude)")
     )
   ),
   list(
@@ -76,6 +84,10 @@ SECTIONS <- list(
       c("HG=F", "Copper", "price"),
       c("ZW=F", "Wheat", "price"),
       c("ZC=F", "Corn", "price"),
+      c("CC=F", "Cocoa", "price"),
+      c("KC=F", "Coffee", "price"),
+      c("SB=F", "Sugar", "price"),
+      c("LBR=F", "Lumber", "price"),
       c("SRUUF", "Uranium (Sprott physical trust)", "price"),
       c("URA", "Uranium miners", "price"),
       c("DBC", "Broad commodities", "price")
@@ -83,6 +95,8 @@ SECTIONS <- list(
     ratios = list(
       c("HG=F", "GC=F", "Copper / Gold", "Up = growth expectations rising; tracks the 10-year yield"),
       c("URA", "SRUUF", "Uranium miners / uranium", "Up = equity investors confirm the uranium move"),
+      c("COPX", "HG=F", "Copper miners / copper", "Up = equity investors confirm the copper move"),
+      c("MOO", "DBA", "Agribusiness / ag futures", "Up = equity investors confirm the ag move"),
       c("DBC", "^GSPC", "Commodities / S&P 500", "Up = real assets beat financial assets (inflation regime)")
     )
   ),
@@ -100,6 +114,7 @@ SECTIONS <- list(
     ),
     ratios = list(
       c("HYG", "IEF", "High yield / Treasuries", "Up = credit risk appetite; down = credit stress"),
+      c("LQD", "IEF", "Investment grade / Treasuries", "Up = IG spreads tightening; down = stress reaching quality credit"),
       c("TIP", "IEF", "TIPS / Treasuries", "Up = inflation expectations rising")
     ),
     spreads = list(
@@ -131,6 +146,7 @@ SECTIONS <- list(
 # BOT universe sector groups (Strategies/tradable_universe_*.csv, column `bench`).
 # drivers: symbol = sensitivity sign (+1 = group rises with the driver, -1 = falls).
 SECTOR_GROUPS <- list(
+  list(group = "Integrated energy", bench = "XLE", drivers = c("CL=F" = 1, "BZ=F" = 1)),
   list(group = "Energy E&P", bench = "XOP", drivers = c("CL=F" = 1, "BZ=F" = 1)),
   list(group = "Oil services", bench = "OIH", drivers = c("CL=F" = 1)),
   list(group = "Gas producers", bench = "FCG", drivers = c("NG=F" = 1)),
@@ -145,6 +161,7 @@ SECTOR_GROUPS <- list(
   list(group = "Gold miners", bench = "GDX", drivers = c("GC=F" = 1, "DX-Y.NYB" = -1, "TIP/IEF" = 1)),
   list(group = "Silver miners", bench = "SIL", drivers = c("SI=F" = 1, "GC=F/SI=F" = -1, "DX-Y.NYB" = -1)),
   list(group = "Lithium / battery", bench = "LIT", drivers = c("000001.SS" = 1, "CNY=X" = -1)),
+  list(group = "Rare earths", bench = "REMX", drivers = c("000001.SS" = 1, "DX-Y.NYB" = -1)),
   list(group = "Uranium", bench = "URA", drivers = c("SRUUF" = 1)),
   list(group = "Agriculture", bench = "MOO", drivers = c("ZC=F" = 1, "ZW=F" = 1)),
   list(group = "Ag futures", bench = "DBA", drivers = c("ZC=F" = 1, "ZW=F" = 1, "DX-Y.NYB" = -1)),
@@ -165,4 +182,7 @@ SECTOR_GROUPS <- list(
 )
 
 BENCHMARK <- "^GSPC"
+# Distribution-paying bond/credit ETFs: use dividend-adjusted closes, otherwise each
+# monthly ex-date reads as a price fall (HYG ~0.5%) and shows up as false credit stress.
+ADJUSTED_SYMBOLS <- c("HYG", "LQD", "IEF", "TIP", "TLT")
 HISTORY_DAYS <- 450   # calendar days: covers the 200-day average plus a 1-year chart
