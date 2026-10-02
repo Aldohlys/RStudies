@@ -21,6 +21,12 @@
 # small-spec rollups. positioning.R keeps only the one speculative net per
 # asset that the regime score consumes; this is the detail behind it.
 #
+# Side-output: NewTrading/Reports/cot_positioning_latest.csv -- the positioning
+# dashboard (38 markets x 5 trader groups): long / short / net, week-on-week,
+# and the 1y / 3y / 5y COT index of each leg. Rendered as section 11 of the
+# macro_context report (cot_render.R). Its "[legacy] large spec" rows match
+# cotsignal.com exactly (checked 2026-10-02 on 14 markets: net, OI, indices).
+#
 # Run: Rscript RStudies/reports/macro_context/refresh_cot.R [--dry-run]
 # Scheduled Saturday 08:00 via RApplication/scripts/RefreshCOT.xml — the CFTC
 # releases Friday 15:30 ET (21:30 CET), so Saturday morning is clear of it.
@@ -44,7 +50,8 @@ TARGET     <- file.path(SCRIPT_DIR, "positioning.R")
 CACHE_DIR  <- file.path(SCRIPT_DIR, "output", "cot_cache")
 dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
 
-YEARS <- (as.integer(format(Sys.Date(), "%Y")) - 5):as.integer(format(Sys.Date(), "%Y"))
+# Six past years: the dashboard's 5-year index needs 260 weekly rows even in January.
+YEARS <- (as.integer(format(Sys.Date(), "%Y")) - 6):as.integer(format(Sys.Date(), "%Y"))
 
 # Contract codes are matched with leading zeros stripped — fread types the
 # column as integer whenever a year's file happens to hold only numeric codes.
@@ -110,6 +117,75 @@ CSV_CONTRACTS <- list(
   list(label = "USD Index", src = "tff",    code = "098662")
 )
 CSV_OUT <- "C:/Users/aldoh/Documents/NewTrading/Reports/cot_actors_latest.csv"
+
+# Positioning dashboard: the COTSignal-style view (long / short / net, each as a
+# 1y / 3y / 5y COT index, plus week-on-week), built from the same CFTC files with
+# the finer categories. One row per market x trader group; the macro_context
+# report shows the speculative group (spec = TRUE) and the opposite side.
+#   disagg markets: managed money (spec), commercials (producer + swap),
+#                   [legacy] large spec (managed money + other reportables,
+#                   the COTSignal / legacy "large speculators"), other, retail
+#   tff markets:    leveraged funds (spec), asset managers, dealers, other, retail
+DASH_CONTRACTS <- list(
+  list(label = "WTI crude",         sector = "Energy",         src = "disagg", code = "067651"),
+  list(label = "Brent crude",       sector = "Energy",         src = "disagg", code = "06765T"),
+  list(label = "Natural gas",       sector = "Energy",         src = "disagg", code = "023651"),
+  list(label = "RBOB gasoline",     sector = "Energy",         src = "disagg", code = "111659"),
+  list(label = "Heating oil / ULSD", sector = "Energy",        src = "disagg", code = "022651"),
+  list(label = "Gold",              sector = "Metals",         src = "disagg", code = "088691"),
+  list(label = "Silver",            sector = "Metals",         src = "disagg", code = "084691"),
+  list(label = "Copper",            sector = "Metals",         src = "disagg", code = "085692"),
+  list(label = "Platinum",          sector = "Metals",         src = "disagg", code = "076651"),
+  list(label = "Palladium",         sector = "Metals",         src = "disagg", code = "075651"),
+  list(label = "Corn",              sector = "Grains",         src = "disagg", code = "002602"),
+  list(label = "Soybeans",          sector = "Grains",         src = "disagg", code = "005602"),
+  list(label = "Wheat (SRW)",       sector = "Grains",         src = "disagg", code = "001602"),
+  list(label = "Soybean oil",       sector = "Grains",         src = "disagg", code = "007601"),
+  list(label = "Soybean meal",      sector = "Grains",         src = "disagg", code = "026603"),
+  list(label = "Cocoa",             sector = "Softs",          src = "disagg", code = "073732"),
+  list(label = "Coffee",            sector = "Softs",          src = "disagg", code = "083731"),
+  list(label = "Sugar",             sector = "Softs",          src = "disagg", code = "080732"),
+  list(label = "Cotton",            sector = "Softs",          src = "disagg", code = "033661"),
+  list(label = "Orange juice",      sector = "Softs",          src = "disagg", code = "040701"),
+  list(label = "Lumber",            sector = "Softs",          src = "disagg", code = "058644"),
+  list(label = "S&P 500 (E-mini)",  sector = "Equity indices", src = "tff",    code = "13874A"),
+  list(label = "Nasdaq 100 (mini)", sector = "Equity indices", src = "tff",    code = "209742"),
+  list(label = "Dow (x5)",          sector = "Equity indices", src = "tff",    code = "124603"),
+  list(label = "Russell 2000 (E-mini)", sector = "Equity indices", src = "tff", code = "239742"),
+  list(label = "VIX futures",       sector = "Equity indices", src = "tff",    code = "1170E1"),
+  list(label = "UST 2Y",            sector = "Rates",          src = "tff",    code = "042601"),
+  list(label = "UST 5Y",            sector = "Rates",          src = "tff",    code = "044601"),
+  list(label = "UST 10Y",           sector = "Rates",          src = "tff",    code = "043602"),
+  list(label = "UST bond (30Y)",    sector = "Rates",          src = "tff",    code = "020601"),
+  list(label = "USD index",         sector = "Currencies",     src = "tff",    code = "098662"),
+  list(label = "Euro",              sector = "Currencies",     src = "tff",    code = "099741"),
+  list(label = "Japanese yen",      sector = "Currencies",     src = "tff",    code = "097741"),
+  list(label = "British pound",     sector = "Currencies",     src = "tff",    code = "096742"),
+  list(label = "Swiss franc",       sector = "Currencies",     src = "tff",    code = "092741"),
+  list(label = "Canadian dollar",   sector = "Currencies",     src = "tff",    code = "090741"),
+  list(label = "Australian dollar", sector = "Currencies",     src = "tff",    code = "232741"),
+  list(label = "Bitcoin (CME)",     sector = "Currencies",     src = "tff",    code = "133741")
+)
+# Groups per report: name -> categories summed. fold = commercial-style gross
+# legs (spreading added to both sides, as the legacy report does); net is the
+# same either way.
+DASH_GROUPS <- list(
+  disagg = list(
+    list(group = "managed money", cats = "managed_money", spec = TRUE),
+    list(group = "commercials", cats = c("producer", "swap_dealer"), fold = TRUE),
+    list(group = "[legacy] large spec", cats = c("managed_money", "other_rept")),
+    list(group = "other reportables", cats = "other_rept"),
+    list(group = "retail", cats = "retail")),
+  tff = list(
+    list(group = "leveraged funds", cats = "lev_money", spec = TRUE),
+    list(group = "asset managers", cats = "asset_manager"),
+    list(group = "dealers", cats = "dealer"),
+    list(group = "other reportables", cats = "other_rept"),
+    list(group = "retail", cats = "retail"))
+)
+# Rows, not calendar time, as COTSignal does: one row = one weekly report.
+DASH_WINDOWS <- c(`1y` = 52, `3y` = 156, `5y` = 260)
+DASH_OUT <- "C:/Users/aldoh/Documents/NewTrading/Reports/cot_positioning_latest.csv"
 
 # ── Fetch ─────────────────────────────────────────────────────────────────────
 # Past years never change, so they are downloaded once; the current year is
@@ -354,6 +430,67 @@ build_actor_csv <- function() {
 
 actors <- build_actor_csv()
 
+# ── Positioning dashboard: long / short / net x 1y / 3y / 5y COT index + WoW ──
+# COT index (Williams) = 100 * (current - min) / (max - min) over the last n
+# weekly reports: 100 = the most long (or most short contracts) in the window.
+cot_index <- function(x, n) {
+  w <- tail(x[!is.na(x)], n)
+  if (length(w) < 2) return(NA_real_)
+  rng <- max(w) - min(w)
+  if (rng == 0) return(NA_real_)
+  round(100 * (w[length(w)] - min(w)) / rng, 1)
+}
+
+build_dashboard <- function() {
+  rows <- lapply(DASH_CONTRACTS, function(k) {
+    spec <- SOURCES[[k$src]]
+    d <- unique(DATA[[k$src]][code == .norm_code(k$code)], by = "date")[order(date)]
+    if (nrow(d) < 2) {
+      message(sprintf("dashboard: no data for %s (%s)", k$label, k$code))
+      return(NULL)
+    }
+    col <- function(cn, i) {
+      c <- spec$cats[[cn]][i]
+      if (is.na(c)) rep(0, nrow(d)) else as.numeric(d[[c]])
+    }
+    per_group <- lapply(DASH_GROUPS[[k$src]], function(g) {
+      sp <- if (isTRUE(g$fold)) Reduce(`+`, lapply(g$cats, col, 3)) else 0
+      lg <- Reduce(`+`, lapply(g$cats, col, 1)) + sp
+      sh <- Reduce(`+`, lapply(g$cats, col, 2)) + sp
+      nt <- lg - sh
+      n <- length(nt)
+      idx <- function(x) setNames(vapply(DASH_WINDOWS, function(w) cot_index(x, w), 0),
+                                  names(DASH_WINDOWS))
+      il <- idx(lg); is <- idx(sh); inet <- idx(nt)
+      data.frame(group = g$group, spec = isTRUE(g$spec),
+                 long = lg[n], short = sh[n], net = nt[n],
+                 long_wow = lg[n] - lg[n - 1], short_wow = sh[n] - sh[n - 1],
+                 net_wow = nt[n] - nt[n - 1],
+                 net_idx_1y = inet[["1y"]], net_idx_3y = inet[["3y"]], net_idx_5y = inet[["5y"]],
+                 long_idx_1y = il[["1y"]], long_idx_3y = il[["3y"]], long_idx_5y = il[["5y"]],
+                 short_idx_1y = is[["1y"]], short_idx_3y = is[["3y"]], short_idx_5y = is[["5y"]],
+                 stringsAsFactors = FALSE)
+    })
+    out <- do.call(rbind, per_group)
+    oi <- as.numeric(d[.N][["Open_Interest_All"]])
+    data.frame(report_date = as.character(d[.N]$date), prev_date = as.character(d[.N - 1]$date),
+               market = k$label, sector = k$sector, report = k$src, cftc_code = k$code,
+               open_interest = oi, weeks = nrow(d), out, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, rows)
+}
+
+dashboard <- build_dashboard()
+if (!is.null(dashboard)) {
+  short_hist <- unique(dashboard$market[dashboard$weeks < max(DASH_WINDOWS)])
+  if (length(short_hist)) message("dashboard: fewer than ", max(DASH_WINDOWS),
+                                  " weekly reports (5y index uses what exists): ",
+                                  paste(short_hist, collapse = ", "))
+  lagging <- unique(dashboard$market[dashboard$report_date < AS_OF])
+  if (length(lagging)) message("dashboard: older report date than ", AS_OF, ": ",
+                               paste(lagging, collapse = ", "))
+}
+
 # ── Report + write ────────────────────────────────────────────────────────────
 cat("\n")
 cat(sprintf("COT data as of %s%s\n", AS_OF,
@@ -390,6 +527,13 @@ if (!DRY_RUN && !is.null(actors)) {
   utils::write.csv(actors, CSV_OUT, row.names = FALSE, na = "")
   cat(sprintf("Actor detail: %s (%d rows, %d contracts x categories)\n",
               CSV_OUT, nrow(actors), length(CSV_CONTRACTS)))
+}
+if (!DRY_RUN && !is.null(dashboard)) {
+  tmp <- paste0(DASH_OUT, ".tmp")
+  utils::write.csv(dashboard, tmp, row.names = FALSE, na = "")
+  file.rename(tmp, DASH_OUT)
+  cat(sprintf("Positioning dashboard: %s (%d markets x %d groups)\n",
+              DASH_OUT, length(unique(dashboard$market)), 5L))
 }
 
 if (DRY_RUN) {

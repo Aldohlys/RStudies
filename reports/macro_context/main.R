@@ -45,6 +45,7 @@ source(file.path(SCRIPT_DIR, "intermarket.R"))
 source(file.path(SCRIPT_DIR, "archetypes.R"))
 source(file.path(SCRIPT_DIR, "intermarket_reads.R"))
 source(file.path(SCRIPT_DIR, "intermarket_render.R"))
+source(file.path(SCRIPT_DIR, "cot_render.R"))
 
 message("=== MACRO CONTEXT REPORT ===")
 message("Run date: ", format(Sys.Date(), "%d %B %Y"))
@@ -89,7 +90,7 @@ if (!is.null(im)) message("Closest scenario: ", im$matches[[1]]$name, sprintf(" 
 # 6. Render HTML
 out_dir  <- file.path("C:/Users/aldoh/Documents/NewTrading/reports")
 sections <- build_sections(vix_res, rates_res, breadth, spy_res, comm_res, mismatches, synthesis, EVENTS, scenario_scores)
-out_file <- render_macro_html(sections, synthesis, breadth, out_dir, im)
+out_file <- render_macro_html(sections, synthesis, breadth, out_dir, im, load_cot_dashboard())
 if (interactive()) utils::browseURL(out_file)
 
 # 6. Export macro context to DB for swing_scanner

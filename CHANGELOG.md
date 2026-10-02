@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-02] - macro_context: COT positioning dashboard (section 11)
+
+### Added
+- **`refresh_cot.R` writes `NewTrading/Reports/cot_positioning_latest.csv`**: 38 markets (energy, metals, grains, softs, equity indices, VIX, Treasuries, currencies, bitcoin) x 5 trader groups. Each group has long / short / net, week-on-week changes and the COT index (Williams: 100 x (current - min) / (max - min)) of each leg over the last 52, 156 and 260 weekly reports. Groups: managed money, commercials, legacy large spec, other, retail (disaggregated report); leveraged funds, asset managers, dealers, other, retail (TFF). Same CFTC archives as before; the history window grows to 6 past years so the 5-year index has 260 rows in January.
+- **Section 11 "COT positioning"** (`cot_render.R`): speculative group per market (managed money / leveraged funds), with the other side (commercials / asset managers) and the legacy large speculators in collapsible tables. Index cells at 90+ or 10- are shaded.
+- Checked against cotsignal.com: the legacy large-spec rows match exactly on 14 markets (net, open interest, 1y/3y/5y index).
+- positioning.R and the regime crowding score are unchanged (still 5 assets).
+
 ## [2026-10-02] - macro_context: reading principles, commodity/credit coverage, COT staleness fix
 
 ### Added

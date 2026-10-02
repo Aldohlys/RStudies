@@ -168,6 +168,7 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 .im-age-established{background:rgba(51,122,183,.12);color:var(--accent)}.im-age-mature{background:var(--red-light);color:var(--red-bg)}
 .im-age-wavering,.im-age-faded{background:var(--bg2);color:var(--dim)}
 .im-legend{color:var(--dim);font-size:12px;margin-top:8px}
+.cot-hi{background:var(--green-light);font-weight:700}.cot-lo{background:var(--red-light);font-weight:700}
 .principles summary{cursor:pointer}.principles ol{margin:10px 14px 10px 32px;font-size:13px;line-height:1.5}.principles li{margin-bottom:4px}
 @media (max-width:800px){.grid,.im-cards{grid-template-columns:1fr}}
 </style>
@@ -177,7 +178,7 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 <div>
   <span class="run-date">{{RUN_DATE}}</span>
   <h1>Macro Context</h1>
-  <div class="subtitle">Global movie &middot; VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis &middot; Intermarket &middot; BOT sector map</div>
+  <div class="subtitle">Global movie &middot; VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis &middot; Intermarket &middot; BOT sector map &middot; COT positioning</div>
 </div>
 
 <div class="bias-bar">
@@ -194,8 +195,8 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
   <ol>
     <li><b>Understand the present to evaluate possible scenarios.</b> Read 00 (global movie) and 09 (panels) first; the scenario matches in 00 and 07 are only as good as that picture.</li>
     <li><b>Markets mean-revert in the long term, but in the short term liquidity stress can dictate their behaviour.</b> Dollar, long yields, MOVE and credit (02, 07, 09 rates and credit) can override fundamentals and trends: everything gets sold together.</li>
-    <li><b>When everyone is in consensus, something different happens.</b> COT extremes and positioning stress (07) mark crowded trades; a crowded trade whose price stops following through is where the surprise comes from.</li>
-    <li><b>Markets are not made of stocks and bonds but of bankers, investors and traders who decide to buy or sell them.</b> Ask who holds a position and who is forced to sell it (COT positioning in 07), not only what the price did.</li>
+    <li><b>When everyone is in consensus, something different happens.</b> COT indices (11) and positioning stress (07) mark crowded trades; a crowded trade whose price stops following through is where the surprise comes from.</li>
+    <li><b>Markets are not made of stocks and bonds but of bankers, investors and traders who decide to buy or sell them.</b> Ask who holds a position and who is forced to sell it (11, COT positioning by trader group), not only what the price did.</li>
   </ol>
 </details>
 
@@ -256,6 +257,11 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 <div class="section" style="margin-bottom:20px">
   <div class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</div>
   <div class="im-body">{{SECTOR_MAP}}</div>
+</div>
+
+<div class="section" style="margin-bottom:20px">
+  <div class="stitle"><span class="snum">11</span>COT positioning &mdash; who holds what, by market</div>
+  <div class="im-body">{{COT_DASHBOARD}}</div>
 </div>
 
 <div class="footer">
