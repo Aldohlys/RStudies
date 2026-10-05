@@ -66,13 +66,13 @@ if ("^VIX" %in% names(raw)) {
   message(sprintf("  vix: %d values", sum(!is.na(indicators$vix))))
 }
 
-# 2. VIX/VIX3M ratio → 1 - ratio (backwardation measure)
+# 2. VIX/VIX3M ratio → ratio - 1 (backwardation measure: > 0 = VIX above VIX3M)
 if (all(c("^VIX", "^VIX3M") %in% names(raw))) {
   vix_df  <- raw[["^VIX"]] |> select(date, vix = Close)
   v3m_df  <- raw[["^VIX3M"]] |> select(date, v3m = Close)
   merged  <- inner_join(vix_df, v3m_df, by = "date") |> filter(!is.na(vix), !is.na(v3m), v3m > 0)
-  indicators$backwardation <- 1 - merged$vix / merged$v3m
-  message(sprintf("  backwardation (1 - VIX/VIX3M): %d values", length(indicators$backwardation)))
+  indicators$backwardation <- merged$vix / merged$v3m - 1
+  message(sprintf("  backwardation (VIX/VIX3M - 1): %d values", length(indicators$backwardation)))
 }
 
 # 3. 10Y yield (level)
@@ -135,7 +135,7 @@ message("\n── Calibration Results ──")
 signal_map <- list(
   vix_stress    = list(data = "vix",             current_c = 25,   current_s = 4),
   vix_calm      = list(data = "vix",             current_c = 20,   current_s = 3),
-  backwardation = list(data = "backwardation",   current_c = 0.10, current_s = 0.05),
+  backwardation = list(data = "backwardation",   current_c = -0.12, current_s = 0.08),
   breadth_bull  = list(data = NULL,              current_c = 50,   current_s = 10,  note = "S5FI not in Yahoo — keep manual"),
   breadth_bear  = list(data = NULL,              current_c = 35,   current_s = 8,   note = "S5FI not in Yahoo — keep manual"),
   rates_press   = list(data = "y10",             current_c = 4.5,  current_s = 0.3),

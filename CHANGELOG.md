@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - macro_context: VIX/VIX3M read the right way round
+
+### Fixed
+- **VIX/VIX3M row** (`analyze.R`, `render_html.R`): a low ratio (VIX below VIX3M) is contango, but it was labelled "Mild backwardation" (RED, < 0.85) and a high one "Healthy contango" (GREEN, > 1.10). Now GREEN < 0.90 contango, ORANGE 0.90-1.00 flat, RED >= 1.00 backwardation. 10-year distribution: median 0.879, p75 0.937, p95 1.023.
+- **`backwardation` regime signal** (`scenarios.R`): `sig(1 - VIX/VIX3M, 0.12, 0.08)` rose in calm contango. Now `sig(VIX/VIX3M - 1, -0.12, 0.08)` (= 1 - the old value): 0.5 at the 10-year median, ~0.82 when VIX reaches VIX3M. `calibrate_from_history.R` re-run on the new measure: centre -0.121, scale 0.079, unchanged. Regime weights unchanged (+0.05 Liquidity Stress, -0.05 Directional Flow); on 2026-10-05 Liquidity Stress moves 48.0% -> 47.5%.
+- `backtest_regimes.R` and `calibrate_from_history.R` use the same measure.
+
 ## [2026-10-05] - macro_context: VX1-VX2 futures spread row (TODO 56)
 
 ### Added
@@ -13,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Note
 - TODO 56 gave `VX1 - VX2` with contango positive; it is negative in contango (the second month trades above the front). The bands were mirrored accordingly.
+
+## [2026-10-05] - BOT: group rotation rank; swing scanner stopped
+
+### Added
+- **`group`, `grp_rs`, `grp_rank`** detail columns in BOT_daily (`bot_group_rotation()` in `shared/bot_read.R`): the correlation group's 20-session return minus SPY's, ranked across groups. Taken over from the swing scanner's `sector_pts`. Measured with `NewTrading/Strategies/Breakouts/group_rotation_test.py`: top-3 groups +0.30 ATR over 10 sessions vs groups ranked below 6 (t 2.3, non-overlapping windows); hit rate of +1.5 ATR first only +3-5 points. Reported, not gated. /analyze leaves them NULL (ranking needs every group).
+
+### Changed
+- `bot_read_row()` takes an optional `rotation` table; the ScannerUniverse group query moved to `.bot_groups_table()`.
 
 ## [2026-10-05] - BOT: S3 benchmark from the correlation group
 

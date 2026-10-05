@@ -61,8 +61,8 @@ analyze_vix <- function(raw, vx = NULL) {
       ts_r <- "BACKWARDATION"; ts_zone <- "RED"; ts_n <- "Short-term fear — tight stops"
     }
     ratio  <- vix / vix3m
-    r_zone <- ifelse(ratio < 0.85, "RED", ifelse(ratio > 1.10, "GREEN", "ORANGE"))
-    r_note <- ifelse(ratio < 0.85, "Mild backwardation", ifelse(ratio > 1.10, "Healthy contango", "Neutral zone"))
+    r_zone <- ifelse(ratio >= 1.00, "RED", ifelse(ratio < 0.90, "GREEN", "ORANGE"))
+    r_note <- ifelse(ratio >= 1.00, "Backwardation — short-term fear", ifelse(ratio < 0.90, "Contango — normal", "Flat — rising tension"))
   }
 
   vix_s    <- get_series(raw, "^VIX", 30)

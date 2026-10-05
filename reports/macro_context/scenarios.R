@@ -28,7 +28,7 @@ sig <- function(x, center, scale) {
 SIGNAL_TOOLTIPS <- list(
   vix_stress    = "VIX stress level | sig(VIX, center=16.65, scale=7.33) | 0.5=normal, >0.85=extreme",
   vix_calm      = "VIX calm level | 1 - sig(VIX, center=16.65, scale=7.33) | inverse of stress",
-  backwardation = "VIX term structure inversion | sig(1 - VIX/VIX3M, center=0.12, scale=0.08) | 1=severe backwardation",
+  backwardation = "VIX term structure inversion | sig(VIX/VIX3M - 1, center=-0.12, scale=0.08) | 0.5=normal contango, >0.8=VIX at or above VIX3M",
   breadth_bull  = "Breadth bullish | sig(S5FI, center=50, scale=10) | >0.5 = majority above MA50",
   breadth_bear  = "Breadth bearish | 1 - sig(S5FI, center=35, scale=8) | high when S5FI < 35",
   rates_press   = "Rate pressure | sig(10Y, center=2.66, scale=1.19) | 0.5=normal, >0.85=high rates",
@@ -80,7 +80,7 @@ compute_signals <- function(vix_res, rates_res, breadth, comm_res, raw) {
   signals <- list(
     vix_stress    = sig(vix, 16.65, 7.33),
     vix_calm      = 1 - sig(vix, 16.65, 7.33),
-    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.12, 0.08) else 0,
+    backwardation = if (!is.na(ratio)) sig(ratio - 1, -0.12, 0.08) else 0,
     breadth_bull  = sig(s5fi, 50, 10),       # S5FI: no Yahoo history, keep manual
     breadth_bear  = 1 - sig(s5fi, 35, 8),    # S5FI: no Yahoo history, keep manual
     rates_press   = sig(y10, 2.66, 1.19),
@@ -114,7 +114,7 @@ REGIME_WEIGHTS <- list(
     tooltip = "Forced selling, correlation converging to 1. Sell what you can, not what you want. DO NOT open new trades.",
     weights = list(
       vix_stress    = 0.35,   # was 0.25 — core stress signal, highest weight
-      backwardation = 0.05,   # was 0.25 — mild backwardation is common, low weight
+      backwardation = 0.05,   # low weight; not re-tuned since the sign correction of 2026-10-05
       breadth_bear  = 0.25,   # was 0.20
       credit_stress = 0.25,   # was 0.20
       vix_calm      = -0.10,  # was -0.20 — reduce negative drag
@@ -131,7 +131,7 @@ REGIME_WEIGHTS <- list(
       sentiment     = 0.20,
       credit_stress = -0.20,  # was -0.15
       vix_stress    = -0.15,
-      backwardation = -0.05   # was -0.10
+      backwardation = -0.05   # not re-tuned since the sign correction of 2026-10-05
     )
   ),
   neutral = list(

@@ -41,7 +41,7 @@ MACRO_TICKERS <- c(
 CURRENT_PARAMS <- list(
   vix_stress    = list(center = 16.65, scale = 7.33),
   vix_calm      = list(center = 16.65, scale = 7.33),
-  backwardation = list(center = 0.12,  scale = 0.08),
+  backwardation = list(center = -0.12, scale = 0.08),
   breadth_bull  = list(center = 50,    scale = 10),
   breadth_bear  = list(center = 35,    scale = 8),
   rates_press   = list(center = 2.66,  scale = 1.19),
@@ -164,7 +164,7 @@ compute_signals_at_date <- function(target_date, macro) {
   signals <- list(
     vix_stress    = sig(vix, 16.65, 7.33),
     vix_calm      = 1 - sig(vix, 16.65, 7.33),
-    backwardation = if (!is.na(ratio)) sig(1 - ratio, 0.12, 0.08) else 0,
+    backwardation = if (!is.na(ratio)) sig(ratio - 1, -0.12, 0.08) else 0,
     rates_press   = sig(y10, 2.66, 1.19),
     dxy_strength  = sig(dxy_ret, 0.07, 1.77),
     reflation     = mean(c(sig(uso_ret, 1.46, 11.02), sig(gld_ret, 0.76, 4.12),
@@ -419,7 +419,7 @@ run_backtest <- function() {
   calibration_map <- list(
     vix_stress    = list(col = "vix",             invert = FALSE),
     vix_calm      = list(col = "vix",             invert = TRUE),
-    backwardation = list(col = "vix_ratio",       invert = TRUE,  transform = function(x) 1 - x),
+    backwardation = list(col = "vix_ratio",       invert = FALSE, transform = function(x) x - 1),
     rates_press   = list(col = "y10",             invert = FALSE),
     dxy_strength  = list(col = "dxy_ret",         invert = FALSE),
     tlt_bid       = list(col = "tlt_ret",         invert = FALSE),
@@ -445,7 +445,7 @@ run_backtest <- function() {
     cm <- calibration_map[[sig_name]]
     vals <- bt[[cm$col]]
 
-    # Apply transform if needed (e.g., for backwardation: 1-ratio, for credit: -hyg_ret)
+    # Apply transform if needed (e.g., for backwardation: ratio-1, for credit: -hyg_ret)
     if (!is.null(cm$transform)) vals <- cm$transform(vals)
 
     cal <- calibrate_sigmoid(vals, bt$outcome, sig_name)
