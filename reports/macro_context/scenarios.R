@@ -319,6 +319,61 @@ CURVE_SECTOR_IMPACT <- list(
   flattening = list(Financials = -0.2)
 )
 
+# ── Macro bias ───────────────────────────────────────────────────────────────
+# The headline bias is the regime model's read: the dominant regime sets it
+# only when it is clear (>= BIAS_MIN_PROB and >= BIAS_MIN_MARGIN points above
+# the next regime); otherwise NEUTRAL. Drivers are the dominant regime's
+# signals ranked by their pull away from 0.5: weight * (signal - 0.5).
+BIAS_MIN_PROB   <- 40
+BIAS_MIN_MARGIN <- 15
+BIAS_BY_REGIME  <- list(
+  liquidity_stress = list(bias = "DEFENSIVE", zone = "RED"),
+  directional_flow = list(bias = "LONG BIAS", zone = "GREEN"))
+SIGNAL_LABELS <- c(
+  vix_stress = "VIX level", vix_calm = "VIX calm", backwardation = "VIX term structure",
+  breadth_bull = "breadth strong", breadth_bear = "breadth weak", credit_stress = "credit stress (HYG)",
+  copper_gold = "copper/gold", sentiment = "sentiment", rates_press = "10Y level",
+  dxy_strength = "dollar momentum", reflation = "reflation", tlt_bid = "bond bid")
+
+#' Headline bias from the regime probabilities
+#' @param scenario_scores data.frame from run_scenarios() (signals attached)
+#' @return list(bias, bias_zone, bias_explain, synth_notes)
+synthesize <- function(scenario_scores) {
+  stopifnot(is.data.frame(scenario_scores), nrow(scenario_scores) >= 2)
+  ord <- order(scenario_scores$probability, decreasing = TRUE)
+  top <- scenario_scores[ord[1], ]; nxt <- scenario_scores[ord[2], ]
+  margin <- top$probability - nxt$probability
+  clear <- top$probability >= BIAS_MIN_PROB && margin >= BIAS_MIN_MARGIN &&
+           top$regime %in% names(BIAS_BY_REGIME)
+  bias <- if (clear) BIAS_BY_REGIME[[top$regime]]$bias else "NEUTRAL"
+  bias_zone <- if (clear) BIAS_BY_REGIME[[top$regime]]$zone else "ORANGE"
+
+  probs_txt <- paste(sprintf("%s %.1f%%", scenario_scores$regime_label[ord], scenario_scores$probability[ord]),
+                     collapse = " · ")
+  synth_notes <- list(list(t = sprintf("Regimes: %s | lead %.1f pts (needs >= %d%% and >= %d pts)",
+                                       probs_txt, margin, BIAS_MIN_PROB, BIAS_MIN_MARGIN), z = bias_zone))
+
+  signals <- attr(scenario_scores, "signals")
+  w <- REGIME_WEIGHTS[[top$regime]]$weights
+  pull <- vapply(names(w), function(s) {
+    v <- signals[[s]]; if (is.null(v) || is.na(v)) 0 else w[[s]] * (v - 0.5)
+  }, numeric(1))
+  lab <- function(s) sprintf("%s %.2f", SIGNAL_LABELS[[s]], signals[[s]])
+  pro <- names(sort(pull[pull > 0.01], decreasing = TRUE))
+  con <- names(sort(pull[pull < -0.01]))
+  for (s in pro) synth_notes[[length(synth_notes) + 1]] <- list(
+    t = sprintf("For %s: %s (weight %+.2f, pull %+.3f)", top$regime_label, lab(s), w[[s]], pull[[s]]), z = bias_zone)
+  for (s in con) synth_notes[[length(synth_notes) + 1]] <- list(
+    t = sprintf("Against %s: %s (weight %+.2f, pull %+.3f)", top$regime_label, lab(s), w[[s]], pull[[s]]), z = "ORANGE")
+
+  head_txt <- sprintf("%s %.1f%% vs %s %.1f%%", top$regime_label, top$probability, nxt$regime_label, nxt$probability)
+  parts <- c(head_txt,
+             if (length(pro)) paste0("For: ", paste(vapply(head(pro, 3), lab, ""), collapse = ", ")),
+             if (length(con)) paste0("Against: ", paste(vapply(head(con, 2), lab, ""), collapse = ", ")))
+  list(bias = bias, bias_zone = bias_zone, bias_explain = paste(parts, collapse = " | "),
+       synth_notes = synth_notes)
+}
+
 # ── DB Operations ─────────────────────────────────────────────────────────────
 
 load_prev_dominant <- function(conn) {

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - macro_context: headline bias from the regime model
+
+### Changed
+- **Bias** (`synthesize(scenario_scores)`, now in `scenarios.R`; the points version in `analyze.R` is removed): the dominant regime sets the bias when it is >= 40% and >= 15 points above the next regime. Liquidity Stress -> `DEFENSIVE` (RED), Directional Flow -> `LONG BIAS` (GREEN), otherwise `NEUTRAL`. The explanation lists the dominant regime's signals by pull, weight * (signal - 0.5): "For" and "Against". Section 06 Synthesis shows the three probabilities, the lead and each signal's pull.
+- Why: the points (VIX level, VIX9D/VIX3M, 10Y level, breadth band, mismatches) sat at exactly 3/3 on 13 of 43 runs, including every run 2026-09-24..10-05, while the regime panel on the same page had Liquidity Stress dominant at 46-49%. Calm vol was counted twice (3 long points), and breadth 20-35% scored short under an "oversold — reversal watch" label.
+- `macro_context_results.long_pts` / `short_pts` are written as NA; `bias` and `bias_zone` keep their meaning for DEFENSIVE / NEUTRAL / LONG BIAS.
+
+### Known limitation
+- On the 41 stored regime days Directional Flow never exceeded 33.6% (mean 25.2%), so `LONG BIAS` cannot occur with the current `REGIME_WEIGHTS`; the April-September days the points called LONG BIAS have Neutral dominant. Rates (`rates_press`) are not among the Liquidity Stress inputs, so the 10Y never appears as a driver. Both belong to the regime-weight review (TODO 105).
+- Replayed on history: DEFENSIVE on 17 days (2026-03-26..04-07, 2026-09-26 onward), NEUTRAL on 24.
+
 ## [2026-10-05] - macro_context: curve row says bear or bull steepening
 
 ### Changed

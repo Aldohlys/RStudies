@@ -75,14 +75,13 @@ comm_res   <- analyze_commodities(raw)
 spy_res    <- analyze_spy(raw)
 macro_env  <- build_macro_env(vix_res, rates_res, breadth, comm_res)
 mismatches <- analyze_mismatches(raw, macro_env)
-synthesis  <- synthesize(vix_res, rates_res, breadth, comm_res, mismatches)
-
-message("Bias: ", synthesis$bias, " (L:", synthesis$sl, " S:", synthesis$ss, ")")
 
 # 5. Evaluate regimes (continuous signals, not binary flags)
 conn <- safe_db_connect()
 scenario_scores <- run_scenarios(raw, vix_res, rates_res, breadth, comm_res, EVENTS, conn)
 dbDisconnect(conn)
+synthesis <- synthesize(scenario_scores)
+message("Bias: ", synthesis$bias, " (", synthesis$bias_explain, ")")
 
 # 5b. Intermarket: global movie, scenario match, asset-class panels, BOT sector map
 im <- tryCatch(run_intermarket(breadth), error = function(e) { message("Intermarket failed: ", conditionMessage(e)); NULL })
@@ -101,8 +100,8 @@ if (interactive()) utils::browseURL(out_file)
   cache_date    = .today,
   bias          = synthesis$bias,
   bias_zone     = synthesis$bias_zone,
-  long_pts      = synthesis$sl,
-  short_pts     = synthesis$ss,
+  long_pts      = NA_real_,   # bias comes from the regimes (synthesize()); no points
+  short_pts     = NA_real_,
   vix           = ifelse(is.na(vix_res$vix), NA_real_, vix_res$vix),
   vix_zone      = vix_res$vix_zone,
   s5fi          = ifelse(is.na(S5FI_VALUE), NA_real_, S5FI_VALUE),
