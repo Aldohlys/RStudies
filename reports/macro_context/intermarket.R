@@ -1,5 +1,5 @@
 # intermarket.R — intermarket panels: per-instrument trend metrics, ratios, relative rotation,
-# BOT sector verdicts. Own fetch (about 15 months of history, needed for the 200-day average and z-scores),
+# BOT sector verdicts per correlation group. Own fetch (about 15 months of history, needed for the 200-day average and z-scores),
 # cached daily in DB table "intermarket_cache".
 
 INTERMARKET_CACHE <- "intermarket_cache"
@@ -110,12 +110,13 @@ series_metrics <- function(d, kind = "price") {
   )
 }
 
-#' Relative rotation vs benchmark (simplified RRG)
-#' rs_ratio = 100 * (ETF/bench) / its 50-day average; rs_mom = 10-day change of rs_ratio
-rotation <- function(raw, sym, bench = BENCHMARK) {
-  d <- get_close(raw, paste0(sym, "/", bench))
-  if (is.null(d) || nrow(d) < 70) return(NULL)
-  r <- d$Close
+#' Relative rotation of a close series vs the benchmark's (simplified RRG)
+#' rs_ratio = 100 * (series/bench) / its 50-day average; rs_mom = 10-day change of rs_ratio
+rotation <- function(d, bench_d) {
+  if (is.null(d) || is.null(bench_d)) return(NULL)
+  m <- merge(d, bench_d, by = "date")
+  if (nrow(m) < 70) return(NULL)
+  r <- m$Close.x / m$Close.y
   ratio <- 100 * r / sma(r, 50)
   n <- length(ratio)
   rs <- ratio[n]; mom <- ratio[n] - ratio[n - 10]
@@ -182,23 +183,103 @@ analyze_sections <- function(raw) {
   })
 }
 
+.group_map_cache <- new.env(parent = emptyenv())
+
+#' BOT sector map rows: the correlation groups (ScannerUniverse.Cluster) that hold at
+#' least one Tickers.BOT_Eligible name, so the map and BOT's S3 benchmark
+#' (shared/bot_read.R) read the same groups. Each group is read as the equal-weight
+#' index of all its members, never through its anchor ETF: an anchor outside the
+#' group is the nearest universe ETF, which can serve two groups (ITA) or another
+#' industry (ITB for machinery). S3 uses the same members (peer median).
+#' Cached per session.
+#'
+#' @return list(groups = list of list(group, members, n_bot, tags),
+#'   ungrouped = data.frame(name, bench) of BOT names in no group)
+group_map <- function() {
+  if (!is.null(.group_map_cache$gm)) return(.group_map_cache$gm)
+  conn <- Tdata::safe_db_connect()
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  sc <- DBI::dbGetQuery(conn,
+    "SELECT s.Symbol, s.Cluster, s.ClusterETF, t.YahooName, t.BOT_Eligible, t.BOT_Bench,
+            a.YahooName AS AnchorYahoo
+       FROM ScannerUniverse s
+       LEFT JOIN Tickers t ON t.Name = s.Symbol
+       LEFT JOIN Tickers a ON a.Name = s.ClusterETF
+      WHERE s.IsActive = 1 AND s.Role = 'scanner'
+        AND s.Cluster IS NOT NULL AND s.Cluster <> '' AND s.Cluster <> 'Ungrouped'")
+  bot <- DBI::dbGetQuery(conn, "SELECT Name, BOT_Bench FROM Tickers WHERE BOT_Eligible = 1")
+  sc$yh <- ifelse(!is.na(sc$YahooName) & nzchar(sc$YahooName), sc$YahooName, sc$Symbol)
+  sc$anchor_yh <- ifelse(!is.na(sc$AnchorYahoo) & nzchar(sc$AnchorYahoo), sc$AnchorYahoo, sc$ClusterETF)
+  sc$bot <- sc$BOT_Eligible %in% 1
+
+  grp <- sort(unique(sc$Cluster[sc$bot]))
+  no_drv <- setdiff(grp, names(GROUP_DRIVERS))
+  if (length(no_drv)) stop("GROUP_DRIVERS (intermarket_config.R) has no entry for group(s): ",
+                           paste(no_drv, collapse = "; "))
+  groups <- lapply(grp, function(g) {
+    m <- sc[sc$Cluster == g, , drop = FALSE]
+    a <- m$ClusterETF[1]
+    # Tags let a scenario's ETF (archetypes.R) find this group: the anchor, and the
+    # benchmark most members carried before the groups existed (Tickers.BOT_Bench).
+    bb <- m$BOT_Bench[!is.na(m$BOT_Bench) & nzchar(m$BOT_Bench)]
+    tags <- unique(c(if (!is.na(a)) c(a, m$anchor_yh[1]), if (length(bb)) names(which.max(table(bb)))))
+    list(group = g, members = m$yh, n_bot = sum(m$bot), tags = tags)
+  })
+  ug <- bot[!bot$Name %in% sc$Symbol, , drop = FALSE]
+  .group_map_cache$gm <- list(groups = groups,
+                              ungrouped = data.frame(name = ug$Name, bench = ug$BOT_Bench, stringsAsFactors = FALSE))
+  .group_map_cache$gm
+}
+
+# A member's daily return beyond this is a bad print (unit change, split), not a move
+EW_MAX_DAILY_RET <- 0.5
+
+#' Equal-weight index of several symbols (dividend-adjusted): the mean daily return of
+#' the members quoted that day, compounded from 100. A day counts only when at least
+#' half the members have a return, so a holiday on one exchange does not set the move.
+ew_close <- function(raw, syms) {
+  col <- if ("Adjusted" %in% names(raw)) "Adjusted" else "Close"
+  r <- do.call(rbind, lapply(syms, function(s) {
+    d <- raw[raw$ticker == s & is.finite(raw[[col]]) & raw[[col]] > 0, c("date", col)]
+    if (nrow(d) < 2) return(NULL)
+    d <- d[order(d$date), ]
+    data.frame(date = d$date[-1], ret = diff(d[[col]]) / head(d[[col]], -1))
+  }))
+  if (is.null(r)) return(NULL)
+  r <- r[abs(r$ret) <= EW_MAX_DAILY_RET, ]
+  n <- table(r$date)
+  mu <- tapply(r$ret, r$date, mean)
+  keep <- n[names(mu)] >= max(1, ceiling(length(syms) / 2))
+  mu <- mu[keep]
+  if (length(mu) < 2) return(NULL)
+  data.frame(date = as.Date(names(mu)), Close = 100 * cumprod(1 + as.numeric(mu)))
+}
+
 analyze_sectors <- function(raw) {
-  rows <- lapply(SECTOR_GROUPS, function(g) {
-    m <- series_metrics(get_close(raw, g$bench))
-    rr <- rotation(raw, g$bench)
+  gm <- group_map()
+  bench_d <- get_close(raw, BENCHMARK)
+  rows <- lapply(gm$groups, function(g) {
+    d <- ew_close(raw, g$members)
+    m <- series_metrics(d)
+    rr <- rotation(d, bench_d)
     if (is.null(m) || is.null(rr)) return(NULL)
-    ds <- driver_score(raw, g$drivers)
+    ds <- driver_score(raw, GROUP_DRIVERS[[g$group]])
+    quoted <- sum(g$members %in% raw$ticker[!is.na(raw$Close)])
     data.frame(
-      group = g$group, bench = g$bench, trend = m$trend,
+      group = g$group, bench = "EW", trend = m$trend,
       c1m = m$c1m, c3m = m$c3m, pos52 = m$pos52, above200 = m$above200,
       rs_ratio = rr$rs_ratio, rs_mom = rr$rs_mom, quadrant = rr$quadrant, rs_3m = rr$rs_3m,
       driver_score = ds$score, drivers = ds$detail,
       verdict = bot_verdict(m$trend, rr$quadrant, ds$score),
+      n_members = length(g$members), n_quoted = quoted, n_bot = g$n_bot,
+      members = paste(g$members, collapse = " "), tags = paste(g$tags, collapse = " "),
       stringsAsFactors = FALSE)
   })
   out <- do.call(rbind, Filter(Negate(is.null), rows))
   ord <- c(LONG = 1, SHORT = 2, WATCH = 3, AVOID = 4)
-  out[order(ord[out$verdict], -out$rs_ratio), ]
+  out <- out[order(ord[out$verdict], -out$rs_ratio), ]
+  attr(out, "ungrouped") <- gm$ungrouped
+  out
 }
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
@@ -210,7 +291,9 @@ report_symbols <- function() {
     vapply(sec$instruments, `[`, "", 1),
     unlist(lapply(sec$ratios, `[`, 1:2)),
     unlist(lapply(sec$spreads %||% list(), `[`, 1:2)))))
-  g <- unlist(lapply(SECTOR_GROUPS, function(x) c(x$bench, split_keys(names(x$drivers)))))
+  gm <- group_map()
+  g <- c(unlist(lapply(gm$groups, `[[`, "members")),
+         unlist(lapply(GROUP_DRIVERS, function(d) split_keys(names(d)))))
   f <- unlist(lapply(FP_ASSETS, function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
-  unique(c(BENCHMARK, s, g, f))
+  unique(stats::na.omit(c(BENCHMARK, s, g, f)))
 }

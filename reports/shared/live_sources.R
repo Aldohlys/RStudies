@@ -125,18 +125,6 @@ resolve_sector <- function(ticker) {
   .ok(g, source = "db")
 }
 
-#' Resolve the anchor of a ticker's correlation group.
-resolve_sector_etf <- function(ticker) {
-  sec <- resolve_sector(ticker)
-  if (is.na(sec$value)) return(.miss(sec$reason))
-  anchors <- tryCatch(get_group_anchors(), error = function(e) NULL)
-  if (is.null(anchors)) return(.miss("get_group_anchors failed"))
-  etf <- unname(anchors[sec$value])
-  if (is.null(etf) || length(etf) == 0 || is.na(etf) || !nzchar(etf))
-    return(.miss(sprintf("no anchor for group '%s'", sec$value)))
-  .ok(etf, source = "db")
-}
-
 # ── Expiry ────────────────────────────────────────────────────────────────
 
 #' Pick an IBKR expiration closest to target_dte. Live primary; no DB cache
@@ -839,59 +827,63 @@ resolve_returns <- function(ticker) {
   .ok(list(ret20 = ret20, ret60 = ret60), source = "live")
 }
 
-#' 20-day return of several tickers from one Yahoo call (named, NA if missing).
-.ret20_batch <- function(tickers) {
-  yn <- vapply(tickers, function(t) {
-    y <- tryCatch(Tdata::getYahooName(t), error = function(e) t)
-    if (length(y) == 0 || is.na(y) || y == "BASE_CURRENCY") t else y
-  }, "")
-  raw <- tryCatch(Tdata::getYahooData(tickers = unique(unname(yn)),
-                                      from_date = Sys.Date() - 300, to_date = Sys.Date()),
+#' 20- and 60-session returns of several Yahoo symbols from one Yahoo call.
+#' @return data.frame(ret20, ret60) with the symbols as row names, NA if missing
+.ret_batch <- function(yahoo) {
+  yahoo <- unique(yahoo)
+  out <- data.frame(ret20 = rep(NA_real_, length(yahoo)), ret60 = NA_real_, row.names = yahoo)
+  raw <- tryCatch(Tdata::getYahooData(tickers = yahoo, from_date = Sys.Date() - 300, to_date = Sys.Date()),
                   error = function(e) NULL)
-  out <- stats::setNames(rep(NA_real_, length(tickers)), tickers)
   if (is.null(raw) || nrow(raw) == 0) return(out)
   if (!"date" %in% names(raw) && "Date" %in% names(raw)) names(raw)[names(raw) == "Date"] <- "date"
-  for (t in tickers) {
-    d <- raw[raw$ticker == yn[[t]], , drop = FALSE]
+  for (s in yahoo) {
+    d <- raw[raw$ticker == s, , drop = FALSE]
     if (nrow(d) < 70) next
     ind <- tryCatch(calc_ind(d), error = function(e) NULL)
-    if (!is.null(ind) && nrow(ind) > 0) out[[t]] <- as.numeric(tail(ind, 1)$ret20)
+    if (is.null(ind) || nrow(ind) == 0) next
+    last <- tail(ind, 1)
+    out[s, ] <- c(as.numeric(last$ret20), as.numeric(last$ret60))
   }
   out
 }
 
 #' Compute Phase B sector-RS context for a single ticker.
 #'
+#' The "sector" is the ticker's correlation group (ScannerUniverse.Cluster),
+#' read through its members, never its anchor ETF - the rule of BOT's S3
+#' (shared/bot_read.R::.bot_group_bench(), bot_group_rotation()) and of the
+#' macro report's sector map. A member whose 20-session return is beyond
+#' BOT_PEER_RET20_MAX percent is left out of both medians as a bad series.
+#'
 #' Returns:
-#'   - sector / etf_sym: ticker's sector + sector ETF
+#'   - sector / bench: ticker's group, and "peers:<group>"
+#'   - n_peers: other members with a usable return
 #'   - stock_ret20 / stock_ret60: ticker's own returns
-#'   - etf_ret20  / etf_ret60:    sector ETF returns
+#'   - grp_ret20 / grp_ret60:     median return of the other members
 #'   - spy_ret20  / spy_ret60:    SPY returns
-#'   - rs_vs_sector_20d / 60d:    stock_ret - etf_ret (leader-vs-laggard)
-#'   - sector_rs_vs_spy_20d / 60d: etf_ret - spy_ret  (strong-vs-weak sector)
-#'   - sector_rank: rank among all groups of (anchor ret20 - spy_ret20),
+#'   - rs_vs_sector_20d / 60d:    stock_ret - grp_ret (leader-vs-laggard)
+#'   - sector_rs_vs_spy_20d / 60d: grp_ret - spy_ret (strong-vs-weak group)
+#'   - sector_rank: rank among all groups of (members' median ret20 - spy_ret20),
 #'     direction-aware: descending for long (rank 1 = strongest), ascending
 #'     for short (rank 1 = weakest).
 #'   - n_sectors: number of groups ranked.
 #'
-#' Fetches every group anchor in one Yahoo call.
+#' Fetches every grouped name in one Yahoo call. Needs bot_read.R
+#' (.bot_groups_table, BOT_PEER_RET20_MAX) and indicators.R (calc_ind).
 compute_sector_rs_context <- function(ticker, direction,
                                        stock_ret20 = NA_real_,
                                        stock_ret60 = NA_real_) {
-  sec_r <- resolve_sector(ticker)
-  if (is.na(sec_r$value))
-    return(list(sector = NA_character_, etf_sym = NA_character_,
+  empty <- list(sector = NA_character_, bench = NA_character_, n_peers = 0L,
                 stock_ret20 = stock_ret20, stock_ret60 = stock_ret60,
-                etf_ret20 = NA_real_, etf_ret60 = NA_real_,
+                grp_ret20 = NA_real_, grp_ret60 = NA_real_,
                 spy_ret20 = NA_real_, spy_ret60 = NA_real_,
                 rs_vs_sector_20d = NA_real_, rs_vs_sector_60d = NA_real_,
                 sector_rs_vs_spy_20d = NA_real_, sector_rs_vs_spy_60d = NA_real_,
                 sector_rank = NA_integer_, n_sectors = NA_integer_,
-                source = "unavailable", reason = sec_r$reason))
+                source = "unavailable", reason = NULL)
+  sec_r <- resolve_sector(ticker)
+  if (is.na(sec_r$value)) return(utils::modifyList(empty, list(reason = sec_r$reason)))
   sector <- sec_r$value
-
-  etf_r <- resolve_sector_etf(ticker)
-  etf_sym <- if (is.na(etf_r$value)) NA_character_ else etf_r$value
 
   # If we don't have a stock return passed in, fetch it
   if (is.na(stock_ret20) || is.na(stock_ret60)) {
@@ -902,58 +894,45 @@ compute_sector_rs_context <- function(ticker, direction,
     }
   }
 
-  # Ticker's own sector ETF
-  this_etf_ret20 <- NA_real_; this_etf_ret60 <- NA_real_
-  if (!is.na(etf_sym)) {
-    er <- resolve_returns(etf_sym)
-    if (is.list(er$value)) {
-      this_etf_ret20 <- er$value$ret20
-      this_etf_ret60 <- er$value$ret60
-    }
-  }
-
   # SPY (benchmark)
   spy_r <- resolve_returns("SPY")
   spy_ret20 <- if (is.list(spy_r$value)) spy_r$value$ret20 else NA_real_
   spy_ret60 <- if (is.list(spy_r$value)) spy_r$value$ret60 else NA_real_
 
-  # Rank every group by its anchor's 20d return vs SPY
-  all_etfs <- tryCatch(get_group_anchors(), error = function(e) NULL)
+  sc <- .bot_groups_table()
+  if (is.null(sc)) return(utils::modifyList(empty, list(sector = sector, reason = "ScannerUniverse groups not readable")))
+  rets <- .ret_batch(sc$yh)
+  sc$ret20 <- rets[sc$yh, "ret20"]; sc$ret60 <- rets[sc$yh, "ret60"]
+  sc <- sc[is.finite(sc$ret20) & abs(sc$ret20) <= BOT_PEER_RET20_MAX, , drop = FALSE]
+  med <- function(v) { v <- v[is.finite(v)]; if (length(v)) stats::median(v) else NA_real_ }
+
+  peers <- sc[sc$Cluster == sector & sc$Symbol != ticker, , drop = FALSE]
+  grp_ret20 <- med(peers$ret20)
+  grp_ret60 <- med(peers$ret60)
+
+  # Rank every group by its members' median 20d return vs SPY (bot_group_rotation())
   sector_rank <- NA_integer_; n_sectors <- NA_integer_
-  if (!is.null(all_etfs) && length(all_etfs) > 0 && !is.na(spy_ret20)) {
-    anchor_ret20 <- .ret20_batch(unique(unname(all_etfs)))
-    rs_per_sector <- unname(anchor_ret20[all_etfs]) - spy_ret20
-    names(rs_per_sector) <- names(all_etfs)
+  if (!is.na(spy_ret20) && nrow(sc) > 0) {
+    rs_per_sector <- tapply(sc$ret20, sc$Cluster, med) - spy_ret20
     rs_per_sector <- rs_per_sector[!is.na(rs_per_sector)]
     n_sectors <- length(rs_per_sector)
     if (n_sectors > 0 && sector %in% names(rs_per_sector)) {
-      if (direction == "long") {
-        ranks <- rank(-rs_per_sector, ties.method = "first")  # descending
-      } else {
-        ranks <- rank(rs_per_sector, ties.method = "first")   # ascending
-      }
+      ranks <- if (direction == "long") rank(-rs_per_sector, ties.method = "first")
+               else rank(rs_per_sector, ties.method = "first")
       sector_rank <- as.integer(ranks[sector])
     }
   }
 
-  rs_vs_sector_20d <- if (!is.na(stock_ret20) && !is.na(this_etf_ret20))
-                        round(stock_ret20 - this_etf_ret20, 2) else NA_real_
-  rs_vs_sector_60d <- if (!is.na(stock_ret60) && !is.na(this_etf_ret60))
-                        round(stock_ret60 - this_etf_ret60, 2) else NA_real_
-  sector_rs_vs_spy_20d <- if (!is.na(this_etf_ret20) && !is.na(spy_ret20))
-                            round(this_etf_ret20 - spy_ret20, 2) else NA_real_
-  sector_rs_vs_spy_60d <- if (!is.na(this_etf_ret60) && !is.na(spy_ret60))
-                            round(this_etf_ret60 - spy_ret60, 2) else NA_real_
-
+  dif <- function(a, b) if (!is.na(a) && !is.na(b)) round(a - b, 2) else NA_real_
   list(
-    sector = sector, etf_sym = etf_sym,
+    sector = sector, bench = paste0("peers:", sector), n_peers = nrow(peers),
     stock_ret20 = stock_ret20, stock_ret60 = stock_ret60,
-    etf_ret20 = this_etf_ret20, etf_ret60 = this_etf_ret60,
+    grp_ret20 = grp_ret20, grp_ret60 = grp_ret60,
     spy_ret20 = spy_ret20, spy_ret60 = spy_ret60,
-    rs_vs_sector_20d = rs_vs_sector_20d,
-    rs_vs_sector_60d = rs_vs_sector_60d,
-    sector_rs_vs_spy_20d = sector_rs_vs_spy_20d,
-    sector_rs_vs_spy_60d = sector_rs_vs_spy_60d,
+    rs_vs_sector_20d = dif(stock_ret20, grp_ret20),
+    rs_vs_sector_60d = dif(stock_ret60, grp_ret60),
+    sector_rs_vs_spy_20d = dif(grp_ret20, spy_ret20),
+    sector_rs_vs_spy_60d = dif(grp_ret60, spy_ret60),
     sector_rank = sector_rank, n_sectors = n_sectors,
     source = "live", reason = NULL
   )

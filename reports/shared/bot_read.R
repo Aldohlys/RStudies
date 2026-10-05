@@ -100,19 +100,19 @@ bot_read_ticker_rows <- function(names) {
 #' 250). Only 79 of 258 names had BOT_Bench equal to their anchor, and 61
 #' grouped names had no BOT_Bench at all, so S3 abstained for them.
 #'
-#' - Anchor outside the group: by construction (scripts/cluster_universe.py,
-#'   step 4) a universe ETF, so it is the benchmark.
-#' - Anchor inside the group (a member ETF such as SMH or GDX, or the most
-#'   central stock when the group has no ETF, such as CF or TMO): the
-#'   median 20-session return of the other members (bot_row_bench_ret20).
-#'   The anchor cannot be its own benchmark (rs20 would be 0 and S3 could
-#'   never pass), and with a stock anchor the other members would be
-#'   measured against one stock.
-#' - Ungrouped names, or names outside ScannerUniverse: Tickers.BOT_Bench.
+#' - Grouped names: the median 20-session return of the other members
+#'   (bot_row_bench_ret20), whatever the anchor. The name is left out, or rs20
+#'   would partly measure it against itself. An anchor ETF outside the group
+#'   is not used: it is the nearest universe ETF, a proxy that can serve two
+#'   groups (ITA for defence primes and commercial aerospace) or a different
+#'   industry (ITB for machinery). The macro report's sector map reads the
+#'   same baskets (macro_context/intermarket.R::group_map()).
+#' - Ungrouped names, names outside ScannerUniverse, and the only name of a
+#'   one-name group: Tickers.BOT_Bench.
 #'
-#' `bench` becomes the anchor's Yahoo symbol or "peers:<group>", and
-#' `bench_peers` the members' Yahoo symbols, comma-separated; `group` is the
-#' name's correlation group (NA when ungrouped).
+#' `bench` becomes "peers:<group>" and `bench_peers` the other members' Yahoo
+#' symbols, comma-separated; `group` is the name's correlation group (NA when
+#' ungrouped).
 .bot_group_bench <- function(out) {
   out$group <- NA_character_
   sc <- .bot_groups_table()
@@ -120,52 +120,46 @@ bot_read_ticker_rows <- function(names) {
   for (j in seq_len(nrow(out))) {
     k <- match(out$name[j], sc$Symbol)
     if (is.na(k)) next
-    grp <- sc$Cluster[k]; anchor <- sc$ClusterETF[k]
+    grp <- sc$Cluster[k]
     out$group[j] <- grp
-    members <- sc[sc$Cluster == grp, , drop = FALSE]
-    if (!is.na(anchor) && nzchar(anchor) && !anchor %in% members$Symbol) {
-      out$bench[j] <- sc$anchor_yh[k]
-      out$bench_peers[j] <- NA_character_
-    } else {
-      peers <- members$yh[members$Symbol != out$name[j]]
-      if (!length(peers)) next   # a one-name group keeps BOT_Bench
-      out$bench[j] <- paste0("peers:", grp)
-      out$bench_peers[j] <- paste(peers, collapse = ",")
-    }
+    peers <- sc$yh[sc$Cluster == grp & sc$Symbol != out$name[j]]
+    if (!length(peers)) next   # a one-name group keeps BOT_Bench
+    out$bench[j] <- paste0("peers:", grp)
+    out$bench_peers[j] <- paste(peers, collapse = ",")
   }
   out
 }
 
-#' Grouped scanner names with their Yahoo symbols and their anchor's, or NULL.
+#' Grouped scanner names with their Yahoo symbols, or NULL.
 .bot_groups_table <- function() {
   sc <- tryCatch({
     conn <- Tdata::safe_db_connect()
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
     DBI::dbGetQuery(conn,
-      "SELECT s.Symbol, s.Cluster, s.ClusterETF, t.YahooName, a.YahooName AS AnchorYahoo
+      "SELECT s.Symbol, s.Cluster, t.YahooName
          FROM ScannerUniverse s
          LEFT JOIN Tickers t ON t.Name = s.Symbol
-         LEFT JOIN Tickers a ON a.Name = s.ClusterETF
         WHERE s.IsActive = 1 AND s.Cluster IS NOT NULL AND s.Cluster <> '' AND s.Cluster <> 'Ungrouped'")
   }, error = function(e) NULL)
   if (is.null(sc) || !nrow(sc)) return(NULL)
   sc$yh <- ifelse(!is.na(sc$YahooName) & nzchar(sc$YahooName), sc$YahooName, sc$Symbol)
-  # The anchor is an IBKR name (BNK); Yahoo may list it elsewhere (BNK.PA).
-  sc$anchor_yh <- ifelse(!is.na(sc$AnchorYahoo) & nzchar(sc$AnchorYahoo), sc$AnchorYahoo, sc$ClusterETF)
   sc
 }
 
 #' Rotation rank of every correlation group: the group's 20-session return
 #' minus SPY's, ranked across all groups (1 = strongest).
 #'
-#' The group's return follows the S3 rule: the anchor's when it sits outside
-#' the group, else the median of the members' (each within +/-50%).
+#' The group's return follows the S3 rule: the median of the members' (each
+#' within +/-50%), whatever the anchor.
 #' Measured 2026-10-05 (NewTrading/Strategies/Breakouts/group_rotation_test.py,
 #' 319 names, 55 groups, every 5th session over 5 years): names in a top-3
 #' group moved +0.30 ATR more over the next 10 sessions than names outside
 #' the top 6 (t 2.3 on non-overlapping windows; +0.36, t 2.7, for names above
 #' a rising EMA50), while the hit rate of +1.5 ATR before -1.5 ATR rose only
-#' 3-5 points (t 1.0-2.0). Reported, not gated.
+#' 3-5 points (t 1.0-2.0). Reported, not gated. That run used the outside
+#' anchor ETF where one existed; rerun the same day with member medians for
+#' every group, top 3 vs rest read +0.32 ATR (t 3.4; anchor rule +0.28, t 3.1
+#' on that run's 245 dates).
 #'
 #' @return data.frame(group, grp_rs, grp_rank, n_groups), or NULL
 bot_group_rotation <- function() {
@@ -176,8 +170,6 @@ bot_group_rotation <- function() {
   grp <- unique(sc$Cluster)
   ret <- vapply(grp, function(g) {
     m <- sc[sc$Cluster == g, , drop = FALSE]
-    a <- m$ClusterETF[1]
-    if (!is.na(a) && nzchar(a) && !a %in% m$Symbol) return(bot_bench_ret20(m$anchor_yh[1]))
     v <- vapply(m$yh, bot_bench_ret20, numeric(1))
     v <- v[is.finite(v) & abs(v) <= BOT_PEER_RET20_MAX]
     if (length(v)) stats::median(v) else NA_real_

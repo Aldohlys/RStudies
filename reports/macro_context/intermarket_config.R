@@ -1,7 +1,7 @@
-# intermarket_config.R — Intermarket panels: sections, ratios, BOT sector groups
+# intermarket_config.R — Intermarket panels: sections, ratios, BOT sector-map drivers
 #
 # Section order follows the macro-outlook reading order:
-#   stocks -> currencies -> precious metals -> oil -> other commodities -> rates -> world markets
+#   stocks -> US sectors -> currencies -> precious metals -> oil -> other commodities -> rates -> world markets
 # kind: "price" (returns in %), "yield" (changes in basis points), "fx" (returns in %)
 
 SECTIONS <- list(
@@ -22,6 +22,36 @@ SECTIONS <- list(
       c("IWM", "^GSPC", "Russell 2000 / S&P 500", "Up = domestic, rate-sensitive risk appetite"),
       c("XLY", "XLP", "Discretionary / Staples", "Up = risk-on consumer; down = defensive rotation"),
       c("SMH", "^GSPC", "Semis / S&P 500", "Up = AI/semis leadership intact")
+    )
+  ),
+  list(
+    # Parent sectors: context for the BOT sector map, which is read per correlation group
+    id = "sectors", title = "US sectors (SPDR)",
+    instruments = list(
+      c("XLK", "Technology", "price"),
+      c("XLC", "Communication services", "price"),
+      c("XLY", "Consumer discretionary", "price"),
+      c("XLF", "Financials", "price"),
+      c("XLI", "Industrials", "price"),
+      c("XLB", "Materials", "price"),
+      c("XLE", "Energy", "price"),
+      c("XLV", "Health care", "price"),
+      c("XLP", "Consumer staples", "price"),
+      c("XLU", "Utilities", "price"),
+      c("XLRE", "Real estate", "price")
+    ),
+    ratios = list(
+      c("XLK", "^GSPC", "Technology / S&P 500", "Up = technology leads the index"),
+      c("XLC", "^GSPC", "Communication services / S&P 500", "Up = communication services leads the index"),
+      c("XLY", "^GSPC", "Consumer discretionary / S&P 500", "Up = consumer discretionary leads the index"),
+      c("XLF", "^GSPC", "Financials / S&P 500", "Up = financials leads the index"),
+      c("XLI", "^GSPC", "Industrials / S&P 500", "Up = industrials leads the index"),
+      c("XLB", "^GSPC", "Materials / S&P 500", "Up = materials leads the index"),
+      c("XLE", "^GSPC", "Energy / S&P 500", "Up = energy leads the index"),
+      c("XLV", "^GSPC", "Health care / S&P 500", "Up = health care leads the index"),
+      c("XLP", "^GSPC", "Consumer staples / S&P 500", "Up = consumer staples leads the index"),
+      c("XLU", "^GSPC", "Utilities / S&P 500", "Up = utilities leads the index"),
+      c("XLRE", "^GSPC", "Real estate / S&P 500", "Up = real estate leads the index")
     )
   ),
   list(
@@ -137,7 +167,9 @@ SECTIONS <- list(
       c("^KS11", "KOSPI", "price"),
       c("^HSCE", "HSCEI (China offshore, HK-listed)", "price"),
       c("000001.SS", "Shanghai Composite (China onshore)", "price"),
-      c("EEM", "Emerging markets (USD)", "price")
+      c("EEM", "Emerging markets (USD)", "price"),
+      c("FXI", "China large caps (USD)", "price"),
+      c("EWL", "Switzerland (USD)", "price")
     ),
     ratios = list(
       c("EEM", "^GSPC", "Emerging / S&P 500", "Up = money leaves the US for EM (usually with a weaker dollar)")
@@ -145,42 +177,68 @@ SECTIONS <- list(
   )
 )
 
-# BOT universe sector groups (Strategies/tradable_universe_*.csv, column `bench`).
-# drivers: symbol = sensitivity sign (+1 = group rises with the driver, -1 = falls).
-SECTOR_GROUPS <- list(
-  list(group = "Integrated energy", bench = "XLE", drivers = c("CL=F" = 1, "BZ=F" = 1)),
-  list(group = "Energy E&P", bench = "XOP", drivers = c("CL=F" = 1, "BZ=F" = 1)),
-  list(group = "Oil services", bench = "OIH", drivers = c("CL=F" = 1)),
-  list(group = "Gas producers", bench = "FCG", drivers = c("NG=F" = 1)),
-  list(group = "US banks", bench = "KRE", drivers = c("^TNX" = 1, "HYG/IEF" = 1, "IWM/^GSPC" = 1)),
-  list(group = "EU banks", bench = "EUFN", drivers = c("^STOXX50E" = 1, "EURUSD=X" = 1, "HYG/IEF" = 1)),
-  list(group = "Pharma", bench = "PPH", drivers = c("XLY/XLP" = -1, "^TNX" = -1)),
-  list(group = "Homebuilders", bench = "ITB", drivers = c("^TNX" = -1, "IWM/^GSPC" = 1)),
-  list(group = "REITs", bench = "VNQ", drivers = c("^TNX" = -1, "HYG/IEF" = 1)),
-  list(group = "Metals & mining", bench = "XME", drivers = c("HG=F" = 1, "DX-Y.NYB" = -1, "^HSCE" = 1)),
-  list(group = "Copper miners", bench = "COPX", drivers = c("HG=F" = 1, "HG=F/GC=F" = 1, "DX-Y.NYB" = -1)),
-  list(group = "Steel", bench = "SLX", drivers = c("HG=F" = 1, "000001.SS" = 1)),
-  list(group = "Gold miners", bench = "GDX", drivers = c("GC=F" = 1, "DX-Y.NYB" = -1, "TIP/IEF" = 1)),
-  list(group = "Silver miners", bench = "SIL", drivers = c("SI=F" = 1, "GC=F/SI=F" = -1, "DX-Y.NYB" = -1)),
-  list(group = "Lithium / battery", bench = "LIT", drivers = c("000001.SS" = 1, "CNY=X" = -1)),
-  list(group = "Rare earths", bench = "REMX", drivers = c("000001.SS" = 1, "DX-Y.NYB" = -1)),
-  list(group = "Uranium", bench = "URA", drivers = c("SRUUF" = 1)),
-  list(group = "Agriculture", bench = "MOO", drivers = c("ZC=F" = 1, "ZW=F" = 1)),
-  list(group = "Ag futures", bench = "DBA", drivers = c("ZC=F" = 1, "ZW=F" = 1, "DX-Y.NYB" = -1)),
-  list(group = "Staples / tobacco / alcohol", bench = "XLP", drivers = c("XLY/XLP" = -1, "^TNX" = -1)),
-  list(group = "China internet", bench = "KWEB", drivers = c("^HSCE" = 1, "CNY=X" = -1)),
-  list(group = "China large caps", bench = "FXI", drivers = c("^HSCE" = 1, "CNY=X" = -1)),
-  list(group = "Autos", bench = "CARZ", drivers = c("XLY/XLP" = 1, "^TNX" = -1)),
-  list(group = "Retail", bench = "XRT", drivers = c("XLY/XLP" = 1, "IWM/^GSPC" = 1)),
-  list(group = "Semis / AI", bench = "SMH", drivers = c("^NDX" = 1, "SMH/^GSPC" = 1, "^KS11" = 1)),
-  list(group = "Software", bench = "IGV", drivers = c("^NDX" = 1, "^TNX" = -1)),
-  list(group = "Brokers / crypto", bench = "IAI", drivers = c("BTC-USD" = 1, "HYG/IEF" = 1)),
-  list(group = "Tech", bench = "XLK", drivers = c("^NDX" = 1, "^TNX" = -1)),
-  list(group = "Healthcare", bench = "XLV", drivers = c("XLY/XLP" = -1)),
-  list(group = "Materials", bench = "XLB", drivers = c("HG=F" = 1, "DX-Y.NYB" = -1)),
-  list(group = "Consumer discretionary", bench = "XLY", drivers = c("XLY/XLP" = 1, "^TNX" = -1)),
-  list(group = "Emerging markets", bench = "EEM", drivers = c("DX-Y.NYB" = -1, "^KS11" = 1, "HYG/IEF" = 1)),
-  list(group = "Swiss stocks", bench = "EWL", drivers = c("^SSMI" = 1, "^STOXX50E" = 1))
+# BOT sector map rows = correlation groups (ScannerUniverse.Cluster, hand-reviewed
+# 2026-10-02) that hold at least one Tickers.BOT_Eligible name; see group_map().
+# Drivers per group: symbol = sensitivity sign (+1 = group rises with the driver,
+# -1 = falls). Judgement values, untested (TODO 105). Every mapped group must have
+# an entry: a renamed or new group after a cluster review stops the map until
+# its drivers are written here.
+GROUP_DRIVERS <- list(
+  "Agriculture - Crop inputs"                     = c("ZC=F" = 1, "ZW=F" = 1),
+  "Agriculture - Fertilizers & chemicals"         = c("ZC=F" = 1, "ZW=F" = 1),
+  "Agriculture - Grain processors"                = c("ZC=F" = 1, "DX-Y.NYB" = -1),
+  "AI infra - Data-centre REITs"                  = c("^NDX" = 1, "^TNX" = -1),
+  "AI infra - Semis equipment"                    = c("^NDX" = 1, "SMH/^GSPC" = 1, "^KS11" = 1),
+  "AI infra - Semis hardware"                     = c("^NDX" = 1, "SMH/^GSPC" = 1, "^KS11" = 1),
+  "China - Internet offshore"                     = c("^HSCE" = 1, "CNY=X" = -1),
+  "Consumer - Autos"                              = c("XLY/XLP" = 1, "^TNX" = -1),
+  "Consumer - Beverages & alcohol"                = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Consumer - Food & household staples"           = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Consumer - Leisure & travel"                   = c("XLY/XLP" = 1, "CL=F" = -1),
+  "Consumer - Tobacco"                            = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Defence - European & growth defence"           = c("^STOXX50E" = 1, "EURUSD=X" = 1),
+  "Defence - Government IT services"              = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Defence - Primes"                              = c("XLY/XLP" = -1),
+  "Energy - Canadian integrated oil"              = c("CL=F" = 1, "USDCAD=X" = -1),
+  "Energy - Integrated European oil"              = c("BZ=F" = 1, "^STOXX50E" = 1),
+  "Energy - Integrated oil & E&P"                 = c("CL=F" = 1, "BZ=F" = 1),
+  "Energy - Nuclear & critical minerals"          = c("SRUUF" = 1, "000001.SS" = 1, "DX-Y.NYB" = -1),
+  "Energy - Oil services & drilling"              = c("CL=F" = 1),
+  "Energy - Refiners"                             = c("HO=F/CL=F" = 1),
+  "Energy - Tankers"                              = c("BZ=F" = 1),
+  "Energy - US natural gas"                       = c("NG=F" = 1),
+  "Europe - European cyclicals"                   = c("^STOXX50E" = 1, "EURUSD=X" = 1, "HG=F" = 1),
+  "Europe - European Financials"                  = c("^STOXX50E" = 1, "EURUSD=X" = 1, "HYG/IEF" = 1),
+  "Financials - Insurers"                         = c("^TNX" = 1, "HYG/IEF" = 1),
+  "Financials - Payments & Berkshire"             = c("XLY/XLP" = 1),
+  "Financials - US money-centre banks"            = c("^TNX" = 1, "HYG/IEF" = 1),
+  "Financials - US regional banks & card issuers" = c("^TNX" = 1, "HYG/IEF" = 1, "IWM/^GSPC" = 1),
+  "Healthcare - Big pharma"                       = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Healthcare - Bio pharma"                       = c("^TNX" = -1, "IWM/^GSPC" = 1),
+  "Healthcare - Life-science tools"               = c("^TNX" = -1),
+  "Healthcare - Managed care"                     = c("XLY/XLP" = -1),
+  "Healthcare - Medtech"                          = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Housing - Homebuilders & building"             = c("^TNX" = -1, "IWM/^GSPC" = 1),
+  "Industrials - Automation & analog"             = c("HG=F" = 1, "^NDX" = 1),
+  "Industrials - Commercial aerospace"            = c("CL=F" = -1, "XLY/XLP" = 1),
+  "Industrials - Machinery & diversified"         = c("HG=F" = 1, "IWM/^GSPC" = 1),
+  "Industrials - Transports"                      = c("CL=F" = -1, "IWM/^GSPC" = 1),
+  "Materials - Industrial gases"                  = c("HG=F" = 1),
+  "Metals - Bullion ETFs"                         = c("GC=F" = 1, "SI=F" = 1, "DX-Y.NYB" = -1),
+  "Metals - Copper & base metals"                 = c("HG=F" = 1, "HG=F/GC=F" = 1, "DX-Y.NYB" = -1, "^HSCE" = 1),
+  "Metals - Gold miners"                          = c("GC=F" = 1, "DX-Y.NYB" = -1, "TIP/IEF" = 1),
+  "Metals - Silver & precious-metal miners"       = c("SI=F" = 1, "GC=F/SI=F" = -1, "DX-Y.NYB" = -1),
+  "Metals - Steel"                                = c("HG=F" = 1, "000001.SS" = 1),
+  "Mixed - Business services"                     = c("^TNX" = -1),
+  "Platforms - E-commerce growth"                 = c("XLY/XLP" = 1, "^NDX" = 1),
+  "Real estate - REITs"                           = c("^TNX" = -1, "HYG/IEF" = 1),
+  "Software - Cloud & cybersecurity"              = c("^NDX" = 1, "^TNX" = -1),
+  "Software - Enterprise software"                = c("^NDX" = 1, "^TNX" = -1),
+  "Software - Speculative growth & crypto"        = c("BTC-USD" = 1, "^NDX" = 1, "HYG/IEF" = 1),
+  "Tech - Networking & hardware"                  = c("^NDX" = 1),
+  "Telecom - Telecom & defensive retail"          = c("XLY/XLP" = -1, "^TNX" = -1),
+  "Utilities - Power generation"                  = c("^TNX" = -1, "SMH/^GSPC" = 1),
+  "Utilities - Regulated utilities"               = c("^TNX" = -1)
 )
 
 BENCHMARK <- "^GSPC"

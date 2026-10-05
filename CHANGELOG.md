@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - macro_context: BOT sector map per correlation group
+
+### Changed
+- **Section 10 BOT sector map** (`intermarket.R::group_map()`, `analyze_sectors()`): rows are the correlation groups (`ScannerUniverse.Cluster`, cluster review 2026-10-02) that hold at least one `Tickers.BOT_Eligible` name — 55 groups on 2026-10-05 — instead of the 33 hand-listed ETFs of `SECTOR_GROUPS`, which were keyed on the `bench` column of `tradable_universe_20260827.csv`.
+- Why: the two keys did not line up. One ETF row covered several groups that do not move together (SMH = semis hardware + semis equipment + networking; IGV = cloud + speculative growth + e-commerce; SLX = steel + aerospace + copper), and one group was spread over several rows (speculative growth & crypto over IAI / IGV / CARZ / QQQ / IBIT; nuclear & critical minerals over URA / LIT / REMX / XLB). BOT's S3 already reads the groups (`shared/bot_read.R`); the map now reads the same ones.
+- **Every group is its equal-weight index** (`ew_close()`: mean daily dividend-adjusted return of all members, compounded; a day counts when at least half the members trade; daily returns beyond ±50% dropped as bad prints), never its anchor ETF. An anchor outside the group is the nearest universe ETF, which serves two groups (ITA: defence primes and commercial aerospace read identically) or another industry (ITB for machinery). Group members are added to the intermarket fetch (287 symbols).
+- **S3 aligned** (`shared/bot_read.R`): `.bot_group_bench()` gives every grouped name the peer median of its other members (`rs_bench = peers:<group>`); `bot_group_rotation()` (`grp_rs` / `grp_rank`) uses the members' median for every group. Outside anchors (SOXX, IAK, XLF, ITA…) are no longer read. Rotation rank rerun with members only (`NewTrading/Strategies/Breakouts/group_rotation_test.py`, old rule behind `--anchor-rule`): top 3 vs rest +0.32 ATR over 10 sessions (t 3.4) against +0.28 (t 3.1) with anchors, same 245 dates.
+- **Drivers** move to `GROUP_DRIVERS` (`intermarket_config.R`), keyed by group name; the map stops with an error naming any BOT group without an entry, so a renamed or new group after a cluster review has to be given drivers.
+- **/analyze Phase B aligned** (`shared/live_sources.R::compute_sector_rs_context()`): stock vs group (20d / 60d), group vs SPY and the group rank use the median return of the members (the name itself left out of its own benchmark; a member beyond ±50% in 20 sessions dropped), not the anchor. `resolve_sector_etf()` and `.ret20_batch()` removed; `.ret_batch()` returns ret20 and ret60 for every grouped name from one Yahoo call (~2 min for 340 names, against one call on ~45 anchors before). Context fields renamed `etf_sym` / `etf_ret20` / `etf_ret60` -> `bench` / `grp_ret20` / `grp_ret60` (+ `n_peers`); Phase B `sector_etf` -> `sector_bench`. Report labels: "Stock vs group", "Group vs SPY", "benchmark: median of N other members".
+- The table shows each group's members and BOT-eligible / total names; BOT names in no group are listed under it with their `BOT_Bench`.
+- Scenario cards (`verdict_tag()`): a scenario ETF shows the verdict of every group tagged with it (the anchor, or the `BOT_Bench` most members carry), one badge per group with its name on hover.
+- **New panel "US sectors (SPDR)"**: the 11 sector SPDRs and each one / S&P 500, replacing the parent-sector rows (XLK, XLB, XLY, XLV) that held no BOT group. FXI and EWL move to World markets.
+- `macro_intermarket_sectors` keeps its columns (`bench` = `EW`); basis, members and tags go to the daily CSV only.
+
 ## [2026-10-05] - macro_context: headline bias from the regime model
 
 ### Changed

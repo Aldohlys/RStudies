@@ -122,7 +122,7 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
   # Stage label (mechanical, direction-aware)
   stage <- .compute_stage_label(spot, ma50, ma50_slope, setup_n, bk_n, direction)
 
-  # Sector RS context (heavy: walks all sector ETFs)
+  # Sector RS context (heavy: fetches every grouped name)
   stock_ret20 <- if (!is.null(ind_last)) as.numeric(ind_last$ret20) else NA_real_
   stock_ret60 <- if (!is.null(ind_last)) as.numeric(ind_last$ret60) else NA_real_
   sector_ctx <- tryCatch(
@@ -143,7 +143,7 @@ run_phase_b <- function(ticker, direction, freshness = NULL) {
     stage            = stage,
     direction_match  = align,
     sector           = if (!is.null(sector_ctx)) sector_ctx$sector else NA_character_,
-    sector_etf       = if (!is.null(sector_ctx)) sector_ctx$etf_sym else NA_character_,
+    sector_bench     = if (!is.null(sector_ctx)) sector_ctx$bench else NA_character_,
     sector_rs_rank   = if (!is.null(sector_ctx)) sector_ctx$sector_rank else NA_integer_,
     n_sectors        = if (!is.null(sector_ctx)) sector_ctx$n_sectors else NA_integer_,
     sector_context   = sector_ctx,

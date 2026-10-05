@@ -431,19 +431,19 @@ render_analyze_html <- function(ctx, out_dir) {
 
   rs_sec_20_note <- if (!is.na(ctx$rs_vs_sector_20d)) {
     sign_label <- if (ctx$rs_vs_sector_20d > 0) "leader" else "laggard"
-    sprintf("stock %s · ETF %s · sector %s",
-            .fmt_pct(ctx$stock_ret20), .fmt_pct(ctx$etf_ret20), sign_label)
+    sprintf("stock %s · peers %s · %s",
+            .fmt_pct(ctx$stock_ret20), .fmt_pct(ctx$grp_ret20), sign_label)
   } else "live OHLC unavailable"
 
   rs_sec_60_note <- if (!is.na(ctx$rs_vs_sector_60d)) {
     sign_label <- if (ctx$rs_vs_sector_60d > 0) "leader" else "laggard"
-    sprintf("stock %s · ETF %s · sector %s",
-            .fmt_pct(ctx$stock_ret60), .fmt_pct(ctx$etf_ret60), sign_label)
+    sprintf("stock %s · peers %s · %s",
+            .fmt_pct(ctx$stock_ret60), .fmt_pct(ctx$grp_ret60), sign_label)
   } else "live OHLC unavailable"
 
   rs_spy_20_note <- if (!is.na(ctx$sector_rs_vs_spy_20d)) {
-    sprintf("ETF %s vs SPY %s",
-            .fmt_pct(ctx$etf_ret20), .fmt_pct(ctx$spy_ret20))
+    sprintf("peers %s vs SPY %s",
+            .fmt_pct(ctx$grp_ret20), .fmt_pct(ctx$spy_ret20))
   } else "live OHLC unavailable"
 
   tbl <- paste0(
@@ -455,23 +455,24 @@ render_analyze_html <- function(ctx, out_dir) {
     .row(.tt("Direction alignment", "Long ALIGNED iff price > MA50; short ALIGNED iff price < MA50."),
          pb$direction_match %||% "n/a",
          sprintf("user direction <code>%s</code>", direction)),
-    .row(.tt("Sector", "Correlation group from ScannerUniverse.Cluster: up to 10 scanner names that move together. Its anchor is the group's ETF, or its most central member when no ETF tracks the group."),
+    .row(.tt("Sector", "Correlation group from ScannerUniverse.Cluster: up to 10 scanner names that move together. Read through its members (median return), never an anchor ETF - the same rule as BOT's S3."),
          ctx$sector %||% "n/a",
-         sprintf("anchor: <code>%s</code>", ctx$etf_sym %||% "n/a")),
-    .row(.tt("Stock vs Sector ETF (20d)", "Stock 20d return minus the group anchor's 20d return. Positive = leader within the group; negative = laggard."),
+         sprintf("benchmark: median of %d other member%s", ctx$n_peers %||% 0L,
+                 if (identical(ctx$n_peers, 1L)) "" else "s")),
+    .row(.tt("Stock vs group (20d)", "Stock 20d return minus the median 20d return of the other members of its group. Positive = leader within the group; negative = laggard."),
          .fmt_pct(ctx$rs_vs_sector_20d),
          rs_sec_20_note),
-    .row(.tt("Stock vs Sector ETF (60d)", "Stock 60d return minus the group anchor's 60d return. Captures slower rotation than 20d."),
+    .row(.tt("Stock vs group (60d)", "Stock 60d return minus the median 60d return of the other members of its group. Captures slower rotation than 20d."),
          .fmt_pct(ctx$rs_vs_sector_60d),
          rs_sec_60_note),
-    .row(.tt("Sector vs SPY (20d)", "Group anchor 20d return minus SPY 20d return. Positive = strong group; negative = weak."),
+    .row(.tt("Group vs SPY (20d)", "Median 20d return of the other members minus SPY 20d return. Positive = strong group; negative = weak."),
          .fmt_pct(ctx$sector_rs_vs_spy_20d),
          rs_spy_20_note),
     .row(.tt("Sector rank (direction-aware)",
               if (direction == "long")
-                "Rank among all sectors by (etf_ret20 - spy_ret20), descending. Rank 1 = strongest sector."
+                "Rank among all groups by (members' median ret20 - spy_ret20), descending. Rank 1 = strongest group."
               else
-                "Rank among all sectors by (etf_ret20 - spy_ret20), ascending. Rank 1 = weakest sector."),
+                "Rank among all groups by (members' median ret20 - spy_ret20), ascending. Rank 1 = weakest group."),
          if (!is.na(ctx$sector_rank))
            sprintf("%d / %d", ctx$sector_rank, ctx$n_sectors)
          else "n/a",

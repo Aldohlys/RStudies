@@ -108,11 +108,14 @@ daily_strip_html <- function(sections) {
 MOVIE_TITLES <- c(stocks = "Stock markets", fx = "Currencies", metals = "Precious metals", oil = "Oil",
                   commod = "Other commodities", rates = "Rates and credit", world = "World markets")
 
-#' Bench ETF -> today's verdict text, to check scenario implications against the sector map
+#' Scenario ETF -> verdicts of the map groups tagged with it (anchor, or the benchmark
+#' most members carried before the groups existed), one badge per group, name on hover
 verdict_tag <- function(etf, sectors) {
-  v <- sectors$verdict[sectors$bench == etf]
-  if (length(v) == 0) return(sprintf("%s", etf))
-  sprintf("%s <span class='im-badge im-v-%s'>%s</span>", etf, tolower(v[1]), v[1])
+  hit <- vapply(strsplit(sectors$tags, " ", fixed = TRUE), function(t) etf %in% t, logical(1))
+  if (!any(hit)) return(etf)
+  paste0(etf, " ", paste(sprintf("<span class='im-badge im-v-%s' title='%s'>%s</span>",
+                                 tolower(sectors$verdict[hit]), esc(sectors$group[hit]), sectors$verdict[hit]),
+                         collapse = " "))
 }
 
 #' 60-day score line with the "in place" threshold dashed
@@ -186,7 +189,10 @@ sectors_html <- function(sx) {
   rows <- apply(sx, 1, function(r) {
     num <- function(v, f) { v <- as.numeric(v); if (is.na(v)) "&ndash;" else sprintf(f, v) }
     paste0("<tr><td><span class='im-badge im-v-", tolower(r[["verdict"]]), "'>", r[["verdict"]], "</span></td>",
-           "<td>", esc(r[["group"]]), "</td><td>", r[["bench"]], "</td>",
+           "<td>", esc(r[["group"]]), "<div class='im-sub'>", esc(r[["members"]]), "</div></td>",
+           "<td class='im-num'>", trimws(r[["n_bot"]]), " / ", trimws(r[["n_members"]]),
+           if (isTRUE(as.integer(r[["n_quoted"]]) < as.integer(r[["n_members"]])))
+             sprintf(" <span class='im-sub'>(%s quoted)</span>", trimws(r[["n_quoted"]])) else "", "</td>",
            "<td>", trend_badge(r[["trend"]]), "</td><td>", r[["quadrant"]], "</td>",
            "<td class='im-num'>", num(r[["rs_ratio"]], "%.1f"), "</td>",
            "<td class='im-num'>", num(r[["rs_mom"]], "%+.1f"), "</td>",
@@ -194,13 +200,22 @@ sectors_html <- function(sx) {
            "<td class='im-num'>", num(r[["driver_score"]], "%+.2f"), "</td>",
            "<td class='im-sub'>", esc(r[["drivers"]]), "</td></tr>")
   })
-  paste0("<div class='im-tw'><table><tr class='im-head'><td>Verdict</td><td>Group</td><td>ETF</td><td>Trend</td><td>Rotation</td>",
+  ug <- attr(sx, "ungrouped")
+  ug_html <- if (is.null(ug) || !nrow(ug)) "" else paste0(
+    "<p class='im-sub'><b>BOT names in no correlation group</b> (no map row; parent sectors are in the US sectors panel): ",
+    esc(paste(paste0(ug$name, ifelse(is.na(ug$bench) | !nzchar(ug$bench), "", paste0(" (", ug$bench, ")"))),
+              collapse = ", ")), "</p>")
+  paste0("<div class='im-tw'><table><tr class='im-head'><td>Verdict</td><td>Group</td><td>BOT / members</td><td>Trend</td><td>Rotation</td>",
          "<td>RS ratio</td><td>RS mom</td><td>RS 3M</td><td>1M</td><td>Drivers</td><td>Driver detail</td></tr>",
-         paste(rows, collapse = "\n"), "</table></div>",
-         "<div class='im-legend'>Trend: UP = close above EMA50 and EMA20 above EMA50; DOWN = mirror; MIXED = neither. ",
-         "RS ratio = 100 &times; (ETF / S&amp;P 500) divided by its 50-day average. RS mom = 10-day change of RS ratio. ",
+         paste(rows, collapse = "\n"), "</table></div>", ug_html,
+         "<div class='im-legend'>Rows = correlation groups (ScannerUniverse, cluster review) holding at least one BOT-eligible name. ",
+         "Each group is read as the equal-weight index of all its members (mean daily dividend-adjusted return, compounded; ",
+         "a day counts when at least half the members trade), never through an anchor ETF; BOT's S3 compares a name with the same members. ",
+         "BOT / members = BOT-eligible names / all names in the group. ",
+         "Trend: UP = close above EMA50 and EMA20 above EMA50; DOWN = mirror; MIXED = neither. ",
+         "RS ratio = 100 &times; (group index / S&amp;P 500) divided by its 50-day average. RS mom = 10-day change of RS ratio. ",
          "Rotation: Leading = RS ratio &ge; 100 and RS mom &ge; 0; Weakening = &ge; 100, mom &lt; 0; Improving = &lt; 100, mom &ge; 0; Lagging = &lt; 100, mom &lt; 0. ",
-         "RS 3M = 63-day change of ETF / S&amp;P 500. Drivers = mean of (sensitivity sign &times; driver trend, UP +1 / DOWN &minus;1 / MIXED 0), &minus;1 to +1. ",
+         "RS 3M = 63-day change of group index / S&amp;P 500. Drivers = mean of (sensitivity sign &times; driver trend, UP +1 / DOWN &minus;1 / MIXED 0), &minus;1 to +1. ",
          "Verdict: LONG = trend UP, rotation Leading or Improving, drivers &ge; 0. SHORT = trend DOWN, rotation Lagging or Weakening, drivers &le; 0. ",
          "AVOID = trend MIXED, or drivers &le; &minus;0.5 against an UP trend (&ge; +0.5 against a DOWN trend). WATCH = all other cases.</div>")
 }

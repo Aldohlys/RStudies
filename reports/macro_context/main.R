@@ -137,7 +137,10 @@ if (nrow(.mm_export) > 0) dbWriteTable(conn, "macro_context_mismatches", .mm_exp
 if (!is.null(im)) {
   tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_sectors WHERE cache_date = ?", params = list(.today)),
            error = function(e) NULL)
-  dbWriteTable(conn, "macro_intermarket_sectors", cbind(cache_date = .today, im$sectors), append = TRUE)
+  # Table columns as created (bench = "EW"); member lists and tags go to the CSV only
+  .sx_cols <- c("group", "bench", "trend", "c1m", "c3m", "pos52", "above200", "rs_ratio", "rs_mom",
+                "quadrant", "rs_3m", "driver_score", "drivers", "verdict")
+  dbWriteTable(conn, "macro_intermarket_sectors", cbind(cache_date = .today, im$sectors[, .sx_cols]), append = TRUE)
   .sc <- data.frame(cache_date = .today, scenario = vapply(im$matches, `[[`, "", "id"),
                     score_1m = vapply(im$matches, `[[`, 0, "score"), score_3m = vapply(im$matches, `[[`, 0, "score3m"),
                     age = vapply(im$matches, function(m) m$age$status, ""),
