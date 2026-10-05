@@ -111,26 +111,17 @@ bot_read_ticker_rows <- function(names) {
 #' - Ungrouped names, or names outside ScannerUniverse: Tickers.BOT_Bench.
 #'
 #' `bench` becomes the anchor's Yahoo symbol or "peers:<group>", and
-#' `bench_peers` the members' Yahoo symbols, comma-separated.
+#' `bench_peers` the members' Yahoo symbols, comma-separated; `group` is the
+#' name's correlation group (NA when ungrouped).
 .bot_group_bench <- function(out) {
-  sc <- tryCatch({
-    conn <- Tdata::safe_db_connect()
-    on.exit(DBI::dbDisconnect(conn), add = TRUE)
-    DBI::dbGetQuery(conn,
-      "SELECT s.Symbol, s.Cluster, s.ClusterETF, t.YahooName, a.YahooName AS AnchorYahoo
-         FROM ScannerUniverse s
-         LEFT JOIN Tickers t ON t.Name = s.Symbol
-         LEFT JOIN Tickers a ON a.Name = s.ClusterETF
-        WHERE s.IsActive = 1 AND s.Cluster IS NOT NULL AND s.Cluster <> '' AND s.Cluster <> 'Ungrouped'")
-  }, error = function(e) NULL)
-  if (is.null(sc) || !nrow(sc)) return(out)
-  sc$yh <- ifelse(!is.na(sc$YahooName) & nzchar(sc$YahooName), sc$YahooName, sc$Symbol)
-  # The anchor is an IBKR name (BNK); Yahoo may list it elsewhere (BNK.PA).
-  sc$anchor_yh <- ifelse(!is.na(sc$AnchorYahoo) & nzchar(sc$AnchorYahoo), sc$AnchorYahoo, sc$ClusterETF)
+  out$group <- NA_character_
+  sc <- .bot_groups_table()
+  if (is.null(sc)) return(out)
   for (j in seq_len(nrow(out))) {
     k <- match(out$name[j], sc$Symbol)
     if (is.na(k)) next
     grp <- sc$Cluster[k]; anchor <- sc$ClusterETF[k]
+    out$group[j] <- grp
     members <- sc[sc$Cluster == grp, , drop = FALSE]
     if (!is.na(anchor) && nzchar(anchor) && !anchor %in% members$Symbol) {
       out$bench[j] <- sc$anchor_yh[k]
@@ -143,6 +134,59 @@ bot_read_ticker_rows <- function(names) {
     }
   }
   out
+}
+
+#' Grouped scanner names with their Yahoo symbols and their anchor's, or NULL.
+.bot_groups_table <- function() {
+  sc <- tryCatch({
+    conn <- Tdata::safe_db_connect()
+    on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    DBI::dbGetQuery(conn,
+      "SELECT s.Symbol, s.Cluster, s.ClusterETF, t.YahooName, a.YahooName AS AnchorYahoo
+         FROM ScannerUniverse s
+         LEFT JOIN Tickers t ON t.Name = s.Symbol
+         LEFT JOIN Tickers a ON a.Name = s.ClusterETF
+        WHERE s.IsActive = 1 AND s.Cluster IS NOT NULL AND s.Cluster <> '' AND s.Cluster <> 'Ungrouped'")
+  }, error = function(e) NULL)
+  if (is.null(sc) || !nrow(sc)) return(NULL)
+  sc$yh <- ifelse(!is.na(sc$YahooName) & nzchar(sc$YahooName), sc$YahooName, sc$Symbol)
+  # The anchor is an IBKR name (BNK); Yahoo may list it elsewhere (BNK.PA).
+  sc$anchor_yh <- ifelse(!is.na(sc$AnchorYahoo) & nzchar(sc$AnchorYahoo), sc$AnchorYahoo, sc$ClusterETF)
+  sc
+}
+
+#' Rotation rank of every correlation group: the group's 20-session return
+#' minus SPY's, ranked across all groups (1 = strongest).
+#'
+#' The group's return follows the S3 rule: the anchor's when it sits outside
+#' the group, else the median of the members' (each within +/-50%).
+#' Measured 2026-10-05 (NewTrading/Strategies/Breakouts/group_rotation_test.py,
+#' 319 names, 55 groups, every 5th session over 5 years): names in a top-3
+#' group moved +0.30 ATR more over the next 10 sessions than names outside
+#' the top 6 (t 2.3 on non-overlapping windows; +0.36, t 2.7, for names above
+#' a rising EMA50), while the hit rate of +1.5 ATR before -1.5 ATR rose only
+#' 3-5 points (t 1.0-2.0). Reported, not gated.
+#'
+#' @return data.frame(group, grp_rs, grp_rank, n_groups), or NULL
+bot_group_rotation <- function() {
+  sc <- .bot_groups_table()
+  if (is.null(sc)) return(NULL)
+  spy <- bot_bench_ret20("SPY")
+  if (!is.finite(spy)) return(NULL)
+  grp <- unique(sc$Cluster)
+  ret <- vapply(grp, function(g) {
+    m <- sc[sc$Cluster == g, , drop = FALSE]
+    a <- m$ClusterETF[1]
+    if (!is.na(a) && nzchar(a) && !a %in% m$Symbol) return(bot_bench_ret20(m$anchor_yh[1]))
+    v <- vapply(m$yh, bot_bench_ret20, numeric(1))
+    v <- v[is.finite(v) & abs(v) <= BOT_PEER_RET20_MAX]
+    if (length(v)) stats::median(v) else NA_real_
+  }, numeric(1))
+  rs <- ret - spy
+  ok <- is.finite(rs)
+  data.frame(group = grp, grp_rs = round(rs, 2),
+             grp_rank = ifelse(ok, rank(-replace(rs, !ok, -Inf), ties.method = "min"), NA_integer_),
+             n_groups = sum(ok), stringsAsFactors = FALSE)
 }
 
 .bot_bench_cache <- new.env(parent = emptyenv())
@@ -255,7 +299,7 @@ bot_bar_lag <- function(bar_date, today = Sys.Date(), market = NULL) {
 
 .bot_listing <- function(yahoo) if (exists("stock_market_of", mode = "function")) stock_market_of(yahoo) else NULL
 
-bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
+bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE, rotation = NULL) {
   missing <- .bot_read_deps[!vapply(.bot_read_deps, exists, logical(1), mode = "function")]
   if (length(missing))
     stop("bot_read_row() needs these sourced by the caller: ", paste(missing, collapse = ", "))
@@ -475,6 +519,9 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
     updn_ratio = round(.br_n(gi$updn_ratio), 3), ret20 = round(.br_n(gi$ret20), 3),
     rs20 = round(.br_n(gi$rs20), 3),
     rs_bench = if (!is.null(row$bench) && !is.na(row$bench[1])) as.character(row$bench[1]) else NA_character_,
+    group = if (!is.null(row$group) && !is.na(row$group[1])) as.character(row$group[1]) else NA_character_,
+    grp_rs = if (!is.null(rotation) && !is.null(row$group)) rotation$grp_rs[match(row$group[1], rotation$group)] else NA_real_,
+    grp_rank = if (!is.null(rotation) && !is.null(row$group)) rotation$grp_rank[match(row$group[1], rotation$group)] else NA_real_,
     adx10 = round(.br_n(gi$adx10), 2),
 
     trend_state = cs$trend_state,
@@ -519,7 +566,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "level_basis","asym","asym_fib","sess_target_p90","sess_target_p75","em10_lo","em10_hi",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
-  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","adx10",
+  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","group","grp_rs","grp_rank","adx10",
   "trend_state","w_trend_state","compression_state","supply_state","rs_state","confluence",
   "atr_band","gap_tercile","note")
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
@@ -530,4 +577,4 @@ BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng
   "res_first","res_dist_pct","sup_first","sup_dist_pct",
   "fib_ret_382","fib_ret_500","em10_lo","ema50","ema50_slope","w_ema50",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
-  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","adx10")
+  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","group","grp_rs","grp_rank","adx10")

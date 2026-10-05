@@ -111,12 +111,19 @@ message(sprintf("Benchmarks: %d group anchor or BOT_Bench, %d peer basket, %d no
                 sum(kind == "symbol"), sum(kind == "peer basket"), sum(kind == "none"),
                 sum(!is.finite(bench_ret) & kind != "none")))
 
+# Rotation rank of the correlation groups (detail columns grp_rs / grp_rank);
+# reuses the cached member returns from the benchmark step.
+rotation <- tryCatch(bot_group_rotation(), error = function(e) NULL)
+message(if (is.null(rotation)) "Group rotation: unavailable"
+        else sprintf("Group rotation: %d groups ranked; top 3: %s", rotation$n_groups[1],
+                     paste(rotation$group[order(rotation$grp_rank)][1:3], collapse = " | ")))
+
 rows <- list()
 for (i in seq_len(nrow(uni))) {
   r <- uni[i, , drop = FALSE]
   br <- bench_ret[i]
   for (dir in DIRECTIONS) {
-    out <- tryCatch(bot_read_row(r, dir, br, ibkr_fill = ibkr_fill), error = function(e) {
+    out <- tryCatch(bot_read_row(r, dir, br, ibkr_fill = ibkr_fill, rotation = rotation), error = function(e) {
       message(sprintf("  %s (%s): %s", r$name, dir, conditionMessage(e))); NULL })
     if (!is.null(out)) rows[[length(rows) + 1]] <- out
   }
