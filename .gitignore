@@ -65,3 +65,6 @@ quotes/
 
 # Claude project config
 .claude/
+
+# Research script outputs (bot_*_trial.R): caches and results, regenerable
+/output/
