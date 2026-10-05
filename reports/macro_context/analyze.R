@@ -107,11 +107,32 @@ analyze_rates <- function(raw) {
       "Valuation pressure (4.5-5%)","Systemic stress (>5%)"))
   y30_zone <- zone(y30, c(3.5,4.5,5.0), c("GREEN","GREEN","ORANGE","RED"))
 
+  # 3M/10Y curve (^IRX is the 13-week bill: Yahoo has no 2Y). The level says
+  # little about the cause; the 20-day move does: steepening vs flattening, and
+  # bear (yields rising on average) vs bull (yields falling).
   sp       <- if (!is.na(y2) && !is.na(y10)) y10 - y2 else NA
   sp_zone  <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0), c("DARKRED","RED","ORANGE","GREEN","GREEN")) else "ORANGE"
   sp_label <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0),
-    c("Deep inversion — recession likely","Mild inversion — slowdown",
-      "Flat — transition","Normal steepening — recovery","Strong steepening — reflation")) else "n/a"
+    c("Deep inversion","Mild inversion","Flat","Normal slope","Steep slope")) else "n/a"
+  sp_shape <- "n/a"
+  y10_20d <- prev_close(raw, "^TNX", 20); y2_20d <- prev_close(raw, "^IRX", 20)
+  if (!is.na(sp) && !is.na(y10_20d) && !is.na(y2_20d)) {
+    d10 <- y10 - y10_20d; d2 <- y2 - y2_20d
+    d_sp <- d10 - d2; d_lvl <- (d10 + d2) / 2
+    moves <- sprintf("20d: 10Y %+.2f, 3M %+.2f", d10, d2)
+    if (abs(d_sp) < 0.05) {
+      sp_shape <- paste0("Shape stable | ", moves)
+    } else {
+      kind <- paste(if (d_lvl > 0) "Bear" else "Bull", if (d_sp > 0) "steepening" else "flattening")
+      why  <- switch(kind,
+        "Bear steepening"  = "long end selling off: term premium / bond stress",
+        "Bull steepening"  = "short end falling: easing priced",
+        "Bear flattening"  = "short end rising: tightening priced",
+        "Bull flattening"  = "long end rallying: growth scare / haven bid")
+      sp_zone  <- switch(kind, "Bear steepening" = "RED", "Bull steepening" = "GREEN", "ORANGE")
+      sp_shape <- sprintf("%s — %s | %s", kind, why, moves)
+    }
+  }
 
   tlt_s <- get_series(raw, "TLT", 30); tlt_pct <- NA; tlt_zone <- "ORANGE"; tlt_n <- ""
   if (nrow(tlt_s) >= 20) {
@@ -134,7 +155,7 @@ analyze_rates <- function(raw) {
 
   list(y10 = y10, y2 = y2, y30 = y30, y10_prev = y10_prev, y30_prev = y30_prev,
        y10_zone = y10_zone, y10_label = y10_label, y30_zone = y30_zone,
-       sp = sp, sp_zone = sp_zone, sp_label = sp_label,
+       sp = sp, sp_zone = sp_zone, sp_label = sp_label, sp_shape = sp_shape,
        tlt_pct = tlt_pct, tlt_zone = tlt_zone, tlt_n = tlt_n,
        tips_pct = tips_pct, tips_zone = tips_zone, tips_n = tips_n)
 }

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - macro_context: curve row says bear or bull steepening
+
+### Changed
+- **3M/10Y spread row** (`analyze_rates()`, `render_html.R`; was labelled 2Y/10Y, but `^IRX` is the 13-week bill): the level labels no longer name a cause ("Strong steepening — reflation" -> "Steep slope"). A new `sp_shape` reads the 20-day move: steepening or flattening (spread change >= 5bp), bear or bull (average of the 10Y and 3M changes rising or falling), with the 10Y and 3M changes shown. Colour: RED bear steepening (long end selling off), GREEN bull steepening, ORANGE flattening; level colour when the shape is stable.
+- Over 2026-09-24..10-02 the row reads RED bear steepening (10Y +0.44 to +0.52 in 20 days, 3M +0.21 to +0.39), where it showed GREEN "Strong steepening — reflation"; BPT's macro outlook described the same days as a bond rout.
+
 ## [2026-10-05] - macro_context: VIX/VIX3M read the right way round
 
 ### Fixed
