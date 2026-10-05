@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - macro_context: VX1-VX2 futures spread row (TODO 56)
+
+### Added
+- **`fetch_vx_curve()`** (`fetch.R`): front and second monthly VIX futures from CBOE's daily settlement CSV (no TWS, no login). Only monthly contracts (`VX/<month><year>`) are read: the file lists the weeklies at the front monthly's price. Contracts expiring on the settlement date are skipped. Walks back up to 10 calendar days, so a weekend or holiday run reads the last settlement; 0 rows when CBOE is unreachable.
+- **VX1-VX2 sub-row** under VIX Complex (`analyze_vix(raw, vx = NULL)`, `render_html.R`): spread in vol points, zone (GREEN < -0.5 healthy contango, ORANGE -0.5 to 0, RED 0 to +0.5, DARKRED > +0.5 severe backwardation), 1d change vs the previous settlement, contract months and settlement date. Shows `NO DATA` when the fetch fails.
+- Informational only: the `backwardation` scenario signal and the bias points are unchanged.
+
+### Note
+- TODO 56 gave `VX1 - VX2` with contango positive; it is negative in contango (the second month trades above the front). The bands were mirrored accordingly.
+
 ## [2026-10-05] - BOT: S3 benchmark from the correlation group
 
 ### Changed

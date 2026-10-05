@@ -68,7 +68,8 @@ message(sprintf("Breadth: %.1f%% (%d/%d) in %.1fs",
   S5FI_VALUE, breadth$n_above, breadth$n_valid, breadth$elapsed))
 
 # 4. Analyze
-vix_res    <- analyze_vix(raw)
+vx_curve   <- fetch_vx_curve()
+vix_res    <- analyze_vix(raw, vx_curve)
 rates_res  <- analyze_rates(raw)
 comm_res   <- analyze_commodities(raw)
 spy_res    <- analyze_spy(raw)

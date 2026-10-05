@@ -17,6 +17,11 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
       "VIX9D vs VIX vs VIX3M | Contango = normal, Backwardation = fear"),
     if (!is.na(vix$ratio)) html_sub_tip("VIX/VIX3M", sprintf("%.3f", vix$ratio), vix$r_zone, vix$r_note,
       "VIX / VIX3M ratio | <0.85 = backwardation, >1.10 = healthy contango") else "",
+    if (!is.na(vix$vx_spread)) html_sub_tip("VX1-VX2", sprintf("%+.2f", vix$vx_spread), vix$vx_zone,
+      paste0(vix$vx_label, " | 1d:", fmt_chg(vix$vx_spread, vix$vx_prev), " | ", vix$vx_detail),
+      "Source: CBOE daily settlement, front minus second monthly VIX future | GREEN < -0.5 contango, ORANGE -0.5 to 0, RED 0 to +0.5, DARKRED > +0.5 backwardation")
+    else html_sub_tip("VX1-VX2", "NO DATA", "ORANGE", "CBOE settlement unavailable",
+      "Source: CBOE daily settlement, front minus second monthly VIX future"),
     if (!is.na(vix$vix_20d)) html_sub_tip("VIX 20d ago", sprintf("%.2f", vix$vix_20d),
       ifelse(vix$vix > vix$vix_20d, "RED", "GREEN"), vix$vix_tend,
       "Source: Yahoo ^VIX | 20-day lookback for trend | Rising = bearish") else ""

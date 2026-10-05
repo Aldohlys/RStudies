@@ -32,7 +32,7 @@ ma_n <- function(series, n) {
 }
 
 # ── VIX Complex ─────────────────────────────────────────────────────────────
-analyze_vix <- function(raw) {
+analyze_vix <- function(raw, vx = NULL) {
   vix   <- last_close(raw, "^VIX")
   vix9d <- last_close(raw, "^VIX9D")
   vix3m <- last_close(raw, "^VIX3M")
@@ -72,12 +72,25 @@ analyze_vix <- function(raw) {
 
   vix_prev <- prev_close(raw, "^VIX")
 
+  # VX1 - VX2 futures spread (vol points): negative = contango, positive = backwardation
+  vx_spread <- NA_real_; vx_prev <- NA_real_; vx_zone <- "ORANGE"; vx_label <- "n/a"; vx_detail <- ""
+  if (!is.null(vx) && nrow(vx) > 0) {
+    vx_spread <- vx$vx1[1] - vx$vx2[1]
+    if (nrow(vx) > 1) vx_prev <- vx$vx1[2] - vx$vx2[2]
+    vx_zone  <- zone(vx_spread, c(-0.5, 0, 0.5), c("GREEN", "ORANGE", "RED", "DARKRED"))
+    vx_label <- zone(vx_spread, c(-0.5, 0, 0.5),
+      c("Healthy contango", "Flat / transitional", "Mild backwardation", "Severe backwardation — panic hedging"))
+    vx_detail <- sprintf("%s %.2f / %s %.2f, settle %s", sub("^VX/", "", vx$vx1_sym[1]), vx$vx1[1],
+      sub("^VX/", "", vx$vx2_sym[1]), vx$vx2[1], format(vx$date[1], "%d.%m"))
+  }
+
   list(vix = vix, vix_prev = vix_prev, vix9d = vix9d, vix3m = vix3m, vvix = vvix,
        vix_zone = vix_zone, vix_label = vix_label,
        vvix_zone = vvix_zone, vvix_label = vvix_label,
        ts_zone = ts_zone, ts_r = ts_r, ts_n = ts_n,
        ratio = ratio, r_zone = r_zone, r_note = r_note,
-       vix_20d = vix_20d, vix_tend = vix_tend)
+       vix_20d = vix_20d, vix_tend = vix_tend,
+       vx_spread = vx_spread, vx_prev = vx_prev, vx_zone = vx_zone, vx_label = vx_label, vx_detail = vx_detail)
 }
 
 # ── Rates ────────────────────────────────────────────────────────────────────
