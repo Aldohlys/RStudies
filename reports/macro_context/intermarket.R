@@ -99,8 +99,8 @@ series_metrics <- function(d, kind = "price") {
   last252 <- tail(x, 252)
   rng <- max(last252) - min(last252)
   list(
-    last = x[n], date = d$date[n],
-    c1w = chg(5), c1m = chg(21), c3m = chg(63),
+    last = x[n], date = d$date[n], date_prev = if (n > 1) d$date[n - 1] else NA,
+    c1d = chg(1), c1w = chg(5), c1m = chg(21), c3m = chg(63),
     ema20 = e20[n], ema50 = e50[n], sma200 = s200[n],
     above200 = if (is.na(s200[n])) NA else x[n] > s200[n],
     ema50_slope = if (n > 10) 100 * (e50[n] / e50[n - 10] - 1) else NA_real_,

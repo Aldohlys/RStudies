@@ -51,23 +51,59 @@ row_html <- function(m, meaning = NULL) {
   a200 <- if (is.na(m$above200)) "&ndash;" else if (m$above200) "above" else "<span class='im-neg'>below</span>"
   paste0("<tr><td>", label, "</td>",
          "<td class='im-num'>", fmt_num(m$last, m$kind), "</td>",
-         im_chg(m$c1w, m$kind), im_chg(m$c1m, m$kind), im_chg(m$c3m, m$kind),
+         im_chg(m$c1d, m$kind), im_chg(m$c1w, m$kind), im_chg(m$c1m, m$kind), im_chg(m$c3m, m$kind),
          "<td>", a200, "</td><td>", pos_bar(m$pos52), "</td>",
          "<td>", trend_badge(m$trend), "</td><td>", sparkline(m$spark), "</td></tr>")
 }
 
-table_head <- "<tr class='im-head'><td>Instrument</td><td>Last</td><td>1W</td><td>1M</td><td>3M</td><td>200-day</td><td>52-week range</td><td>Trend</td><td>1 year (EMA50 dashed)</td></tr>"
+table_head <- "<tr class='im-head'><td>Instrument</td><td>Last</td><td>1D</td><td>1W</td><td>1M</td><td>3M</td><td>200-day</td><td>52-week range</td><td>Trend</td><td>1 year (EMA50 dashed)</td></tr>"
 
 panel_html <- function(sec) {
   inst <- paste(vapply(sec$instruments, row_html, ""), collapse = "\n")
   rat <- if (length(sec$ratios)) paste0(
     "<div class='im-h3'>Relationships</div><div class='im-tw'><table>", sub("Instrument", "Ratio / spread", table_head),
     paste(vapply(sec$ratios, function(r) row_html(r, r$meaning), ""), collapse = "\n"), "</table></div>") else ""
-  sprintf("<div class='im-panel' id='im-%s'><div class='im-h2'>%s</div><div class='im-tw'><table>%s%s</table></div>%s</div>",
+  sprintf("<details class='im-panel' id='im-%s'><summary class='im-h2'>%s</summary><div class='im-tw'><table>%s%s</table></div>%s</details>",
           sec$id, esc(sec$title), table_head, inst, rat)
 }
 
 panels_html <- function(sections) paste(vapply(sections, panel_html, ""), collapse = "\n")
+
+# Index groups for the last-session strip at the top of section 00
+DAILY_STRIP <- list(
+  "US" = c("^GSPC", "^NDX", "RSP", "IWM"),
+  "Europe" = c("^STOXX50E", "^GDAXI", "^SSMI", "^FCHI", "^IBEX", "FTSEMIB.MI"),
+  "Asia" = c("^N225", "^KS11", "^HSCE", "000001.SS"),
+  "Latin America" = c("^BVSP", "^MXX"),
+  "EM (USD)" = c("EEM")
+)
+
+short_date <- function(d) {
+  lt <- as.POSIXlt(as.Date(d))
+  sprintf("%s %d %s", c("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")[lt$wday + 1], lt$mday, month.abb[lt$mon + 1])
+}
+
+#' One line per region: each index's change from its previous close to its last bar.
+#' Markets close on different days, so every figure carries the date of its last bar.
+daily_strip_html <- function(sections) {
+  all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
+  by_sym <- setNames(all_m, vapply(all_m, `[[`, "", "sym"))
+  rows <- vapply(names(DAILY_STRIP), function(region) {
+    ms <- by_sym[intersect(DAILY_STRIP[[region]], names(by_sym))]
+    if (!length(ms)) return("")
+    items <- vapply(ms, function(m) {
+      cls <- if (is.na(m$c1d)) "" else if (m$c1d > 0) "im-pos" else if (m$c1d < 0) "im-neg" else ""
+      txt <- if (is.na(m$c1d)) "&ndash;" else sprintf("%+.2f%%", m$c1d)
+      sprintf("<span class='im-day'>%s <b class='%s'>%s</b> <span class='im-sub'>%s</span></span>",
+              esc(m$label), cls, txt, short_date(m$date))
+    }, "")
+    sprintf("<div class='im-day-row'><span class='im-day-reg'>%s</span>%s</div>", region, paste(items, collapse = ""))
+  }, "")
+  paste0("<div class='im-daily'><div class='im-h3'>Last session &mdash; change from previous close, local currency</div>",
+         paste(rows, collapse = ""),
+         "<div class='im-legend'>Date = day of the last bar. A bar dated on the report day can be intraday ",
+         "if that market was still open when the report ran.</div></div>")
+}
 
 MOVIE_TITLES <- c(stocks = "Stock markets", fx = "Currencies", metals = "Precious metals", oil = "Oil",
                   commod = "Other commodities", rates = "Rates and credit", world = "World markets")

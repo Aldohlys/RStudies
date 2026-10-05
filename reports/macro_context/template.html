@@ -39,6 +39,18 @@ h1{font-size:18px;font-weight:600;margin-bottom:4px}
 .stitle{background:var(--header-bg);color:var(--header-text);
   padding:8px 12px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
 .snum{color:var(--accent);margin-right:8px}
+/* Collapsible sections and panels: native <details>, custom arrow */
+summary.stitle,summary.im-h2{cursor:pointer;list-style:none}
+summary.stitle::-webkit-details-marker,summary.im-h2::-webkit-details-marker{display:none}
+summary.stitle::before,summary.im-h2::before{content:"\25B8";display:inline-block;width:14px;color:var(--accent)}
+details[open]>summary.stitle::before,details[open]>summary.im-h2::before{content:"\25BE"}
+.grid{align-items:start}
+.im-panel>summary.im-h2{padding:4px 0;border-bottom:1px solid var(--border)}
+.im-panel[open]>summary.im-h2{margin-bottom:6px}
+.im-daily{margin-bottom:12px;padding:8px 10px;background:var(--bg2);border-radius:4px}
+.im-day-row{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:13px;padding:2px 0}
+.im-day-reg{font-weight:700;min-width:100px;color:var(--dim)}
+.im-day{white-space:nowrap}
 
 table{width:100%;border-collapse:collapse}
 td{padding:8px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle}
@@ -200,69 +212,69 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
   </ol>
 </details>
 
-<div class="section" style="margin-bottom:20px">
-  <div class="stitle"><span class="snum">00</span>The global movie &mdash; how markets fit together</div>
+<details class="section" style="margin-bottom:20px" open>
+  <summary class="stitle"><span class="snum">00</span>The global movie &mdash; how markets fit together</summary>
   <div class="im-body">{{MOVIE}}</div>
-</div>
+</details>
 
 <div class="grid">
 
-<div class="section">
-  <div class="stitle"><span class="snum">01</span>VIX Complex</div>
+<details class="section">
+  <summary class="stitle"><span class="snum">01</span>VIX Complex</summary>
   <table>{{SEC1}}</table>
-</div>
+</details>
 
-<div class="section">
-  <div class="stitle"><span class="snum">02</span>Rates</div>
+<details class="section">
+  <summary class="stitle"><span class="snum">02</span>Rates</summary>
   <table>{{SEC2}}</table>
-</div>
+</details>
 
-<div class="section">
-  <div class="stitle"><span class="snum">03</span>Breadth &mdash; % S&amp;P 500 stocks &gt; MA50</div>
+<details class="section">
+  <summary class="stitle"><span class="snum">03</span>Breadth &mdash; % S&amp;P 500 stocks &gt; MA50</summary>
   <table>{{SEC3}}</table>
-</div>
+</details>
 
-<div class="section">
-  <div class="stitle"><span class="snum">04</span>Dollar + Commodities</div>
+<details class="section">
+  <summary class="stitle"><span class="snum">04</span>Dollar + Commodities</summary>
   <table>{{SEC4}}</table>
-</div>
+</details>
 
-<div class="section grid-full">
-  <div class="stitle"><span class="snum">05</span>Mismatches &mdash; Sector vs Macro</div>
+<details class="section grid-full">
+  <summary class="stitle"><span class="snum">05</span>Mismatches &mdash; Sector vs Macro</summary>
   <table>{{SEC5}}</table>
-</div>
+</details>
 
-<div class="section">
-  <div class="stitle"><span class="snum">06</span>Synthesis</div>
+<details class="section">
+  <summary class="stitle"><span class="snum">06</span>Synthesis</summary>
   <ul class="synth-list">{{SEC6}}</ul>
-</div>
+</details>
 
-<div class="section grid-full">
-  <div class="stitle"><span class="snum">07</span>Market Scenarios</div>
+<details class="section grid-full">
+  <summary class="stitle"><span class="snum">07</span>Market Scenarios</summary>
   <div class="sc-container">{{SEC8}}</div>
-</div>
+</details>
 
-<div class="section">
-  <div class="stitle"><span class="snum">08</span>Events &mdash; <span style="color:var(--orange-bg)">Edit every Monday</span></div>
+<details class="section">
+  <summary class="stitle"><span class="snum">08</span>Events &mdash; <span style="color:var(--orange-bg)">Edit every Monday</span></summary>
   <table>{{SEC7}}</table>
-</div>
+</details>
 
 </div>
 
-<div class="section" style="margin-bottom:20px">
-  <div class="stitle"><span class="snum">09</span>Intermarket panels &mdash; stocks, currencies, metals, oil, commodities, rates, world</div>
+<details class="section" style="margin-bottom:20px" open>
+  <summary class="stitle"><span class="snum">09</span>Intermarket panels &mdash; stocks, currencies, metals, oil, commodities, rates, world</summary>
   <div class="im-body">{{PANELS}}</div>
-</div>
+</details>
 
-<div class="section" style="margin-bottom:20px">
-  <div class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</div>
+<details class="section" style="margin-bottom:20px">
+  <summary class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</summary>
   <div class="im-body">{{SECTOR_MAP}}</div>
-</div>
+</details>
 
-<div class="section" style="margin-bottom:20px">
-  <div class="stitle"><span class="snum">11</span>COT positioning &mdash; who holds what, by market</div>
+<details class="section" style="margin-bottom:20px">
+  <summary class="stitle"><span class="snum">11</span>COT positioning &mdash; who holds what, by market</summary>
   <div class="im-body">{{COT_DASHBOARD}}</div>
-</div>
+</details>
 
 <div class="footer">
   <span>{{FOOTER_BREADTH}}</span>
