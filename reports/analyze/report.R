@@ -1162,7 +1162,8 @@ render_analyze_html <- function(ctx, out_dir) {
     if (nzchar(r$zone_state)) r$zone_state else "&mdash;",
     f(r$gap_vs_stop), f(r$gap_p95_pct), r$entry_factors, f(r$atr_pctile, 0), f(r$prior20_atr),
     r$trend_state, r$w_trend_state %||% "n/a", r$confluence, r$rs_state,
-    if (identical(r$rs_state, "n/a")) "no benchmark (Tickers.BOT_Bench)" else "S3 vs Tickers.BOT_Bench")
+    if (identical(r$rs_state, "n/a")) "no benchmark (no correlation group, no Tickers.BOT_Bench)"
+    else sprintf("S3 vs %s", r$rs_bench %||% "benchmark"))
 
   row <- function(lab, lvl, dist, pem, touch, last)
     sprintf('<tr><td>%s</td><td class="value">%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>',

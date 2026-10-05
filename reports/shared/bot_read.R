@@ -55,13 +55,14 @@ TOUCH_COLS <- c(touch_up75 = "ATR_TouchCoefUp75", touch_up90 = "ATR_TouchCoefUp9
 #' from Tickers keep that fallback, so a raw Yahoo symbol still works.
 #'
 #' @param names character vector of Tickers.Name values (or Yahoo symbols)
-#' @return data.frame(name, yahoo, atr_band, gap_tercile, bench)
+#' @return data.frame(name, yahoo, atr_band, gap_tercile, bench, bench_peers)
 bot_read_ticker_rows <- function(names) {
   out <- data.frame(name = names, yahoo = names, atr_band = NA_character_,
                     gap_tercile = NA_character_, coef_hi = NA_real_, coef_lo = NA_real_,
                     touch_up75 = NA_real_, touch_up90 = NA_real_,
                     touch_dn75 = NA_real_, touch_dn90 = NA_real_,
-                    bench = NA_character_, stringsAsFactors = FALSE)
+                    bench = NA_character_, bench_peers = NA_character_,
+                    stringsAsFactors = FALSE)
   tk <- tryCatch({
     conn <- Tdata::safe_db_connect()
     on.exit(DBI::dbDisconnect(conn), add = TRUE)
@@ -87,25 +88,101 @@ bot_read_ticker_rows <- function(names) {
   out$bench[ok] <- as.character(tk$BOT_Bench[i[ok]])
   for (k in seq_along(TOUCH_COLS))
     out[[names(TOUCH_COLS)[k]]][ok] <- suppressWarnings(as.numeric(tk[[TOUCH_COLS[k]]][i[ok]]))
+  .bot_group_bench(out)
+}
+
+#' S3 benchmark from the name's correlation group (ScannerUniverse.Cluster /
+#' ClusterETF), replacing Tickers.BOT_Bench where a group exists.
+#'
+#' Over the 10-02 universe the group fitted a name's daily returns better than
+#' BOT_Bench: median correlation 0.70 for the anchor and 0.72 for the peer
+#' basket, against 0.63 for BOT_Bench (60 sessions; 0.69 / 0.70 / 0.62 over
+#' 250). Only 79 of 258 names had BOT_Bench equal to their anchor, and 61
+#' grouped names had no BOT_Bench at all, so S3 abstained for them.
+#'
+#' - Anchor outside the group: by construction (scripts/cluster_universe.py,
+#'   step 4) a universe ETF, so it is the benchmark.
+#' - Anchor inside the group (a member ETF such as SMH or GDX, or the most
+#'   central stock when the group has no ETF, such as CF or TMO): the
+#'   median 20-session return of the other members (bot_row_bench_ret20).
+#'   The anchor cannot be its own benchmark (rs20 would be 0 and S3 could
+#'   never pass), and with a stock anchor the other members would be
+#'   measured against one stock.
+#' - Ungrouped names, or names outside ScannerUniverse: Tickers.BOT_Bench.
+#'
+#' `bench` becomes the anchor's Yahoo symbol or "peers:<group>", and
+#' `bench_peers` the members' Yahoo symbols, comma-separated.
+.bot_group_bench <- function(out) {
+  sc <- tryCatch({
+    conn <- Tdata::safe_db_connect()
+    on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    DBI::dbGetQuery(conn,
+      "SELECT s.Symbol, s.Cluster, s.ClusterETF, t.YahooName, a.YahooName AS AnchorYahoo
+         FROM ScannerUniverse s
+         LEFT JOIN Tickers t ON t.Name = s.Symbol
+         LEFT JOIN Tickers a ON a.Name = s.ClusterETF
+        WHERE s.IsActive = 1 AND s.Cluster IS NOT NULL AND s.Cluster <> '' AND s.Cluster <> 'Ungrouped'")
+  }, error = function(e) NULL)
+  if (is.null(sc) || !nrow(sc)) return(out)
+  sc$yh <- ifelse(!is.na(sc$YahooName) & nzchar(sc$YahooName), sc$YahooName, sc$Symbol)
+  # The anchor is an IBKR name (BNK); Yahoo may list it elsewhere (BNK.PA).
+  sc$anchor_yh <- ifelse(!is.na(sc$AnchorYahoo) & nzchar(sc$AnchorYahoo), sc$AnchorYahoo, sc$ClusterETF)
+  for (j in seq_len(nrow(out))) {
+    k <- match(out$name[j], sc$Symbol)
+    if (is.na(k)) next
+    grp <- sc$Cluster[k]; anchor <- sc$ClusterETF[k]
+    members <- sc[sc$Cluster == grp, , drop = FALSE]
+    if (!is.na(anchor) && nzchar(anchor) && !anchor %in% members$Symbol) {
+      out$bench[j] <- sc$anchor_yh[k]
+      out$bench_peers[j] <- NA_character_
+    } else {
+      peers <- members$yh[members$Symbol != out$name[j]]
+      if (!length(peers)) next   # a one-name group keeps BOT_Bench
+      out$bench[j] <- paste0("peers:", grp)
+      out$bench_peers[j] <- paste(peers, collapse = ",")
+    }
+  }
   out
 }
 
+.bot_bench_cache <- new.env(parent = emptyenv())
+
 #' 20-session return of a benchmark, in percent, for S3 (rs20).
 #'
-#' The benchmark is Tickers.BOT_Bench, a Yahoo symbol (SMH, ^SSMI, EXV1.DE…),
-#' fetched as such. Dividend-adjusted like the names it is compared with.
+#' The benchmark is a Yahoo symbol (SMH, ^SSMI, EXV1.DE…), fetched as such.
+#' Dividend-adjusted like the names it is compared with. Cached per session:
+#' a peer basket fetches each member once however many names it serves.
 #'
 #' @param bench Yahoo symbol, or NA
 #' @return numeric, or NA_real_
 bot_bench_ret20 <- function(bench) {
   if (is.null(bench) || length(bench) != 1 || is.na(bench) || !nzchar(bench)) return(NA_real_)
+  if (!is.null(.bot_bench_cache[[bench]])) return(.bot_bench_cache[[bench]])
   bd <- tryCatch(getSymIntervalDate(bench, Sys.Date() - 120, Sys.Date(), sym_yahoo = bench),
                  error = function(e) NULL)
-  if (is.null(bd) || !nrow(bd)) return(NA_real_)
-  cl <- if ("Adjusted" %in% names(bd)) bd$Adjusted else bd$Close
+  cl <- if (is.null(bd) || !nrow(bd)) numeric(0)
+        else if ("Adjusted" %in% names(bd)) bd$Adjusted else bd$Close
   cl <- cl[is.finite(cl)]
-  if (length(cl) <= 21) return(NA_real_)
-  (cl[length(cl)] / cl[length(cl) - 20] - 1) * 100
+  v <- if (length(cl) <= 21) NA_real_ else (cl[length(cl)] / cl[length(cl) - 20] - 1) * 100
+  .bot_bench_cache[[bench]] <- v
+  v
+}
+
+#' Benchmark 20-session return for one row of bot_read_ticker_rows(): the
+#' median of the peers' returns when the benchmark is a basket, else the
+#' benchmark symbol's return.
+#'
+#' A peer moving more than BOT_PEER_RET20_MAX percent in 20 sessions is left
+#' out: on 2026-10-02 CTVA read -86.5% on Yahoo (an unadjusted corporate
+#' action) and, averaged with one other peer, put MOS at rs20 +43.8. The
+#' median keeps one odd peer from setting the benchmark in larger groups.
+BOT_PEER_RET20_MAX <- 50
+bot_row_bench_ret20 <- function(row) {
+  peers <- if ("bench_peers" %in% names(row)) row$bench_peers[1] else NA_character_
+  if (is.na(peers) || !nzchar(peers)) return(bot_bench_ret20(row$bench[1]))
+  v <- vapply(strsplit(peers, ",", fixed = TRUE)[[1]], bot_bench_ret20, numeric(1))
+  v <- v[is.finite(v) & abs(v) <= BOT_PEER_RET20_MAX]
+  if (length(v)) stats::median(v) else NA_real_
 }
 
 
@@ -396,7 +473,9 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE) {
     obv_slope_days = round(.br_n(gi$obv_slope_days), 3),
     rsi14 = round(.br_n(gi$rsi14), 2), rsi_slope = round(.br_n(gi$rsi_slope), 2),
     updn_ratio = round(.br_n(gi$updn_ratio), 3), ret20 = round(.br_n(gi$ret20), 3),
-    rs20 = round(.br_n(gi$rs20), 3), adx10 = round(.br_n(gi$adx10), 2),
+    rs20 = round(.br_n(gi$rs20), 3),
+    rs_bench = if (!is.null(row$bench) && !is.na(row$bench[1])) as.character(row$bench[1]) else NA_character_,
+    adx10 = round(.br_n(gi$adx10), 2),
 
     trend_state = cs$trend_state,
     # Weekly trend cluster (TODO 72a): shown beside the daily one so a daily
@@ -440,7 +519,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "level_basis","asym","asym_fib","sess_target_p90","sess_target_p75","em10_lo","em10_hi",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
-  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10",
+  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","adx10",
   "trend_state","w_trend_state","compression_state","supply_state","rs_state","confluence",
   "atr_band","gap_tercile","note")
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
@@ -451,4 +530,4 @@ BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng
   "res_first","res_dist_pct","sup_first","sup_dist_pct",
   "fib_ret_382","fib_ret_500","em10_lo","ema50","ema50_slope","w_ema50",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
-  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","adx10")
+  "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","adx10")

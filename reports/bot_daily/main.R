@@ -100,20 +100,21 @@ message(if (ibkr_fill) "TWS reachable - missing last sessions filled from IBKR d
         else "TWS not reachable - missing last sessions stay missing (bar_lag > 0)")
 message(sprintf("BOT_daily: %d names x %d direction(s)", nrow(uni), length(DIRECTIONS)))
 
-# Benchmark 20-day returns for S3, one fetch per distinct benchmark.
-bench_ret <- list()
-for (b in unique(stats::na.omit(uni$bench))) {
-  v <- bot_bench_ret20(b)
-  if (is.finite(v)) bench_ret[[b]] <- v
-}
-message(sprintf("Benchmarks: %d of %d names have one (%d distinct, %d fetched)",
-                sum(!is.na(uni$bench)), nrow(uni), length(unique(stats::na.omit(uni$bench))),
-                length(bench_ret)))
+# Benchmark 20-day returns for S3: the correlation group's anchor or peer
+# basket, else Tickers.BOT_Bench (shared/bot_read.R::.bot_group_bench()).
+# bot_bench_ret20() caches per symbol, so each anchor or peer is fetched once.
+if (!"bench_peers" %in% names(uni)) uni$bench_peers <- NA_character_
+bench_ret <- vapply(seq_len(nrow(uni)), function(i) bot_row_bench_ret20(uni[i, , drop = FALSE]), numeric(1))
+kind <- ifelse(!is.na(uni$bench_peers), "peer basket",
+        ifelse(is.na(uni$bench) | !nzchar(uni$bench), "none", "symbol"))
+message(sprintf("Benchmarks: %d group anchor or BOT_Bench, %d peer basket, %d none; %d without a return",
+                sum(kind == "symbol"), sum(kind == "peer basket"), sum(kind == "none"),
+                sum(!is.finite(bench_ret) & kind != "none")))
 
 rows <- list()
 for (i in seq_len(nrow(uni))) {
   r <- uni[i, , drop = FALSE]
-  br <- if (!is.na(r$bench) && !is.null(bench_ret[[r$bench]])) bench_ret[[r$bench]] else NA_real_
+  br <- bench_ret[i]
   for (dir in DIRECTIONS) {
     out <- tryCatch(bot_read_row(r, dir, br, ibkr_fill = ibkr_fill), error = function(e) {
       message(sprintf("  %s (%s): %s", r$name, dir, conditionMessage(e))); NULL })

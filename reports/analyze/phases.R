@@ -541,14 +541,15 @@ run_phase_e <- function(phase_a, phase_b, phase_c, phase_d, config, bot_read = N
 # ── BOT_daily per-name read ──────────────────────────────────────────────
 #
 # The row bot_daily writes for this name and direction, from the same function
-# (shared/bot_read.R), with the benchmark from Tickers.BOT_Bench for S3. Priced on the Yahoo daily bar, not the live spot:
+# (shared/bot_read.R), with the S3 benchmark from the correlation group (anchor
+# or peer basket), else Tickers.BOT_Bench. Priced on the Yahoo daily bar, not the live spot:
 # the zone engine reads the whole daily series, and grafting a live quote onto
 # it would mix two sources. The report states the bar date instead.
 run_bot_read <- function(ticker, direction, ibkr_fill = FALSE) {
   row <- tryCatch(bot_read_ticker_rows(ticker), error = function(e) NULL)
   if (is.null(row) || !nrow(row))
     return(list(status = "FETCH FAILED", reason = "Tickers lookup failed"))
-  br <- tryCatch(bot_bench_ret20(row$bench[1]), error = function(e) NA_real_)
+  br <- tryCatch(bot_row_bench_ret20(row), error = function(e) NA_real_)
   r <- tryCatch(bot_read_row(row[1, , drop = FALSE], direction, br, ibkr_fill = ibkr_fill),
                 error = function(e) conditionMessage(e))
   if (is.character(r)) return(list(status = "FETCH FAILED", reason = r))

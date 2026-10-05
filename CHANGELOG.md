@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-05] - BOT: S3 benchmark from the correlation group
+
+### Changed
+- **`rs20` / S3 benchmark** (`shared/bot_read.R`, used by BOT_daily and /analyze): read from the name's correlation group instead of `Tickers.BOT_Bench`. Anchor outside the group (a universe ETF) -> the anchor. Anchor inside the group (member ETF such as SMH, or a central stock such as CF) -> median 20-session return of the other members, a member beyond +/-50% left out. Ungrouped names keep `Tickers.BOT_Bench`. Group fit on the 10-02 universe, median correlation over 60 sessions: anchor 0.70, peers 0.72, `BOT_Bench` 0.63.
+- `bot_bench_ret20()` caches per symbol; new `bot_row_bench_ret20()`; `bot_read_ticker_rows()` adds `bench_peers`.
+- /analyze BOT read labels S3 with the benchmark used.
+
+### Added
+- **`rs_bench`** detail column after `rs20` (anchor symbol, `peers:<group>`, or the `BOT_Bench` fallback).
+
+### Fixed
+- 47 BOT-eligible names with no `BOT_Bench` had S3 abstaining; they now have a benchmark (4 left: ESTX50, TGT, STG, HYG). Member anchors are no longer their own benchmark.
+
 ## [2026-10-02] - macro_context: COT positioning dashboard (section 11)
 
 ### Added
