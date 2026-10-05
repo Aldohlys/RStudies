@@ -73,9 +73,9 @@ build_movie <- function(sections, breadth, z, matches) {
   w <- function(syms) paste(vapply(Filter(function(m) m$sym %in% syms, wl),
                                    function(m) sprintf("%s %s", m$label, pct(m)), ""), collapse = ", ")
   p$world <- paste0(
-    "Europe: ", w(c("^STOXX50E", "^GDAXI", "^SSMI", "^FTSE")), ". ",
+    "Europe: ", w(c("^STOXX50E", "^GDAXI", "^SSMI", "^FCHI", "^IBEX", "FTSEMIB.MI")), ". ",
     "Latin America: ", w(c("^BVSP", "^MXX")), ". ",
-    "Asia: ", w(c("^N225", "^KS11", "^HSI", "000001.SS")), " (local currency, 1 month).")
+    "Asia: ", w(c("^N225", "^KS11", "^HSCE", "000001.SS")), " (local currency, 1 month).")
 
   # How it fits together
   top <- matches[[1]]
