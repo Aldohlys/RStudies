@@ -128,20 +128,6 @@ CONFIG$freshness <- freshness
 # Run timestamp threaded into the report for "data retrieved" tooltips
 CONFIG$run_started_at <- Sys.time()
 
-# Surface scanner CSV staleness up front
-csv_mtime <- scanner_csv_mtime(CONFIG$out_dir)
-csv_age_h <- hours_since(csv_mtime)
-if (is.null(csv_mtime)) {
-  message("Scanner CSV: none found in ", CONFIG$out_dir,
-          " — every field will be live-fetched.")
-} else {
-  message(sprintf("Scanner CSV mtime: %s (%.1fh old) — %s",
-                  format(csv_mtime, "%Y-%m-%d %H:%M:%S"),
-                  csv_age_h,
-                  if (is_fresh(csv_mtime, freshness)) "fresh, will use cached fields"
-                  else "STALE, will refetch live"))
-}
-
 # ── TWS reachability probe ───────────────────────────────────────────────
 # One quick check up front. If TWS isn't accepting connections, every
 # downstream live fetch will short-circuit with a "TWS not reachable" reason

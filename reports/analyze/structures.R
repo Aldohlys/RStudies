@@ -12,8 +12,6 @@ MIN_PAYOFF_OUTRIGHT <- 2
 
 run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
                         freshness = NULL, phase_a = NULL) {
-  scan <- .read_scanner_row(ticker, freshness)
-  r  <- if (!is.null(scan$row)) scan$row else NULL
   spot <- phase_b$price
   if (is.null(spot) || is.na(spot)) {
     spot <- tryCatch(.live_price(ticker), error = function(e) NA_real_)
@@ -71,8 +69,7 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
   targets <- .level_targets(ticker, direction = direction, expiry = expiry)
   reach   <- .reach_vs_expiries(targets, expiries, ticker)
 
-  # Chain / OI: resolver (DB-fresh → live get_chain_oi). CSV oi_cap_call/_put
-  # in scanner row are last-resort fallback if both DB and live fail.
+  # Chain / OI: resolver (DB-fresh → live get_chain_oi).
   thin_oi_threshold <- as.integer(config$thin_oi_threshold %||% 100L)
   chain_r <- resolve_chain_oi(ticker, expiry, spot, freshness, tws_ok = tws_ok,
                               thin_oi_threshold = thin_oi_threshold)
@@ -81,21 +78,13 @@ run_phase_d <- function(ticker, direction, phase_b, phase_c, config,
          oi_cap_put  = chain_r$value$oi_cap_put,
          chain_state = chain_r$value$chain_state,
          reason      = NULL)
-  } else if (!is.null(r) &&
-             !is.na(suppressWarnings(as.numeric(r$oi_cap_call))) &&
-             !is.na(suppressWarnings(as.numeric(r$oi_cap_put)))) {
-    list(oi_cap_call = as.numeric(r$oi_cap_call),
-         oi_cap_put  = as.numeric(r$oi_cap_put),
-         chain_state = r$chain_state,
-         reason      = paste0("live/DB failed (", chain_r$reason, "); using scanner CSV"))
   } else {
     list(oi_cap_call = NA_real_, oi_cap_put = NA_real_,
          chain_state = NA_character_, reason = chain_r$reason)
   }
   # Neutral provenance for the coverage summary: inherit the
-  # resolver status; CSV fallback is CACHED.
+  # resolver status.
   chain_status_prov <- if (is.list(chain_r$value)) (chain_r$status %||% "LIVE")
-                       else if (!is.na(chain$oi_cap_call) || !is.na(chain$oi_cap_put)) "CACHED"
                        else (chain_r$status %||% "FETCH FAILED")
 
   # Structures: live pricer runs whenever TWS is reachable; otherwise we

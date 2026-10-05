@@ -1,7 +1,7 @@
 # reports/analyze/phases.R — Phase A, B, C.1, E orchestration for /analyze.
 #
-# Loads the latest swing_scanner CSV row for the ticker and exposes its
-# Phase A/B/C/D fields. Falls back to live Tdata helpers when CSV emits NA.
+# Every phase reads live Tdata / IBKR data, with the DB as cache. The swing
+# scanner CSV it once read first was retired with the scanner (2026-10-05).
 # Phase outputs are mechanical — PASS / SKIP / NO SIGNAL / STALE — no advice.
 
 `%||%` <- function(a, b) {
@@ -13,39 +13,10 @@
   a
 }
 
-# ── Scanner CSV loader ────────────────────────────────────────────────────
-.find_latest_scanner_csv <- function(out_dir = "C:/Users/aldoh/Documents/NewTrading/reports") {
-  files <- list.files(out_dir, pattern = "^swing_scanner_\\d{8}\\.csv$",
-                      full.names = TRUE)
-  if (length(files) == 0) return(NULL)
-  files <- files[order(files, decreasing = TRUE)]
-  files[1]
-}
-
-#' Read the latest scanner CSV row for a ticker.
-#' When `freshness` is supplied and the CSV mtime exceeds the policy cutoff,
-#' returns row=NULL with stale=TRUE so callers fall back to live fetches.
-.read_scanner_row <- function(ticker, freshness = NULL) {
-  csv <- .find_latest_scanner_csv()
-  if (is.null(csv)) return(list(row = NULL, csv_path = NULL, stale = TRUE))
-  mtime <- file.info(csv)$mtime
-  stale <- !is.null(freshness) && !is_fresh(mtime, freshness)
-  if (stale) return(list(row = NULL, csv_path = csv, stale = TRUE, mtime = mtime))
-  df <- tryCatch(
-    read.csv2(csv, stringsAsFactors = FALSE, na.strings = c("NA", "")),
-    error = function(e) NULL)
-  if (is.null(df) || !"sym" %in% names(df))
-    return(list(row = NULL, csv_path = csv, stale = FALSE, mtime = mtime))
-  hit <- df[df$sym == ticker, , drop = FALSE]
-  if (nrow(hit) == 0)
-    return(list(row = NULL, csv_path = csv, stale = FALSE, mtime = mtime))
-  list(row = hit[1, , drop = FALSE], csv_path = csv, stale = FALSE, mtime = mtime)
-}
-
 # ── PHASE A ──────────────────────────────────────────────────────────────
 # Step 5 rewrite 2026-05-12: Phase A is INFORMATIONAL only — never SKIPs the
 # downstream phases. Live IBKR probe (getExpirationDates + ATM strikes). DB
-# scanner_rich_universe cache and scanner CSV are last-resort fallbacks.
+# scanner_rich_universe cache is the fallback.
 run_phase_a <- function(ticker, freshness = NULL, config = NULL) {
   tws_ok <- if (is.null(config)) TRUE else isTRUE(config$tws_reachable)
                   # reachability is checked at module level (CONFIG$tws_reachable);
@@ -110,24 +81,11 @@ run_phase_a <- function(ticker, freshness = NULL, config = NULL) {
     }
   }
 
-  # Last resort: scanner CSV
-  scan <- .read_scanner_row(ticker, freshness)
-  if (!is.null(scan$row)) {
-    return(c(list(
-      result = "INFO",
-      n_expiries = NA_integer_,
-      tradeable_expiries = NA_integer_,
-      source = "scanner CSV",
-      reason = "live + DB unavailable; using scanner CSV",
-      retrieved_at = scan$mtime
-    ), spread_block))
-  }
-
   c(list(result = "INFO",
          n_expiries = NA_integer_,
          tradeable_expiries = NA_integer_,
          source = "unavailable",
-         reason = "live IBKR, DB, and scanner CSV all unavailable",
+         reason = "live IBKR and DB both unavailable",
          retrieved_at = NA), spread_block)
 }
 

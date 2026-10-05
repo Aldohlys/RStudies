@@ -1,6 +1,6 @@
 # reports/shared/freshness.R — staleness checks for cached scanner data.
 #
-# Policy: /analyze treats cached data (scanner CSV, DB Prices, DB
+# Policy: /analyze treats cached data (DB Prices, DB
 # option_skew_history, DB option_chain_oi_history) as authoritative *only* if
 # its timestamp is within SCANNER_DATA_MAX_AGE_HOURS of now. Beyond that, the
 # value is treated as if it were NA — every downstream consumer falls back to
@@ -63,11 +63,3 @@ is_fresh <- function(ts, policy) {
   hours_since(ts) <= policy$max_age_hours
 }
 
-#' Find mtime of the latest scanner CSV in `out_dir` (NULL if none).
-scanner_csv_mtime <- function(out_dir) {
-  files <- list.files(out_dir, pattern = "^swing_scanner_\\d{8}\\.csv$",
-                      full.names = TRUE)
-  if (length(files) == 0) return(NULL)
-  files <- files[order(files, decreasing = TRUE)]
-  file.info(files[1])$mtime
-}

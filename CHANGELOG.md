@@ -21,6 +21,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Note
 - TODO 56 gave `VX1 - VX2` with contango positive; it is negative in contango (the second month trades above the front). The bands were mirrored accordingly.
 
+## [2026-10-05] - Swing scanner removed
+
+### Removed
+- **`reports/swing_scanner/`** (front-run option flow scanner). The last commit with it is tagged `swing-scanner-final`. Why: across 116 closed BOT option trades, spot movement explains the P&L (R^2 0.89) and vega does not (0.03). The scanner's vol-cheapness thesis was never where the money came from. Its option history tables had stopped on 2026-04-27 (`daily_option_fetch.R` was never scheduled), so Phase D had no chain data. Its trend and footprint inputs duplicate BOT gates, and its target / R:R duplicates /analyze. The only signal with measured value, the group rotation rank, is now in BOT_daily (`grp_rank`).
+- **/analyze no longer reads `swing_scanner_<date>.csv`.** Removed: the loader (`phases.R`), the Phase A last-resort fallback, the Phase D OI-cap fallback (`structures.R`), the staleness banner (`main.R`) and `scanner_csv_mtime()` (`freshness.R`). Every field comes from live IBKR / Tdata, with the DB tables as cache.
+- NewTrading `scripts/run_flow_scanner.bat` replaced by `run_macro_context.bat` (same RunScanner task, 09:00); `scripts/daily_option_fetch.R` and `scripts/test_v5_modules.R` removed.
+
+### Kept
+- `shared/` modules used by /analyze (`setup_chain_rr.R`, `vehicle_rule.R`, `indicators.R`, `gates.R`, `universe.R`); DB tables `option_skew_history`, `option_chain_oi_history`, `scanner_rich_universe`, `scanner_results` (history).
+
 ## [2026-10-05] - BOT: group rotation rank; swing scanner stopped
 
 ### Added
