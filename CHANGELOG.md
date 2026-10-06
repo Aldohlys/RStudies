@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-06] - macro_context: reading principles aligned on Ceresna's five tenets
+
+### Changed
+- **Reading principles** (`template.html`): five principles instead of four, following Ceresna's Macro Outlook 2026-10-05 (order: present, value, liquidity, consensus, actors). The former principle 2 merged his long-term mean reversion and short-term liquidity tenets and narrowed liquidity to "liquidity stress"; they are now separate.
+- Principle 2 (reversion to fundamental value) is a warning for BOT's holding period, not a signal: valuation is no reason to fade a breakout or exit early.
+- Principle 3 (liquidity) reads both directions: tightening hits small caps, equal weight and breadth first and crowds flows into a few leaders; loosening broadens participation.
+- Consensus principle restores "almost always"; actors principle restores currencies and commodities.
+
 ## [2026-10-05] - macro_context: BOT sector map per correlation group
 
 ### Changed
