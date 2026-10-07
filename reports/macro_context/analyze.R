@@ -254,11 +254,11 @@ analyze_mismatches <- function(raw, macro_env) {
       signal <- "SHORT strong — structural weakness"
     } else if (prof$trend == "FLAT" && n_tw >= 2 && n_hw == 0 && !is.na(prof$rs) && prof$rs < -3) {
       type <- "LAGGING vs MACRO"
-      note <- sprintf("%s flat vs. MA20 RS vs. SPY:%+.1f%% despite %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
+      note <- sprintf("%s flat vs. MA20 RS vs. SPY 20d:%+.1f%% despite %d tailwinds (%s)", etf, prof$rs, n_tw, paste(tw_names, collapse = "+"))
       signal <- "LONG upcoming — wait for MA20 gate"
     } else if (prof$trend == "DOWN" && n_hw >= 2 && !is.na(prof$rs) && prof$rs < -4) {
       type <- "CONFIRMED SHORT"
-      note <- sprintf("%s downtrend + %d headwinds (%s) RS vs. SPY:%+.1f%%", etf, n_hw, paste(hw_names, collapse = "+"), prof$rs)
+      note <- sprintf("%s downtrend + %d headwinds (%s) RS vs. SPY 20d:%+.1f%%", etf, n_hw, paste(hw_names, collapse = "+"), prof$rs)
       signal <- "SHORT high conviction"
     }
     if (!is.null(type))

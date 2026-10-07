@@ -7,6 +7,7 @@ find_m <- function(sections, sym) {
 }
 tr <- function(m) if (is.null(m) || is.na(m$trend)) "n/a" else m$trend
 pct <- function(m) if (is.null(m) || is.na(m$c1m)) "n/a" else sprintf("%+.1f%%", m$c1m)
+P1M <- "over the last 21 sessions (1 month)"   # window of every pct() and c1m figure below; say it in each sentence
 
 #' Strength word from a 1-month z-score
 zword <- function(zv) {
@@ -20,11 +21,11 @@ build_movie <- function(sections, breadth, z, matches) {
 
   spx <- g("^GSPC"); ndx <- g("^NDX/^GSPC"); ew <- g("RSP/^GSPC"); vix <- g("^VIX"); cons <- g("XLY/XLP")
   p$stocks <- paste0(
-    sprintf("S&amp;P 500 %s over a month, %s move for this index, trend %s at %.0f%% of its 52-week range. ",
-            pct(spx), zword(z["SPX"]), tr(spx), spx$pos52),
+    sprintf("S&amp;P 500 %s %s, %s move for this index, trend %s at %.0f%% of its 52-week range. ",
+            pct(spx), P1M, zword(z["SPX"]), tr(spx), spx$pos52),
     if (!is.null(breadth)) sprintf("Only %.0f%% of its stocks are above their 50-day average. ", breadth$pct) else "",
-    sprintf("Equal weight vs cap weight is %s (%s), Nasdaq 100 vs S&amp;P %s, discretionary vs staples %s. ",
-            tr(ew), pct(ew), tr(ndx), tr(cons)),
+    sprintf("Equal weight vs cap weight %s %s, trend %s. Trends: Nasdaq 100 vs S&amp;P %s, discretionary vs staples %s. ",
+            pct(ew), P1M, tr(ew), tr(ndx), tr(cons)),
     sprintf("VIX at %.1f, trend %s.", vix$last, tr(vix)))
 
   fx_keys <- c("EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "EMFX", "CNY")
@@ -32,15 +33,15 @@ build_movie <- function(sections, breadth, z, matches) {
   strong <- fx_keys[!is.na(z[fx_keys]) & z[fx_keys] >= 0.5]
   dxy <- g("DX-Y.NYB")
   p$fx <- paste0(
-    sprintf("Dollar index %s over a month, %s move. ", pct(dxy), zword(z["USD"])),
-    if (length(weak)) sprintf("Weaker against the dollar: %s. ", paste(vapply(weak, fp_label, ""), collapse = ", ")) else "",
-    if (length(strong)) sprintf("Stronger: %s. ", paste(vapply(strong, fp_label, ""), collapse = ", ")) else "",
+    sprintf("Dollar index %s %s, %s move. ", pct(dxy), P1M, zword(z["USD"])),
+    if (length(weak)) sprintf("Weaker against the dollar %s: %s. ", P1M, paste(vapply(weak, fp_label, ""), collapse = ", ")) else "",
+    if (length(strong)) sprintf("Stronger %s: %s. ", P1M, paste(vapply(strong, fp_label, ""), collapse = ", ")) else "",
     if (length(weak) >= 5 && z["USD"] >= 1) "The dollar is rising against almost everything: a broad dollar bid, not a single-currency story. " else "",
     sprintf("AUD/JPY, the carry and risk barometer, is %s.", tr(g("AUDJPY=X"))))
 
   gold <- g("GC=F"); gs <- g("GC=F/SI=F"); mg <- g("GDX/GC=F")
   p$metals <- paste0(
-    sprintf("Gold %s, %s move, trend %s. ", pct(gold), zword(z["GOLD"]), tr(gold)),
+    sprintf("Gold %s %s, %s move, trend %s. ", pct(gold), P1M, zword(z["GOLD"]), tr(gold)),
     if (!is.na(z["GOLD"]) && !is.na(z["USD"]) && z["GOLD"] <= -0.5 && z["USD"] >= 0.5)
       "Gold falling with a rising dollar: it is being treated as a currency that loses to the dollar, or sold to raise cash. " else "",
     if (!is.na(z["GOLD"]) && !is.na(z["USD"]) && z["GOLD"] >= 0.5 && z["USD"] >= 0.5)
@@ -49,23 +50,23 @@ build_movie <- function(sections, breadth, z, matches) {
 
   oil <- g("CL=F"); brent <- g("BZ=F"); eo <- g("XLE/CL=F")
   p$oil <- paste0(
-    sprintf("WTI %s (%s move), Brent %s; trend %s. ", pct(oil), zword(z["OIL"]), pct(brent), tr(oil)),
+    sprintf("WTI %s (%s move) and Brent %s, both %s; WTI trend %s. ", pct(oil), zword(z["OIL"]), pct(brent), P1M, tr(oil)),
     if (!is.na(z["OIL"]) && !is.na(z["USD"]) && z["OIL"] >= 0.5 && z["USD"] >= 0.5)
       "Oil up while the dollar is up: oil importers pay twice (higher price, dearer dollars), which adds to global dollar demand. " else "",
     sprintf("Energy stocks vs crude %s.", tr(eo)))
 
   cu <- g("HG=F"); cg <- g("HG=F/GC=F")
   p$commod <- paste0(
-    sprintf("Copper %s (%s move), copper/gold %s. ", pct(cu), zword(z["COPPER"]), tr(cg)),
-    sprintf("Wheat %s, corn %s, broad commodities %s.", pct(g("ZW=F")), pct(g("ZC=F")), pct(g("DBC"))))
+    sprintf("Copper %s %s, %s move; copper/gold %s. ", pct(cu), P1M, zword(z["COPPER"]), tr(cg)),
+    sprintf("Wheat %s, corn %s, broad commodities %s, all %s.", pct(g("ZW=F")), pct(g("ZC=F")), pct(g("DBC")), P1M))
 
   tny <- g("^TNX"); cur <- g("^TNX-^IRX"); cr <- g("HYG/IEF"); mv <- g("^MOVE")
   glob <- c("US10Y", "BUND", "GILT")
   up_all <- all(!is.na(z[glob]) & z[glob] >= 0.5)
   p$rates <- paste0(
-    sprintf("US 10-year at %.2f%%, %+.0f bp over a month (%s move); 10y minus 3m %.2f pt, trend %s. ",
-            tny$last, tny$c1m, zword(z["US10Y"]), cur$last, tr(cur)),
-    sprintf("German long Bunds %s, UK long gilts %s (bond prices). ", pct(g("IS0L.DE")), pct(g("GLTL.L"))),
+    sprintf("US 10-year at %.2f%%, %+.0f bp %s, %s move; 10y minus 3m %.2f pt, trend %s. ",
+            tny$last, tny$c1m, P1M, zword(z["US10Y"]), cur$last, tr(cur)),
+    sprintf("German long Bunds %s, UK long gilts %s, both %s (bond prices). ", pct(g("IS0L.DE")), pct(g("GLTL.L")), P1M),
     if (up_all) "Yields are rising in the US, Germany and the UK together: a global bond move, not a US-specific one. " else "",
     sprintf("MOVE %.0f (trend %s); high yield vs Treasuries %s.", mv$last, tr(mv), tr(cr)))
 
@@ -73,19 +74,19 @@ build_movie <- function(sections, breadth, z, matches) {
   w <- function(syms) paste(vapply(Filter(function(m) m$sym %in% syms, wl),
                                    function(m) sprintf("%s %s", m$label, pct(m)), ""), collapse = ", ")
   p$world <- paste0(
-    "Over 1 month, local currency. Europe: ", w(c("^STOXX50E", "^GDAXI", "^SSMI", "^FCHI", "^IBEX", "FTSEMIB.MI")), ". ",
+    "Over the last 21 sessions (1 month), local currency. Europe: ", w(c("^STOXX50E", "^GDAXI", "^SSMI", "^FCHI", "^IBEX", "FTSEMIB.MI")), ". ",
     "Latin America: ", w(c("^BVSP", "^MXX")), ". ",
     "Asia: ", w(c("^N225", "^KS11", "^HSCE", "000001.SS")), ". Last-session changes: see the strip at the top of this section.")
 
   # How it fits together
   top <- matches[[1]]
-  fit <- vapply(matches[1:3], function(m) sprintf("%s %+.0f%% (3 months: %+.0f%%, %s%s)", m$name, 100 * m$score,
+  fit <- vapply(matches[1:3], function(m) sprintf("%s %+.0f%% on 1-month moves (on 3-month moves: %+.0f%%; %s%s)", m$name, 100 * m$score,
     100 * m$score3m, tolower(m$age$status), if (m$age$run > 0) sprintf(", %d days", m$age$run) else ""), "")
   p$fit <- paste0(
     sprintf("Closest scenarios: %s. ", paste(fit, collapse = "; ")),
-    sprintf("For the closest one, %s, the moves that fit are: %s. ", top$name,
+    sprintf("For the closest one, %s, the moves that fit, %s, are: %s. ", top$name, P1M,
             if (length(top$agree)) paste(vapply(top$agree, function(k) describe_z(k, z[k]), ""), collapse = "; ") else "none"),
-    if (length(top$against)) sprintf("What does not fit (the present is not a repeat): %s.",
+    if (length(top$against)) sprintf("What does not fit (the present is not a repeat), %s: %s.", P1M,
                                      paste(vapply(top$against, function(k) describe_z(k, z[k]), ""), collapse = "; ")) else
       "No asset contradicts the fingerprint.",
     if (nzchar(top$age$text)) paste0(" ", top$age$text) else "")
