@@ -46,6 +46,7 @@ source(file.path(SCRIPT_DIR, "archetypes.R"))
 source(file.path(SCRIPT_DIR, "intermarket_reads.R"))
 source(file.path(SCRIPT_DIR, "intermarket_render.R"))
 source(file.path(SCRIPT_DIR, "cot_render.R"))
+source(file.path(SCRIPT_DIR, "methodology.R"))
 
 message("=== MACRO CONTEXT REPORT ===")
 message("Run date: ", format(Sys.Date(), "%d %B %Y"))

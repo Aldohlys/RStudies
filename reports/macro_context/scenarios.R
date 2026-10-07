@@ -259,6 +259,9 @@ compute_catalyst_boost <- function(events, today = Sys.Date()) {
 #' @param scores Named numeric vector
 #' @param temperature Higher = flatter distribution (less certainty)
 #' @return Named numeric vector of probabilities (sum to 1)
+REGIME_INERTIA     <- 0.15  # bonus to the previous run's dominant regime
+REGIME_TEMPERATURE <- 0.8   # was 2 — lower = more decisive
+
 softmax <- function(scores, temperature = 2) {
   vals <- unlist(scores)
   exp_vals <- exp(vals / temperature)
@@ -466,13 +469,12 @@ run_scenarios <- function(raw, vix_res, rates_res, breadth, comm_res, events, co
   # 5. Regime inertia
   prev_dominant <- load_prev_dominant(conn)
   prev_probs <- load_prev_probabilities(conn)
-  inertia_bonus <- 0.15
   if (!is.null(prev_dominant) && prev_dominant %in% names(raw_scores)) {
-    raw_scores[[prev_dominant]] <- raw_scores[[prev_dominant]] + inertia_bonus
+    raw_scores[[prev_dominant]] <- raw_scores[[prev_dominant]] + REGIME_INERTIA
   }
 
   # 6. Softmax → probabilities
-  probs <- softmax(raw_scores, temperature = 0.8)  # was 2 — lower = more decisive
+  probs <- softmax(raw_scores, temperature = REGIME_TEMPERATURE)
 
   # 7. Build results data.frame
   results <- data.frame(
