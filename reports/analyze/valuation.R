@@ -5,7 +5,9 @@
 # where it is comparable:
 #   own history          reported EPS (the company's reported, often adjusted,
 #                        figure, stepping on the report date) — the only basis
-#                        with history
+#                        with history. collect_pe.py drops a name whose calendar
+#                        has stopped (AI.PA ends 2022-04), so a
+#                        stock can have no series: shown as n/a, not as an ETF.
 #   vs sector / index    Yahoo trailing P/E — the basis Yahoo gives for ETFs
 #   adjustment gap       reported vs Yahoo (GAAP) EPS: the share of earnings
 #                        that rests on the company's adjustments
@@ -13,6 +15,9 @@
 # much history exists.
 
 VAL_MIN_DAYS <- 60L
+# A reported-EPS series whose last row is older than this has expired in
+# collect_pe.py (no report within the cadence allowance: AZN, EQNR in 2026-10).
+VAL_STALE_DAYS <- 10L
 
 .val_pctile <- function(x, now) {
   x <- x[is.finite(x)]
@@ -51,7 +56,9 @@ run_valuation <- function(ticker) {
     return(list(status = "NO DATA", reason = sprintf("no P/E stored for %s", ticker)))
 
   own <- NULL
-  if (nrow(rep)) {
+  if (nrow(rep) && as.Date(rep$date[nrow(rep)]) < Sys.Date() - VAL_STALE_DAYS) {
+    own <- list(stale = TRUE, date = rep$date[nrow(rep)], from = rep$date[1])
+  } else if (nrow(rep)) {
     d <- as.Date(rep$date); last <- nrow(rep)
     now <- rep$pe_ttm[last]
     in_y <- function(y) rep$pe_ttm[d >= max(d) - round(y * 365.25)]
@@ -80,10 +87,11 @@ run_valuation <- function(ticker) {
     list(ratio = ratio, pctile = .val_pctile(hist, ratio))
   }
 
-  gap <- if (!is.null(own) && !is.null(y_now) && is.finite(own$eps) && is.finite(y_now$eps_ttm) &&
+  gap <- if (!is.null(own) && !isTRUE(own$stale) && !is.null(y_now) && is.finite(own$eps) && is.finite(y_now$eps_ttm) &&
              y_now$eps_ttm > 0) round((own$eps / y_now$eps_ttm - 1) * 100) else NA_real_
 
-  list(status = "LIVE", ticker = ticker, is_equity = nrow(rep) > 0,
+  is_equity <- nrow(rep) > 0 || (nrow(tk) > 0 && identical(tk$Type[1], "STK"))
+  list(status = "LIVE", ticker = ticker, is_equity = is_equity,
        own = own, yahoo = y_now, bench = b, spy = spy,
        rel_bench = rel(b), rel_spy = rel(spy), gap_pct = gap,
        yahoo_days = nrow(yah), yahoo_from = if (nrow(yah)) yah$date[1] else NA_character_)
@@ -101,11 +109,15 @@ run_valuation <- function(ticker) {
                                     else sprintf("Yahoo snapshots since %s (%d day%s)", from, days, if (days > 1) "s" else "")
   rows <- character(0)
   o <- v$own
-  if (!is.null(o))
+  if (isTRUE(o$stale))
+    rows <- c(rows, sprintf('<tr><td>Own history (reported EPS)</td><td class="value">n/a</td><td></td><td class="note">series ends %s: no new report on Yahoo within the reporting cadence</td></tr>', o$date))
+  else if (!is.null(o))
     rows <- c(rows, sprintf(
       '<tr><td>Own history (reported EPS)</td><td class="value">P/E %s</td><td>5y pctile %s &middot; 10y pctile %s</td><td class="note">daily since %s%s</td></tr>',
       f1(o$pe), fp(o$p5), fp(o$p10), o$from,
       if (isTRUE(o$loss_share_5y > 0)) sprintf("; EPS &le; 0 on %d%% of the last 5y (P/E blank)", o$loss_share_5y) else ""))
+  else if (isTRUE(v$is_equity))
+    rows <- c(rows, '<tr><td>Own history (reported EPS)</td><td class="value">n/a</td><td></td><td class="note">no reported-EPS series: the Yahoo earnings calendar for this name has stopped; see scripts/collect_pe.py</td></tr>')
   y <- v$yahoo
   bpe <- if (!is.null(v$bench)) sprintf("%s %s", v$bench$sym, f1(v$bench$pe)) else "no benchmark"
   rows <- c(rows, sprintf(
@@ -124,7 +136,7 @@ run_valuation <- function(ticker) {
       '<tr><td>Adjustment gap</td><td class="value">%s</td><td></td><td class="note">reported EPS vs Yahoo (GAAP) EPS, trailing 12 months: the share of earnings resting on the company&rsquo;s adjustments</td></tr>',
       if (is.finite(v$gap_pct)) sprintf("reported %+d%% vs GAAP", as.integer(v$gap_pct)) else "n/a"))
   note <- paste0('<p class="sub">Reported EPS = the EPS the company reports on results day (often its adjusted figure), ',
-                 'summed over 4 quarters and stepping on the report date. Yahoo = Yahoo&rsquo;s trailing P/E (GAAP); ',
+                 'summed over the last 12 months (4 quarterly or 2 half-year reports) and stepping on the report date. Yahoo = Yahoo&rsquo;s trailing P/E (GAAP); ',
                  'for ETFs Yahoo does not state how loss-making holdings are treated. No cheap / expensive reading.</p>')
   paste0(head, '<table><tr><th>Basis</th><th>Value</th><th>Rank</th><th>Note</th></tr>',
          paste(rows, collapse = ""), '</table>', note)
