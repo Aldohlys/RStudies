@@ -151,6 +151,14 @@ if (is.na(out_path))
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
 out <- if (detail) df else df[, BOT_READ_DEFAULT, drop = FALSE]
 utils::write.table(out, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
+# The BOT forward test (reports/bot_fwd) records every field at entry, so a
+# default run also leaves the full row set in bot_daily_detail/ under the same
+# file name. The daily sheet itself stays short.
+if (!detail && is.na(opt_at("--out", NA_character_))) {
+  side <- file.path(dirname(out_path), "bot_daily_detail", basename(out_path))
+  dir.create(dirname(side), showWarnings = FALSE, recursive = TRUE)
+  utils::write.table(df, side, sep = ";", row.names = FALSE, na = "", qmethod = "double")
+}
 
 message(sprintf("Wrote %d rows x %d cols -> %s", nrow(out), ncol(out), out_path))
 filled <- unique(df$name[df$bar_source == "ibkr"])

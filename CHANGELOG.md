@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - bot_fwd: BOT forward test
+
+### Added
+- **`reports/bot_fwd/`** (Python): simulates every BOT / BOT- / COUNTER-TREND signal of `bot_daily` with a 30-delta call and a bull call spread, 28-42 DTE, 1 lot, at IBKR ask/bid with fees calibrated from `Trades`; long stock when neither option vehicle passes the bid-ask test. Exits replayed from daily marks under eight policies (P0 = trading plan rules, P1-P7 variants). Design: `NewTrading/Strategies/Breakouts/bot_forward_test_proposal_20261007.md` (§9 = implementation notes).
+- Tables in `mydb.db`: `bot_fwd_signal`, `bot_fwd_position`, `bot_fwd_contract`, `bot_fwd_mark`, `bot_fwd_result`, `bot_fwd_underlying`.
+- Entries are live quotes when the run is fresh and in US hours, else rebuilt from IBKR 5-minute `BID_ASK` bars at the entry time; marks from daily (stock) and 1-hour (option) bars, since IBKR serves no daily option bars. At most 5 history requests in flight, 90 s timeout; a timeout is retried on the next run, never read as an empty quote.
+- Signals already through their stop at entry are skipped (`spot_through_stop`).
+- Weekly report `NewTrading/Reports/bot_fwd_<Monday>.md`; `test_policy.py` checks the exit engine on synthetic marks.
+
+### Changed
+- **`bot_daily/main.R`**: a default run also writes every field to `bot_daily_detail/<same file name>`, read by the forward test at entry.
+
 ## [2026-10-06] - macro_context: reading principles aligned on Ceresna's five tenets
 
 ### Changed
