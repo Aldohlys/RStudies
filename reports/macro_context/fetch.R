@@ -18,6 +18,16 @@ fetch_macro_data <- function(tickers) {
   if (!is.null(cached)) {
     cached$cache_date <- NULL
     cached$date <- as.Date(cached$date)
+    # Tickers added since today's cache was written: fetch and append them
+    add <- setdiff(tickers, unique(cached$ticker))
+    if (length(add)) {
+      extra <- tryCatch(Tdata::getYahooData(tickers = add, from_date = Sys.Date() - 90, to_date = Sys.Date()),
+                        error = function(e) NULL)
+      if (!is.null(extra) && nrow(extra) > 0) {
+        cache_append(CACHE_TABLE, extra, today)
+        cached <- rbind(cached, extra[, names(cached)])
+      }
+    }
     return(cached)
   }
 

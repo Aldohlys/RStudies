@@ -63,6 +63,7 @@ md_scenario_method <- function() {
     "per-scenario thresholds (35&ndash;60%) were not adopted because so few episodes would mostly fit noise. ",
     "The same study adjusted six fingerprints on 2026-10-08 where a change improved separation on held-out episodes and has a market explanation ",
     "(policy pivot, stagflation, goldilocks, dollar wrecking ball, bond rout, debasement; details in NewTrading/Reports/scenario_weight_calibration_20261008.md). ",
+    "The credit-event scenario, added the same day, was checked on five episodes (2007&ndash;2023) and kept as written: a refit did no better on held-out episodes. ",
     "Absolute breadth is excluded from the study (no history before 2026-03), so its weights remain judgment.</p>"
   )
 }
@@ -126,8 +127,9 @@ md_regimes <- function() {
     "sig(x, center, scale) = 1 / (1 + e<sup>&minus;(x &minus; center)/scale</sup>): 0.5 at the center, about 0.12 / 0.88 at center &plusmn; 2 scales. ",
     "Centers and scales are 10-year medians and standard deviations (calibrate_from_history.R, 2026-03-26), except breadth (manual).</p>",
     md_table(c("Signal", "Measure", "Formula", "Reading"), sig_rows),
-    "<p>credit_stress uses HYG's own 20-day price return, which also falls when Treasury yields rise; it is not a spread measure. ",
-    "The spread view is the High yield / Treasuries ratio in panel 09.</p>",
+    "<p>credit_stress uses the 20-day return of the high yield / Treasuries ratio (HYG/IEF, adjusted closes), the same series as the CREDIT asset in the scenarios. ",
+    "Until 2026-10-08 it used HYG's own price, which also falls when Treasury yields rise (June 2022: HYG &minus;3.1%, ratio &minus;0.2%); the ratio isolates the spread. ",
+    "Center and scale recalibrated on 2016&ndash;2026 data.</p>",
     "<p><b>Raw score</b> of a regime = &Sigma; weight &times; signal. Weights (set by hand, see comments in scenarios.R):</p>",
     md_table(c("Signal", vapply(regs, function(r) REGIME_WEIGHTS[[r]]$label, "")), w_rows),
     "<p><b>Neutral</b> = 0.5 &times; (1 &minus; max(other raw scores) / 0.5) + 0.3 &times; vix_calm + 0.2 &times; breadth_mid, ",
@@ -207,7 +209,6 @@ md_limits <- function() {
     "<li>BREADTH in the fingerprints is relative (equal weight vs cap weight): a falling ratio means the average stock lags the index, whatever absolute breadth is. ",
     "ABS_BREADTH adds the level, but its history starts on 2026-03-17, so it cannot be backtested and the 3-month value needs 10 readings.</li>",
     "<li>CONS (XLY / XLP) is partly a mega-cap measure: Amazon and Tesla are a large share of XLY.</li>",
-    "<li>credit_stress in the regime model reads HYG's price, so it rises with Treasury yields even when spreads are stable.</li>",
     "<li>Scenario moves use 21- and 63-day windows; shocks that play out in days show up late. The carry unwind is handled by the short-window alert (M4) for that reason.</li>",
     "<li>The report uses the previous close when it runs before the US close (Yahoo data without today's bar).</li>",
     "</ul>")

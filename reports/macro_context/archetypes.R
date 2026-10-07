@@ -198,6 +198,18 @@ ARCHETYPES <- list(
     invalid = "Short rates falling while credit widens and small caps fall (growth scare: the central bank is cutting into weakness).",
     bot = list(long = c("IWM", "KRE", "ITB", "GDX", "EEM", "XME"), short = character(0),
                note = "Cover duration shorts (homebuilders, REITs, regional banks) left over from a bond rout; those groups lead the first leg. Long breakouts across the average stock start working.")
+  ),
+  list(
+    id = "credit_event", name = "Credit event / recession bear market",
+    fp = c(CREDIT = -2, SPX = -2, VIX = 2, US10Y = -1.5, SHORT = -1, SMALL = -1, ABS_BREADTH = -1, COPPER = -1, OIL = -1,
+           MOVE = 1, USD = 0.5),
+    movie = "Losses in credit force lenders and leveraged holders to cut risk: high-yield spreads widen, banks and small caps (the most credit-dependent) fall hardest, equities enter a bear market as earnings estimates are cut, and Treasuries rally as money seeks safety and the central bank is expected to cut. Slower and deeper than a growth scare; unlike a dash for cash, Treasuries work as a hedge.",
+    analogs = "2001-02 (Enron and WorldCom, high-yield defaults near 10%, S&P -49% from the 2000 peak); July 2007-March 2009 (subprime, Bear Stearns March 2008, Lehman 15 September 2008, S&P -57%); December 2015-February 2016 (energy high-yield stress); February-March 2020 (spreads to about 10%, before the Fed bought corporate bonds); March 2023 (Silicon Valley Bank, regional-bank stress, contained in two weeks).",
+    after = "Ends with a policy backstop aimed at credit itself (bank recapitalisation and TARP 2008, corporate-bond buying 23 March 2020, the bank term funding programme 12 March 2023). Equities usually bottom after spreads peak; in 2009 the S&P low (9 March) came about three months after high-yield spreads peaked.",
+    tells = "High yield and leveraged loans falling while Treasuries rally; regional banks and small caps leading the decline; bank funding headlines (deposit flight, repo); earnings estimates being cut; the curve steepening as short rates fall.",
+    invalid = "Credit stable while equities fall (growth scare or valuation-driven correction), or Treasuries sold together with everything (dash for cash).",
+    bot = list(long = c("GLD", "XLP", "XLV"), short = c("KRE", "XLF", "IWM", "XHB", "XLY"),
+               note = "No new long breakouts while high yield keeps underperforming Treasuries. Short the credit-dependent groups; take profits into backstop announcements, which reverse them violently.")
   )
 )
 

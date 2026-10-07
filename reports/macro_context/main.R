@@ -54,7 +54,7 @@ message("Run date: ", format(Sys.Date(), "%d %B %Y"))
 # 1. Load tickers from DB
 macro_tickers <- get_macro_tickers()
 sector_etf_tickers <- unname(get_sector_etfs())
-ALL_TICKERS <- unique(c(macro_tickers, sector_etf_tickers))
+ALL_TICKERS <- unique(c(macro_tickers, sector_etf_tickers, "IEF"))   # IEF: credit_stress = HYG/IEF
 message("Tickers: ", length(ALL_TICKERS))
 
 # 2. Fetch data (cached daily)

@@ -29,7 +29,7 @@ message("Fetching 10 years of historical data...")
 from_date <- Sys.Date() - 365 * 10
 to_date   <- Sys.Date()
 
-tickers <- c("^VIX", "^VIX3M", "^TNX", "DX-Y.NYB", "TLT", "HYG", "CPER", "GLD", "USO")
+tickers <- c("^VIX", "^VIX3M", "^TNX", "DX-Y.NYB", "TLT", "HYG", "IEF", "CPER", "GLD", "USO")
 
 raw <- list()
 for (tk in tickers) {
@@ -95,11 +95,13 @@ if ("TLT" %in% names(raw)) {
   message(sprintf("  tlt_ret20: %d values", length(indicators$tlt_ret20)))
 }
 
-# 6. HYG 20d return (negated for credit_stress)
-if ("HYG" %in% names(raw)) {
-  hyg_ret <- rolling_ret20(raw[["HYG"]]$Close)
-  indicators$neg_hyg_ret20 <- -hyg_ret[!is.na(hyg_ret)]
-  message(sprintf("  neg_hyg_ret20: %d values", length(indicators$neg_hyg_ret20)))
+# 6. High yield vs Treasuries (HYG/IEF) 20d return, negated for credit_stress (adjusted closes)
+if (all(c("HYG", "IEF") %in% names(raw))) {
+  col <- if ("Adjusted" %in% names(raw[["HYG"]])) "Adjusted" else "Close"
+  m <- merge(raw[["HYG"]][, c("date", col)], raw[["IEF"]][, c("date", col)], by = "date")
+  hy_ret <- rolling_ret20(m[[2]] / m[[3]])
+  indicators$neg_hy_tsy_ret20 <- -hy_ret[!is.na(hy_ret)]
+  message(sprintf("  neg_hy_tsy_ret20: %d values", length(indicators$neg_hy_tsy_ret20)))
 }
 
 # 7. CPER - GLD 20d return differential
@@ -141,7 +143,7 @@ signal_map <- list(
   rates_press   = list(data = "y10",             current_c = 4.5,  current_s = 0.3),
   dxy_strength  = list(data = "dxy_ret20",       current_c = 2,    current_s = 1.5),
   tlt_bid       = list(data = "tlt_ret20",       current_c = 1,    current_s = 1.5),
-  credit_stress = list(data = "neg_hyg_ret20",   current_c = 1,    current_s = 1),
+  credit_stress = list(data = "neg_hy_tsy_ret20", current_c = -0.52, current_s = 2.34),
   copper_gold   = list(data = "copper_gold_ret", current_c = 0,    current_s = 2)
 )
 

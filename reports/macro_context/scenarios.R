@@ -35,7 +35,7 @@ SIGNAL_TOOLTIPS <- list(
   dxy_strength  = "Dollar momentum | sig(DXY 20d ret, center=0.07, scale=1.77) | 0.5=flat, >0.85=strong rally",
   reflation     = "Reflation composite | mean of oil+gold strength, dollar weakness",
   tlt_bid       = "Bond bid | sig(TLT 20d ret, center=-0.33, scale=3.80) | 0.5=normal, >0.85=strong rally",
-  credit_stress = "Credit stress | sig(-(HYG 20d ret), center=-0.16, scale=2.19) | 0.5=normal, >0.85=selloff",
+  credit_stress = "Credit stress | sig(-(HYG/IEF 20d ret), center=-0.52, scale=2.34) | high yield vs Treasuries, adjusted closes; 0.5=normal, >0.85=spreads widening",
   copper_gold   = "Risk appetite proxy | sig(CPER/GLD ratio change, center=-0.17, scale=6.27) | 0.5=normal, >0.85=growth>safety",
   sentiment     = "Sentiment composite | mean of VIX calm + breadth bull + credit health"
 )
@@ -55,6 +55,15 @@ compute_signals <- function(vix_res, rates_res, breadth, comm_res, raw) {
     if (nrow(s) < 20) return(NA_real_)
     (tail(s$Close, 1) / s$Close[max(1, nrow(s) - 19)] - 1) * 100
   }
+  # 20d return of the ratio a/b on common dates, adjusted closes when available (dividends would add noise)
+  ret20_ratio <- function(a, b) {
+    col <- if ("Adjusted" %in% names(raw)) "Adjusted" else "Close"
+    get <- function(tk) { x <- raw[raw$ticker == tk & !is.na(raw[[col]]), c("date", col)]; names(x)[2] <- "v"; x }
+    m <- merge(get(a), get(b), by = "date"); m <- tail(m[order(m$date), ], 30)
+    if (nrow(m) < 20) return(NA_real_)
+    r <- m$v.x / m$v.y
+    (tail(r, 1) / r[max(1, length(r) - 19)] - 1) * 100
+  }
 
   vix   <- vix_res$vix
   ratio <- vix_res$ratio  # VIX / VIX3M
@@ -65,8 +74,10 @@ compute_signals <- function(vix_res, rates_res, breadth, comm_res, raw) {
   gld_ret <- comm_res$gld_ret20
   tlt_ret <- rates_res$tlt_pct
 
-  # Credit: HYG 20d return (negative = stress)
+  # Credit: HYG 20d return kept for reference; the signal uses high yield vs Treasuries (HYG/IEF), which
+  # isolates the spread: HYG's own price also falls when Treasury yields rise (June 2022: HYG -3.1%, ratio -0.2%)
   hyg_ret <- ret20("HYG")
+  hy_tsy_ret <- ret20_ratio("HYG", "IEF")
   lqd_ret <- ret20("LQD")
   credit_spread_ret <- if (!is.na(hyg_ret) && !is.na(lqd_ret)) hyg_ret - lqd_ret else NA
 
@@ -91,13 +102,14 @@ compute_signals <- function(vix_res, rates_res, breadth, comm_res, raw) {
       1 - sig(dxy_ret, 0.07, 1.77)
     ), na.rm = TRUE),
     tlt_bid       = sig(tlt_ret, -0.33, 3.80),
-    credit_stress = if (!is.na(hyg_ret)) sig(-hyg_ret, -0.16, 2.19) else 0.3,
+    # Calibrated on HYG/IEF 2016-2026 (median and SD of the negated 20d return), 2026-10-08
+    credit_stress = if (!is.na(hy_tsy_ret)) sig(-hy_tsy_ret, -0.52, 2.34) else 0.3,
     copper_gold   = sig(copper_gold_ret, -0.17, 6.27),
     sentiment     = NA  # computed below as composite
   )
 
   # Sentiment composite: mean of calm + bullish breadth + credit health
-  credit_health <- if (!is.na(hyg_ret)) sig(hyg_ret, 0.16, 2.19) else 0.5
+  credit_health <- if (!is.na(hy_tsy_ret)) sig(hy_tsy_ret, 0.52, 2.34) else 0.5
   signals$sentiment <- mean(c(signals$vix_calm, signals$breadth_bull, credit_health), na.rm = TRUE)
 
   signals
@@ -334,7 +346,7 @@ BIAS_BY_REGIME  <- list(
   directional_flow = list(bias = "LONG BIAS", zone = "GREEN"))
 SIGNAL_LABELS <- c(
   vix_stress = "VIX level", vix_calm = "VIX calm", backwardation = "VIX term structure",
-  breadth_bull = "breadth strong", breadth_bear = "breadth weak", credit_stress = "credit stress (HYG)",
+  breadth_bull = "breadth strong", breadth_bear = "breadth weak", credit_stress = "credit stress (HYG/IEF)",
   copper_gold = "copper/gold", sentiment = "sentiment", rates_press = "10Y level",
   dxy_strength = "dollar momentum", reflation = "reflation", tlt_bid = "bond bid")
 
