@@ -38,10 +38,12 @@ run_intermarket <- function(breadth) {
   if (length(missing)) message("Intermarket: no data for ", paste(missing, collapse = ", "))
   sections <- analyze_sections(raw)
   sectors <- analyze_sectors(raw)
-  z1 <- asset_moves(raw, 21); z3 <- asset_moves(raw, 63)
-  matches <- add_persistence(match_archetypes(z1, z3), scenario_history(raw))
+  bh <- load_breadth_history(raw, if (is.null(breadth)) NA_real_ else breadth$pct)
+  z1 <- asset_moves(raw, 21, bh); z3 <- asset_moves(raw, 63, bh)
+  matches <- add_persistence(match_archetypes(z1, z3), scenario_history(raw, bh = bh))
+  carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
-  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, matches = matches, movie = movie)
+  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, matches = matches, movie = movie, carry = carry)
 }
 
 ema <- function(x, n) as.numeric(stats::filter(x * (2 / (n + 1)), 1 - 2 / (n + 1),
@@ -294,6 +296,7 @@ report_symbols <- function() {
   gm <- group_map()
   g <- c(unlist(lapply(gm$groups, `[[`, "members")),
          unlist(lapply(GROUP_DRIVERS, function(d) split_keys(names(d)))))
-  f <- unlist(lapply(FP_ASSETS, function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
+  f <- unlist(lapply(FP_ASSETS[names(FP_ASSETS) != "ABS_BREADTH"],   # breadth comes from the daily runs, not Yahoo
+                     function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
   unique(stats::na.omit(c(BENCHMARK, s, g, f)))
 }

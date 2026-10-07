@@ -31,6 +31,12 @@ md_scenario_method <- function() {
     "The z-score puts assets on a common scale: a move equal to the asset's usual one-month move scores about 1, whatever its volatility. ",
     "Some quotes are inverted so that up always means the same thing (e.g. USD/JPY falling = yen up; Bund and gilt ETF prices falling = yields up). ",
     "A fingerprint asset with several symbols (EM currencies) uses the mean of their z-scores.</p>",
+    sprintf(paste0("<p><b>Absolute breadth</b> (share of S&amp;P 500 stocks above their 50-day average) is a level, not a move: it enters as (level &minus; %g) / %g, ",
+            "so %g%% = 0 and %.1f%% or %.1f%% reach the cap. The 1-month value is the latest reading; the 3-month value is the mean of the readings over 63 sessions. ",
+            "Readings come from the daily runs (stored since 2026-03-17); a reading made on a given morning is assigned to the previous session. ",
+            "It complements the equal-weight / S&amp;P ratio, which only says whether the average stock beats the index.</p>"),
+            ABS_BREADTH_CENTER, ABS_BREADTH_SCALE, ABS_BREADTH_CENTER,
+            ABS_BREADTH_CENTER - 1.5 * ABS_BREADTH_SCALE, ABS_BREADTH_CENTER + 1.5 * ABS_BREADTH_SCALE),
     "<p><b>Step 2, cap.</b> Each z is divided by 1.5 and capped to [&minus;1, +1], so one extreme asset cannot dominate.</p>",
     "<p><b>Step 3, match score.</b> score = &Sigma; (weight &times; capped z) / &Sigma; |weight|, over the fingerprint assets with data. ",
     "Range &minus;100% (every asset moving opposite to the fingerprint) to +100% (every asset moving at least 1.5 z in the expected direction). ",
@@ -51,7 +57,13 @@ md_scenario_method <- function() {
             CHAIN_ON),
     "not triggered (later links up without the first, i.e. for another reason).</p>",
     "<p><b>Provenance.</b> Fingerprints, weights, the 1.5 cap and the in-place threshold were set by judgment when the layer was built (2026-10-02), ",
-    "from the historical episodes listed under each scenario. They have not been calibrated or backtested.</p>"
+    "from the historical episodes listed under each scenario. ",
+    "Calibration check on 2004&ndash;2026 daily data (calibrate_scenarios.py, report NewTrading/Reports/scenario_calibration_20261008.md): ",
+    "with two to four dated episodes per scenario, 40% is the lowest threshold at which scenarios show as in place on at most 10% of the days outside their episodes, on average; ",
+    "per-scenario thresholds (35&ndash;60%) were not adopted because so few episodes would mostly fit noise. ",
+    "The same study adjusted six fingerprints on 2026-10-08 where a change improved separation on held-out episodes and has a market explanation ",
+    "(policy pivot, stagflation, goldilocks, dollar wrecking ball, bond rout, debasement; details in NewTrading/Reports/scenario_weight_calibration_20261008.md). ",
+    "Absolute breadth is excluded from the study (no history before 2026-03), so its weights remain judgment.</p>"
   )
 }
 
@@ -59,11 +71,31 @@ md_fp_assets <- function() {
   rows <- lapply(names(FP_ASSETS), function(k) {
     a <- FP_ASSETS[[k]]
     sy <- paste(a[[1]], collapse = ", ")
-    kind <- if (any(a[[1]] %in% c("^TNX", "^TNX-^IRX"))) "yield change (pp)" else "log return"
+    kind <- if (k == "ABS_BREADTH") sprintf("level: (%% &minus; %g) / %g", ABS_BREADTH_CENTER, ABS_BREADTH_SCALE)
+            else if (any(a[[1]] %in% YIELD_SYMBOLS)) "yield change (pp)" else "log return"
+    if (k == "ABS_BREADTH") sy <- "daily runs (macro_context_results.s5fi)"
     read <- if (a[[2]] < 0) "inverted (quote down = asset up)" else "as quoted"
     c(md_esc(a[[3]]), k, md_esc(sy), kind, read)
   })
   md_table(c("Asset", "Key", "Symbol(s)", "Move", "Reading"), rows)
+}
+
+md_carry <- function() {
+  ca <- CARRY_ALERT
+  paste0(
+    "<p>The yen carry-trade unwind plays out in one to three sessions, so it is not a scenario (21- and 63-day windows would catch it late and diluted). ",
+    sprintf("It is checked on %d-session z-scores (same definition as M1 with n = %d), for each of the last %d sessions.</p>", ca$window, ca$window, CARRY_LOOKBACK),
+    md_table(c("Input", "Rule"), list(
+      c("Yen", sprintf("&minus;z of USD/JPY (yen up = positive). Fires at &ge; +%g, watch at &ge; +%g", ca$yen_fire, ca$yen_watch)),
+      c("AUD/JPY", sprintf("confirms at z &le; &minus;%g", ca$confirm_z)),
+      c("Nikkei 225", sprintf("confirms at z &le; &minus;%g", ca$confirm_z)),
+      c("Bitcoin", sprintf("confirms at z &le; &minus;%g", ca$confirm_z)),
+      c("VIX term structure", "confirms when VIX closes at or above VIX3M"),
+      c("FIRING", "yen at the firing level and at least 2 of the 4 confirmations"),
+      c("WATCH", "yen at the watch level and at least 1 confirmation"))),
+    "<p>Check on 2019&ndash;2026 daily data: FIRING on 19 sessions in 6 episodes, all yen-up risk-off events: August 2019, February&ndash;March 2020, ",
+    "November 2021, December 2022 (Bank of Japan yield-cap change), 25 July&ndash;7 August 2024 (first fire ten days before the 5 August crash), April 2025. WATCH on 31 sessions.</p>",
+    sprintf("<p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p><p><b>BOT.</b> %s</p>", md_esc(ca$analogs), md_esc(ca$after), md_esc(ca$bot)))
 }
 
 md_scenarios <- function() {
@@ -170,12 +202,13 @@ md_panels <- function() {
 
 md_limits <- function() {
   paste0("<ul class='md-list'>",
-    "<li>Scenario fingerprints, weights and the in-place threshold are judgment, not calibrated (section M1).</li>",
-    "<li>BREADTH in the fingerprints is relative (equal weight vs cap weight), not the share of stocks above their MA50. ",
-    "A falling ratio means the average stock lags the index, which can happen with breadth good or bad in absolute terms.</li>",
+    "<li>Weights and the in-place threshold were checked against dated episodes (M1), but episode dates are judgment and each scenario has only two to four. ",
+    "Debasement shows as in place on 19% of non-episode days at 40%, the highest false-positive rate; goldilocks is the weakest detector.</li>",
+    "<li>BREADTH in the fingerprints is relative (equal weight vs cap weight): a falling ratio means the average stock lags the index, whatever absolute breadth is. ",
+    "ABS_BREADTH adds the level, but its history starts on 2026-03-17, so it cannot be backtested and the 3-month value needs 10 readings.</li>",
     "<li>CONS (XLY / XLP) is partly a mega-cap measure: Amazon and Tesla are a large share of XLY.</li>",
     "<li>credit_stress in the regime model reads HYG's price, so it rises with Treasury yields even when spreads are stable.</li>",
-    "<li>All scenario moves use 21- and 63-day windows; shocks that play out in days (carry unwind) show up late and are diluted.</li>",
+    "<li>Scenario moves use 21- and 63-day windows; shocks that play out in days show up late. The carry unwind is handled by the short-window alert (M4) for that reason.</li>",
     "<li>The report uses the previous close when it runs before the US close (Yahoo data without today's bar).</li>",
     "</ul>")
 }
@@ -187,10 +220,11 @@ methodology_html <- function() {
     md_section("M1", "Scenario match &mdash; section 00", md_scenario_method(), open = TRUE),
     md_section("M2", "Fingerprint assets", md_fp_assets()),
     md_section("M3", sprintf("Scenario rules (%d scenarios)", length(ARCHETYPES)), md_scenarios()),
-    md_section("M4", "Sections 01&ndash;04 &mdash; zone thresholds", md_basic_sections()),
-    md_section("M5", "Section 05 &mdash; mismatches", md_mismatches()),
-    md_section("M6", "Sections 06&ndash;07 &mdash; regime model and Daily Bias", md_regimes()),
-    md_section("M7", "Sections 09&ndash;11 &mdash; panels, sector map, COT", md_panels()),
-    md_section("M8", "Known limitations", md_limits())
+    md_section("M4", "Yen carry-unwind alert (short window)", md_carry()),
+    md_section("M5", "Sections 01&ndash;04 &mdash; zone thresholds", md_basic_sections()),
+    md_section("M6", "Section 05 &mdash; mismatches", md_mismatches()),
+    md_section("M7", "Sections 06&ndash;07 &mdash; regime model and Daily Bias", md_regimes()),
+    md_section("M8", "Sections 09&ndash;11 &mdash; panels, sector map, COT", md_panels()),
+    md_section("M9", "Known limitations", md_limits())
   )
 }

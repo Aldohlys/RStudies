@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: new scenarios, absolute breadth, carry alert, weight calibration
+
+### Added
+- Scenarios **Leadership unwind / rotation out of the leaders** and **Policy pivot / easing rally** (`archetypes.R`).
+- Fingerprint assets: Russell 2000 vs S&P 500 (`IWM/^GSPC`), 3-month bill yield (`^IRX`), and absolute breadth (`ABS_BREADTH`, share of S&P 500 stocks above their 50-day average, entered as (level - 50) / 15; history from `macro_context_results.s5fi`, each morning reading assigned to the previous session).
+- Yen carry-unwind alert on 3-session z-scores (FIRING / WATCH / QUIET), shown in section 00 under the chains; 2019-2026 check: 19 firing sessions in 6 yen-up risk-off episodes.
+- `calibrate_scenarios.py`: rebuilds daily scenario scores from 2004, measures separation of each scenario's dated episodes, threshold table and constrained leave-one-episode-out re-weighting. Results: `NewTrading/Reports/scenario_weight_calibration_20261008.md`.
+- Methodology tab (`methodology.R`): every computation in the report, generated from the live config.
+
+### Changed
+- Weights from the calibration: policy pivot (10-year -2, 3-month bill -1, VIX -2, curve dropped), stagflation (10-year +1.5; gold, curve, breadth, VIX, EM FX, credit dropped), goldilocks (equal weight vs S&P dropped), wrecking ball (oil, VIX dropped), bond rout (credit dropped), debasement (10-year, curve dropped). In-place threshold 40% kept.
+- Absolute breadth added to dash for cash, bond rout, stagflation, reflation, goldilocks, growth scare and narrow leadership; Russell vs S&P to reflation and growth scare.
+- Regime inertia and softmax temperature are named constants (`REGIME_INERTIA`, `REGIME_TEMPERATURE`).
+
+### Removed
+- Yen carry-trade unwind as a 21-day scenario (replaced by the short-window alert).
+
 ## [2026-10-08] - bot_fwd: expiry, bid-ask and exit decisions
 
 ### Changed

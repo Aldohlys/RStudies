@@ -35,14 +35,26 @@ FP_ASSETS <- list(
   VIX     = list("^VIX", 1, "VIX"),
   EMEQ    = list("EEM", 1, "Emerging equities"),
   NIKKEI  = list("^N225", 1, "Nikkei"),
-  BTC     = list("BTC-USD", 1, "Bitcoin")
+  BTC     = list("BTC-USD", 1, "Bitcoin"),
+  SMALL   = list("IWM/^GSPC", 1, "Russell 2000 vs S&P 500"),
+  SHORT   = list("^IRX", 1, "US 3-month bill yield"),
+  # Absolute breadth: % of S&P 500 stocks above their 50-day average. A level, not a move:
+  # no price history on Yahoo, so it is read from the daily runs (macro_context_results.s5fi).
+  ABS_BREADTH = list("S5FI", 1, "Stocks above their 50-day average")
 )
+
+YIELD_SYMBOLS <- c("^TNX", "^IRX", "^TNX-^IRX")   # moves in percentage points, not log returns
+
+# ABS_BREADTH enters the match as (level - 50) / 15: 50% = 0, 27.5% or 72.5% = -/+1.5 (the cap).
+# The 1-month value is the latest reading, the 3-month value the mean of the readings over 63 sessions.
+ABS_BREADTH_CENTER <- 50
+ABS_BREADTH_SCALE  <- 15
 
 ARCHETYPES <- list(
   list(
     id = "dash_for_cash", name = "Dash for cash (dollar liquidity squeeze)",
     fp = c(USD = 2, EMFX = -2, AUD = -1, CAD = -1, EUR = -1, JPY = 1, GOLD = -1, OIL = -1, COPPER = -1,
-           CREDIT = -2, SPX = -2, VIX = 2, MOVE = 1, EMEQ = -2, BTC = -1),
+           CREDIT = -2, SPX = -2, VIX = 2, MOVE = 1, EMEQ = -2, BTC = -1, ABS_BREADTH = -1),
     movie = "Everyone needs dollars at once. Leveraged holders sell what they can, not what they want: gold and even Treasuries are sold alongside equities, so the usual hedges fail. Credit spreads gap wider, EM and commodity currencies collapse, the dollar spikes.",
     analogs = "Q4 2008 (DXY +20% from July to November, gold -25% from March to October despite the crisis); March 2020 (DXY 94.6 to 102.8 in ten days, gold -12%, 10-year yield doubled from 0.54% as Treasuries were sold for cash).",
     after = "Both episodes ended with a policy backstop: unlimited Fed swap lines (October 2008, 15-19 March 2020) and QE. After the backstop the reversal was violent: gold and EM bottomed first, equities followed within days.",
@@ -54,7 +66,7 @@ ARCHETYPES <- list(
   list(
     id = "dollar_wrecking_ball", name = "Dollar wrecking ball (global tightening)",
     fp = c(USD = 2, EUR = -1, GBP = -1, JPY = -1, AUD = -1, EMFX = -1, CNY = -1, US10Y = 2, BUND = 1, GILT = 1,
-           MOVE = 2, OIL = 0.5, GOLD = -1, COPPER = -1, SPX = -1, NDXREL = -1, CREDIT = -1, VIX = 1),
+           MOVE = 2, GOLD = -1, COPPER = -1, SPX = -1, NDXREL = -1, CREDIT = -1),   # OIL, VIX dropped (calibration 2026-10-08)
     movie = "US rates rise faster than the rest of the world, so capital flows into dollars. Every other currency weakens and has to defend itself; dollar debt and dollar-priced oil become more expensive for the rest of the world, which tightens global financial conditions. Bonds sell off everywhere, long-duration assets reprice lower.",
     analogs = "2022 (Fed +425 bp, DXY peaked at 114.8 on 28 September; the same week the Bank of England rescued the gilt market from the LDI pension crisis and Japan intervened for the yen for the first time since 1998); 1997-98 (strong dollar broke Asian currency pegs); 2014-15 (dollar +25%, oil and EM collapse).",
     after = "It lasts until something breaks or a central bank blinks: in 2022 the top came with the Bank of Japan and Bank of England interventions in late September and the first signs of the Fed slowing (smaller hikes from December). The turn in the dollar marked the low in gold, EM and equities in October-November 2022.",
@@ -66,7 +78,7 @@ ARCHETYPES <- list(
   list(
     id = "bond_rout", name = "Bond rout / term-premium shock",
     fp = c(US10Y = 2, CURVE = 1, BUND = 1.5, GILT = 1.5, MOVE = 1.5, USD = 1, GOLD = -1, SPX = -1, BREADTH = -1,
-           EMFX = -1, CREDIT = -0.5),
+           EMFX = -1, ABS_BREADTH = -0.5),   # CREDIT dropped (calibration 2026-10-08)
     movie = "Bond investors demand more yield to hold long debt: fiscal deficits, heavy issuance or a central bank seen as behind. Long yields rise faster than short ones (bear steepening) across the US, Europe and the UK at the same time. Equities fall because the discount rate rises, not because growth weakens.",
     analogs = "1994 (Fed 3% to 6%, 10-year 5.6% to 8%, ended with Orange County and the Mexican peso crisis); 2013 taper tantrum (10-year 1.6% to 3.0% in four months, EM 'fragile five' and gold crushed); August-October 2023 (10-year to 5.0%, S&P -10%, ended when the Treasury cut long-bond issuance on 1 November).",
     after = "Bond routs end when the issuer or the central bank reacts (issuance mix, buybacks, verbal intervention) or when the yield rise itself causes a growth scare. The turn in yields is usually the turn in equities and in rate-sensitive sectors.",
@@ -77,8 +89,8 @@ ARCHETYPES <- list(
   ),
   list(
     id = "stagflation", name = "Stagflation / oil supply shock",
-    fp = c(OIL = 2, US10Y = 1, GOLD = 1, CURVE = -1, SPX = -1, BREADTH = -1, CONS = -1.5, VIX = 1, EMFX = -1,
-           CREDIT = -1),
+    # Calibration 2026-10-08: US10Y 1 -> 1.5; GOLD, CURVE, BREADTH, VIX, EMFX, CREDIT dropped (about zero in 2008 and 2022)
+    fp = c(OIL = 2, US10Y = 1.5, SPX = -1, CONS = -1.5, ABS_BREADTH = -0.5),
     movie = "Energy prices rise for supply reasons, not demand. Inflation goes up while growth goes down; the central bank cannot cut. The consumer is squeezed (discretionary underperforms staples), margins compress, and the curve flattens as policy stays tight.",
     analogs = "1973-74 (oil quadrupled, S&P -48%, gold up strongly); 1979-80 (Iran, gold to $850, Volcker); August 1990 (Iraq invades Kuwait, oil doubles, recession); H1 2008 (oil to $147 in July just before the crash); H1 2022 (Russia-Ukraine).",
     after = "Supply shocks end in demand destruction: oil peaks, then growth slows and the regime hands over to a growth scare or recession. In 1990 and 2008 the oil peak preceded the equity low by months.",
@@ -96,7 +108,7 @@ ARCHETYPES <- list(
   list(
     id = "reflation", name = "Reflation / global recovery",
     fp = c(USD = -1, AUD = 1, EMFX = 1, CNY = 1, COPPER = 2, OIL = 1, US10Y = 1, CURVE = 1, SPX = 1, BREADTH = 2,
-           CREDIT = 1, VIX = -1, EMEQ = 1, CONS = 1),
+           CREDIT = 1, VIX = -1, EMEQ = 1, CONS = 1, ABS_BREADTH = 1.5, SMALL = 1),
     movie = "Growth is broadening across the world: commodity and EM currencies rise, copper leads, yields rise for good reasons, and the average stock beats the index. Cyclicals, small caps and value lead.",
     analogs = "2003-06 (weak dollar, commodity super-cycle); 2009-10; 2016-17 (China stimulus, then US election, copper surge in November 2016); November 2020-2021 (vaccine rotation, small caps +18% in November 2020).",
     after = "Reflation runs until yields rise enough to bite (rates up faster than growth) or the central bank tightens; then the leadership rotates back to quality.",
@@ -107,7 +119,8 @@ ARCHETYPES <- list(
   ),
   list(
     id = "goldilocks", name = "Goldilocks / disinflationary growth",
-    fp = c(SPX = 2, CREDIT = 1, VIX = -2, MOVE = -1, US10Y = -0.5, BREADTH = 1, CONS = 1, EMEQ = 1, OIL = -0.5),
+    # Calibration 2026-10-08: BREADTH (equal weight vs S&P) dropped, large caps led in 2017, H2 2019 and 2023-24
+    fp = c(SPX = 2, CREDIT = 1, VIX = -2, MOVE = -1, US10Y = -0.5, CONS = 1, EMEQ = 1, OIL = -0.5, ABS_BREADTH = 1),
     movie = "Inflation falls while growth holds: yields drift lower, volatility is compressed, credit is calm, equities grind higher with broad participation.",
     analogs = "1995-99 after the 1994 soft landing; 2017 (lowest-volatility year, S&P up every month); 2019 H2 after the Fed's insurance cuts; November 2023-2024.",
     after = "Usually ends with complacency (leverage, volatility selling) and an external shock, or with growth overheating into reflation.",
@@ -119,7 +132,7 @@ ARCHETYPES <- list(
   list(
     id = "growth_scare", name = "Growth scare / disinflationary slowdown",
     fp = c(US10Y = -2, JPY = 1, GOLD = 1, OIL = -1, COPPER = -2, SPX = -1, CONS = -1, BREADTH = -1, CREDIT = -1,
-           VIX = 1, AUD = -1, EMEQ = -1),
+           VIX = 1, AUD = -1, EMEQ = -1, ABS_BREADTH = -1, SMALL = -1),
     movie = "Markets start to price weaker growth: yields fall, copper and oil fall, the yen and gold are bought as havens, cyclicals and small caps underperform defensives.",
     analogs = "2001; summer 2011 (US downgrade and euro crisis, 10-year 3.5% to 2%, gold to $1,920 in September); 2015-16 (oil collapse, high-yield energy stress); 2019 (trade war, curve inversion, Fed cut in July); July-August 2024 (payroll miss triggered the Sahm rule on 2 August).",
     after = "Either the central bank cuts in time and it stays a scare (2016, 2019, 2024: equities recovered within weeks to months), or it becomes a recession (2001, 2008).",
@@ -127,17 +140,6 @@ ARCHETYPES <- list(
     invalid = "Yields falling while credit and breadth improve (goldilocks).",
     bot = list(long = c("GDX", "XLP", "PPH", "XLV", "VNQ"), short = c("XME", "COPX", "XOP", "OIH", "KRE", "XLY", "SLX"),
                note = "Defensive and gold breakouts work; cyclical breakdowns work. Watch for the policy response: a cut turns the short side quickly.")
-  ),
-  list(
-    id = "carry_unwind", name = "Yen carry-trade unwind",
-    fp = c(JPY = 2, AUD = -1.5, EMFX = -1, VIX = 2, NIKKEI = -2, SPX = -1, NDXREL = -1, US10Y = -1, BTC = -1, CHF = 1),
-    movie = "Funding currencies (yen, franc) jump as leveraged carry positions are closed. Positions financed in yen are sold everywhere at once: Japanese equities, high-beta tech, crypto, high-yielding currencies. Fast and violent, driven by positioning more than by fundamentals.",
-    analogs = "October 1998 (USD/JPY from 136 to 112 within days during LTCM); August 2007 (quant quake); 5 August 2024 (Nikkei -12.4% in one day, VIX intraday 65, after the Bank of Japan hike and a US payroll miss).",
-    after = "Usually a one-to-three-week shock: in 2024 the S&P recovered its losses within about two weeks once positions were flushed. It becomes lasting only if it coincides with a real growth scare.",
-    tells = "AUD/JPY falling fast; Nikkei leading the decline; VIX spike with term-structure inversion; Bank of Japan communication.",
-    invalid = "Yen falling (carry still being added).",
-    bot = list(long = character(0), short = c("SMH", "IGV", "IAI", "EEM"),
-               note = "Do not chase breakdowns after the spike; do not open long breakouts until VIX term structure returns to contango.")
   ),
   list(
     id = "em_china_shock", name = "EM / China devaluation shock",
@@ -152,7 +154,8 @@ ARCHETYPES <- list(
   ),
   list(
     id = "debasement", name = "Dollar debasement / fiscal dominance",
-    fp = c(USD = -2, GOLD = 2, BTC = 1, US10Y = 1, CURVE = 1, COPPER = 1, EUR = 1, CHF = 1, SPX = 1, EMEQ = 1),
+    # Calibration 2026-10-08: US10Y and CURVE dropped (about zero or wrong sign in 2020 and 2025)
+    fp = c(USD = -2, GOLD = 2, BTC = 1, COPPER = 1, EUR = 1, CHF = 1, SPX = 1, EMEQ = 1),
     movie = "Doubts about the dollar's purchasing power or the independence of the central bank: real assets and alternative stores of value (gold, bitcoin, franc) rise, the dollar falls, long yields rise on term premium while nominal equities still go up.",
     analogs = "The 1970s; H2 2020-2021 (DXY 103 to 89, gold record $2,075 in August 2020, bitcoin boom); H1 2025 (dollar's worst first half since 1973, gold through $3,000 in March).",
     after = "Persists while real rates stay low relative to inflation; ends with a credible tightening (Volcker 1979-81) or a growth shock that revives dollar demand.",
@@ -163,7 +166,7 @@ ARCHETYPES <- list(
   ),
   list(
     id = "narrow_mania", name = "Narrow leadership / late-cycle mania",
-    fp = c(SPX = 1, NDXREL = 2, BREADTH = -2, VIX = -0.5, CONS = -0.5, US10Y = 0.5, USD = 0.5),
+    fp = c(SPX = 1, NDXREL = 2, BREADTH = -2, VIX = -0.5, CONS = -0.5, US10Y = 0.5, USD = 0.5, ABS_BREADTH = -1),
     movie = "The index rises on a handful of leaders while the average stock falls. Capital concentrates in one theme; the index hides deteriorating internals.",
     analogs = "1999-2000 (breadth deteriorated for two years before the Nasdaq peaked on 10 March 2000, then -78%); 2021 (peak in speculative growth in February, index in December); 2023-24 (Magnificent Seven).",
     after = "Narrow markets can persist for a long time (1998-2000: about two years); they end when the leaders themselves break, often on rising rates. Divergence alone is not a timing signal.",
@@ -171,6 +174,30 @@ ARCHETYPES <- list(
     invalid = "Equal weight catching up (healthy broadening).",
     bot = list(long = c("SMH", "XLK"), short = c("ITB", "XRT", "KRE", "VNQ"),
                note = "Long only the leaders, small size; breakouts in the average stock fail more often. Shorts in laggards work while breadth falls.")
+  ),
+  list(
+    id = "leadership_unwind", name = "Leadership unwind / rotation out of the leaders",
+    fp = c(NDXREL = -2, BREADTH = 1.5, SMALL = 1, SPX = -1, VIX = 1, BTC = -1),
+    movie = "The leaders that carried the index are sold while the average stock holds up or rises: money rotates out of the crowded theme into laggards, value and small caps. The index falls because its heaviest weights fall, not because everything falls. It is the usual way a narrow market ends.",
+    analogs = "March 2000-2002 (Nasdaq peaked on 10 March 2000 and fell 78%, while value and equal-weight stocks held up in 2000-01); February-March 2021 (speculative growth peaked, rotation into value and cyclicals); 2022 (Nasdaq 100 about -33% vs equal-weight S&P about -13%); July 2024 (after the 11 July CPI the Russell 2000 rose about 10% in five sessions while the Magnificent Seven were sold).",
+    after = "Two outcomes. A rotation (2021, July 2024) where the index holds and leadership broadens, often reversing within weeks. Or a top (2000, 2022) where the leaders keep falling and drag the index down for months; the difference is whether breadth holds up in absolute terms.",
+    tells = "Leaders falling on good earnings; Nasdaq 100 / S&P below its 50-day average; equal weight and the Russell beating the index while it falls; semis / S&P rolling over.",
+    invalid = "Everything falling together with equal weight lagging as well (that is liquidity stress, see dash for cash), or the leaders back at new highs.",
+    bot = list(long = c("IWM", "XLI", "XLF"), short = c("SMH", "XLK", "IGV"),
+               note = "Exit or tighten long breakouts in the former leaders; their breakdowns are the cleanest shorts. Laggard breakouts start working, small size until absolute breadth confirms.")
+  ),
+  list(
+    id = "policy_pivot", name = "Policy pivot / easing rally",
+    # Calibration 2026-10-08: US10Y -0.5 -> -2, SHORT -2 -> -1, VIX -1 -> -2, CURVE dropped (the curve flattened in all three episodes)
+    fp = c(SHORT = -1, US10Y = -2, USD = -1.5, GOLD = 1, JPY = 1, CREDIT = 1, BREADTH = 1, SMALL = 1.5,
+           VIX = -2, MOVE = -1, EMFX = 1),
+    movie = "The central bank signals or delivers cuts before a recession: long yields fall first (the 3-month bill waits for the first cut, so the curve flattens before it steepens), the dollar weakens, gold and the yen are bought, credit tightens and rate-sensitive laggards (small caps, regional banks, homebuilders) lead a broadening rally.",
+    analogs = "1995 (first cut in July after the 1994 hikes, soft landing, S&P +34% for the year); autumn 1998 (three cuts after LTCM); 2019 (pivot in January, cuts from July, S&P +29%); November-December 2023 (Fed signalled the end of hikes, 10-year from 5.0% to about 3.9%, small caps about +20% in two months).",
+    after = "If the pivot comes before a recession (1995, 1998, 2019) the rally broadens and lasts 6-12 months. If the central bank cuts into a recession (2001, 2007) short rates fall the same way but credit widens and equities fall: that is a growth scare or credit event, and the credit and small-cap legs of this fingerprint fail.",
+    tells = "10-year and 2-year yields falling, then the 3-month bill once cuts are delivered (bull steepening comes later); dollar breaking down; gold and yen up together with equities; equal weight and the Russell beating the index; high yield beating Treasuries.",
+    invalid = "Short rates falling while credit widens and small caps fall (growth scare: the central bank is cutting into weakness).",
+    bot = list(long = c("IWM", "KRE", "ITB", "GDX", "EEM", "XME"), short = character(0),
+               note = "Cover duration shorts (homebuilders, REITs, regional banks) left over from a bond rout; those groups lead the first leg. Long breakouts across the average stock start working.")
   )
 )
 
@@ -197,12 +224,46 @@ fp_series <- function(raw, sym) {
   get_close(raw, sym)
 }
 
+#' Absolute-breadth history: one reading per trading date.
+#' Each morning run computes breadth from the previous close, so a reading stored on cache_date D
+#' belongs to the last S&P session before D. `live_pct` (today's run) is appended for the latest session.
+load_breadth_history <- function(raw, live_pct = NA_real_) {
+  spx <- sort(unique(get_close(raw, "^GSPC")$date))
+  h <- tryCatch({
+    conn <- Tdata::safe_db_connect(); on.exit(DBI::dbDisconnect(conn), add = TRUE)
+    DBI::dbGetQuery(conn, "SELECT cache_date, s5fi FROM macro_context_results WHERE s5fi IS NOT NULL")
+  }, error = function(e) NULL)
+  out <- data.frame(date = as.Date(character(0)), pct = numeric(0))
+  if (!is.null(h) && nrow(h)) {
+    i <- findInterval(as.numeric(as.Date(h$cache_date)) - 1, as.numeric(spx))   # last session strictly before D
+    out <- data.frame(date = spx[pmax(i, 1)], pct = h$s5fi)[i > 0, ]
+  }
+  if (!is.na(live_pct) && length(spx)) out <- rbind(out, data.frame(date = max(spx), pct = live_pct))
+  out <- out[!duplicated(out$date, fromLast = TRUE), ]
+  out[order(out$date), ]
+}
+
+#' ABS_BREADTH value on date d: latest reading (n = 21) or mean over 63 sessions (n = 63), as (level - 50) / 15
+abs_breadth_z <- function(bh, d, n = 21) {
+  if (is.null(bh) || !nrow(bh)) return(NA_real_)
+  b <- bh[bh$date <= d, ]
+  if (!nrow(b) || as.numeric(d - max(b$date)) > 7) return(NA_real_)
+  v <- if (n <= 21) tail(b$pct, 1) else {
+    w <- b$pct[b$date > d - round(n * 365 / 252)]
+    if (length(w) < 10) return(NA_real_)
+    mean(w)
+  }
+  (v - ABS_BREADTH_CENTER) / ABS_BREADTH_SCALE
+}
+
 #' Current z-scores for every fingerprint asset, for horizon n days
-asset_moves <- function(raw, n = 21) {
+asset_moves <- function(raw, n = 21, bh = NULL) {
+  d_last <- max(get_close(raw, "^GSPC")$date)
   vapply(names(FP_ASSETS), function(k) {
+    if (k == "ABS_BREADTH") return(abs_breadth_z(bh, d_last, n))
     a <- FP_ASSETS[[k]]
     zs <- vapply(a[[1]], function(s) {
-      kind <- if (s %in% c("^TNX", "^TNX-^IRX")) "yield" else "price"
+      kind <- if (s %in% YIELD_SYMBOLS) "yield" else "price"
       move_z(fp_series(raw, s), n, kind)
     }, 0)
     a[[2]] * mean(zs, na.rm = TRUE)
@@ -232,7 +293,8 @@ fp_label <- function(k) FP_ASSETS[[k]][[3]]
 describe_z <- function(k, zv) {
   word <- if (abs(zv) >= 2) "sharply" else if (abs(zv) >= 1) "clearly" else "slightly"
   dir <- if (zv > 0) "up" else "down"
-  if (k %in% c("US10Y", "BUND", "GILT", "CURVE")) dir <- if (zv > 0) "higher" else "lower"
+  if (k == "ABS_BREADTH") return(sprintf("%s at %.0f%%", fp_label(k), ABS_BREADTH_CENTER + ABS_BREADTH_SCALE * zv))
+  if (k %in% c("US10Y", "BUND", "GILT", "CURVE", "SHORT")) dir <- if (zv > 0) "higher" else "lower"
   sprintf("%s %s %s", fp_label(k), word, dir)
 }
 
@@ -252,6 +314,45 @@ chain_status <- function(ch, z) {
        steps = vapply(seq_along(ch$steps), function(i) sprintf("%s (z %+.1f)", fp_label(ch$steps[i]), zs[i]), ""))
 }
 
+# ── Yen carry-trade unwind: short-window alert ──────────────────────────────
+# An unwind plays out in one to three sessions, so 21-day scenario scores catch it late and
+# diluted. It is checked on 3-session z-scores instead (same z definition, n = 3).
+# Fired 2019-2026 on: Aug 2019, Feb-Mar 2020, Nov 2021, Dec 2022 (Bank of Japan yield-cap change),
+# 25 Jul - 7 Aug 2024, Apr 2025. Status is reported for the last CARRY_LOOKBACK sessions.
+CARRY_ALERT <- list(
+  window = 3, yen_fire = 2, yen_watch = 1.5, confirm_z = 2,
+  name = "Yen carry-trade unwind",
+  movie = "Funding currencies (yen, franc) jump as leveraged carry positions are closed. Positions financed in yen are sold everywhere at once: Japanese equities, high-beta tech, crypto, high-yielding currencies. Fast and violent, driven by positioning more than by fundamentals.",
+  analogs = "October 1998 (USD/JPY from 136 to 112 within days during LTCM); August 2007 (quant quake); 5 August 2024 (Nikkei -12.4% in one day, VIX intraday 65, after the Bank of Japan hike and a US payroll miss).",
+  after = "Usually a one-to-three-week shock: in 2024 the S&P recovered its losses within about two weeks once positions were flushed. It becomes lasting only if it coincides with a real growth scare.",
+  bot = "Do not chase breakdowns after the spike; do not open long breakouts until VIX term structure returns to contango."
+)
+CARRY_LOOKBACK <- 5
+
+#' Carry-unwind status for each of the last CARRY_LOOKBACK sessions (S&P calendar, FX joined as-of)
+carry_alert <- function(raw) {
+  ca <- CARRY_ALERT
+  dates <- tail(sort(unique(get_close(raw, "^GSPC")$date)), CARRY_LOOKBACK)
+  s <- list(usdjpy = get_close(raw, "USDJPY=X"), audjpy = get_close(raw, "AUDJPY=X"), nikkei = get_close(raw, "^N225"),
+            btc = get_close(raw, "BTC-USD"), vix = get_close(raw, "^VIX"), vix3m = get_close(raw, "^VIX3M"))
+  asof <- function(d, x) if (is.null(x)) NULL else x[x$date <= d, ]
+  last_val <- function(d, x) { y <- asof(d, x); if (is.null(y) || !nrow(y)) NA_real_ else tail(y$Close, 1) }
+  rows <- lapply(dates, function(d) {
+    z <- function(k) move_z(asof(d, s[[k]]), ca$window, "price")
+    yen <- -z("usdjpy"); aj <- z("audjpy"); nk <- z("nikkei"); bt <- z("btc")
+    vinv <- isTRUE(last_val(d, s$vix) >= last_val(d, s$vix3m))
+    conf <- c(audjpy = isTRUE(aj <= -ca$confirm_z), nikkei = isTRUE(nk <= -ca$confirm_z),
+              btc = isTRUE(bt <= -ca$confirm_z), vix_inverted = vinv)
+    n <- sum(conf)
+    status <- if (isTRUE(yen >= ca$yen_fire) && n >= 2) "FIRING"
+              else if (isTRUE(yen >= ca$yen_watch) && n >= 1) "WATCH" else "QUIET"
+    list(date = d, yen = yen, audjpy = aj, nikkei = nk, btc = bt, vix_inverted = vinv, n_conf = n, status = status)
+  })
+  today <- rows[[length(rows)]]
+  fired <- Filter(function(r) r$status == "FIRING", rows)
+  list(today = today, rows = rows, last_fired = if (length(fired)) fired[[length(fired)]]$date else NULL)
+}
+
 # ── Persistence: how long has each scenario been in place? ──────────────────
 # One day does not make a trend. Scores are recomputed for the last HIST_DAYS trading days
 # from price history (same fingerprints as today, so the series is consistent even when
@@ -261,17 +362,18 @@ SCEN_ACTIVE <- 0.40   # match score at which a scenario counts as "in place"
 HIST_DAYS <- 60
 
 #' Scenario scores for each of the last `days` trading days (rows = dates, cols = scenario ids)
-scenario_history <- function(raw, days = HIST_DAYS) {
+scenario_history <- function(raw, days = HIST_DAYS, bh = NULL) {
   series <- lapply(FP_ASSETS, function(a) lapply(a[[1]], function(s) fp_series(raw, s)))
   dates <- tail(sort(unique(get_close(raw, "^GSPC")$date)), days)
   clip <- function(v) pmax(-1, pmin(1, v / 1.5))
   out <- t(vapply(seq_along(dates), function(i) {
     d <- dates[i]
     z <- vapply(names(FP_ASSETS), function(k) {
+      if (k == "ABS_BREADTH") return(abs_breadth_z(bh, d, 21))
       a <- FP_ASSETS[[k]]
       zs <- mapply(function(s, sym) {
         if (is.null(s)) return(NA_real_)
-        kind <- if (sym %in% c("^TNX", "^TNX-^IRX")) "yield" else "price"
+        kind <- if (sym %in% YIELD_SYMBOLS) "yield" else "price"
         move_z(s[s$date <= d, ], 21, kind)
       }, series[[k]], a[[1]])
       a[[2]] * mean(zs, na.rm = TRUE)

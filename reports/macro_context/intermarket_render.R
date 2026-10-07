@@ -161,7 +161,26 @@ chains_html <- function(z) {
          CHAIN_ON, " or more.</p>", paste(rows, collapse = ""), "</div>")
 }
 
-movie_html <- function(movie, matches, sectors, z = NULL) {
+#' Yen carry-unwind alert (3-session window), shown whatever the scenario ranking
+carry_html <- function(carry) {
+  if (is.null(carry)) return("")
+  ca <- CARRY_ALERT; t <- carry$today
+  f <- function(v) if (is.na(v)) "n/a" else sprintf("%+.1f", v)
+  cls <- switch(t$status, FIRING = "im-age-mature", WATCH = "im-age-new", "im-age-wavering")
+  recent <- if (!is.null(carry$last_fired) && t$status != "FIRING")
+    sprintf(" Last fired %s, within the last %d sessions.", format(carry$last_fired, "%d %b"), CARRY_LOOKBACK) else ""
+  sprintf(paste0(
+    "<div class='im-chains'><p><b>%s</b> <span class='im-badge %s'>%s</span> <span class='im-sub'>%d-session window, %s</span><br>",
+    "Yen z %s (fires at +%g, watch at +%g); confirmations at z &le; &minus;%g: AUD/JPY %s, Nikkei %s, Bitcoin %s; VIX at or above VIX3M: %s. ",
+    "%d of 4 confirmations.%s</p>",
+    "<p class='im-sub'>FIRING = yen &ge; +%g and at least 2 confirmations; WATCH = yen &ge; +%g and at least 1. %s %s</p></div>"),
+    esc(ca$name), cls, t$status, ca$window, format(t$date, "%d %b"),
+    f(t$yen), ca$yen_fire, ca$yen_watch, ca$confirm_z, f(t$audjpy), f(t$nikkei), f(t$btc), if (t$vix_inverted) "yes" else "no",
+    t$n_conf, recent, ca$yen_fire, ca$yen_watch,
+    if (t$status == "QUIET") "" else ca$movie, if (t$status == "QUIET") "" else paste("BOT:", ca$bot))
+}
+
+movie_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
   paras <- paste(vapply(names(MOVIE_TITLES), function(k)
     sprintf("<p><b>%s.</b> %s</p>", MOVIE_TITLES[[k]], movie[[k]]), ""), collapse = "\n")
   all_scores <- paste(vapply(matches, function(m) sprintf(
@@ -172,7 +191,7 @@ movie_html <- function(movie, matches, sectors, z = NULL) {
   paste0(
     "<div class='im-movie'>", paras,
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
-    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>", chains_html(z),
+    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>", chains_html(z), carry_html(carry),
     "<details class='im-details'><summary>All scenarios: match score</summary><table>",
     "<tr class='im-head'><td>Scenario</td><td>1 month</td><td>3 months</td><td>Age</td><td>Days in place</td><td>Previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table>",
     "<div class='im-legend'>Match = weighted agreement between today's moves and the scenario's typical moves, ",
