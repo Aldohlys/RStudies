@@ -68,23 +68,34 @@ class Ref:
         return (f"{r['bias']}/{r['bias_zone']}", r["vix"]) if r else (None, None)
 
     def earnings(self, sym, session_date):
-        """Next earnings on or after the session, from Yahoo (Tickers.NextEarnings
-        is not maintained: AAPL still read 2026-04-30 on 2026-10-07)."""
+        """First earnings date on or after the session, from Yahoo
+        (Tickers.NextEarnings is not maintained: AAPL still read 2026-04-30 on
+        2026-10-07)."""
         if sym not in self._earn:
             info = self.tickers.get(sym) or {}
             if info.get("Type") == "IND":
                 self._earn[sym] = []
                 return None
             y = info.get("YahooName") or sym
-            val = None
+            # Earnings history (past and next dates), so an entry dated in the
+            # past still sees a report that fell inside its hold (backfill,
+            # 2026-10-08); the calendar only lists upcoming dates.
+            val = set()
             try:
                 import yfinance as yf
-                cal = yf.Ticker(y).calendar
+                tk = yf.Ticker(y)
+                try:
+                    df = tk.get_earnings_dates(limit=12)
+                    if df is not None:
+                        val |= {str(d)[:10] for d in df.index}
+                except Exception:
+                    pass
+                cal = tk.calendar
                 ds = cal.get("Earnings Date") if isinstance(cal, dict) else None
-                if ds:
-                    val = sorted(str(d)[:10] for d in ds)
+                val |= {str(d)[:10] for d in (ds or [])}
             except Exception:
-                val = None
+                pass
+            val = sorted(val)
             self._earn[sym] = val or []
         fut = [d for d in self._earn[sym] if d >= session_date]
         return fut[0] if fut else None

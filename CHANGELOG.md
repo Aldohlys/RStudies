@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: credit-event scenario, credit stress on HYG/IEF
+
+### Added
+- Scenario **Credit event / recession bear market** (`archetypes.R`); checked on five episodes 2007-2023 in `calibrate_scenarios.py` (held-out separation 0.86, kept as written).
+
+### Changed
+- Regime signal `credit_stress` (and the credit part of `sentiment`) reads the 20-day return of HYG/IEF on adjusted closes instead of HYG's price, which also fell with Treasury yields; sigmoid recalibrated on 2016-2026 (center -0.52, scale 2.34). `calibrate_from_history.R` aligned.
+- IEF added to the macro tickers; `fetch.R` appends tickers missing from the day's cache instead of returning the cache as is.
+
 ## [2026-10-08] - macro_context: new scenarios, absolute breadth, carry alert, weight calibration
 
 ### Added
@@ -29,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - P0 no longer exits when asymmetry is gone (`no_asym`); P7 = P0 + that rule. Policy version v2-2026-10-08.
 - Strike selection: when no strike has delta 0.25-0.35, the one closest to 0.30 within 0.20-0.40 (coarse grids, MET 10-07).
 - Spreads priced long leg at ask (entry) / bid (exit), short leg at mid both ways, instead of the combo natural.
+- Earnings date at entry from Yahoo's earnings history (past and upcoming), so backfilled entries see reports inside their hold (MU 09-30, NKE 10-01).
+- Report column "R now" renamed "R at last close".
 
 ## [2026-10-08] - bot_fwd: BOT forward test
 

@@ -54,7 +54,7 @@ def run(conn, log=print):
     opened = [r for r in p0 if r["session_date"] >= wk]
     shut = [r for r in closed if (r["exit_date"] or "") >= wk]
     L += [f"## Opened this week ({len(opened)})", "",
-          "| session | sym | tier | run_day | vehicle | R now |", "|---|---|---|---|---|---|"]
+          "| session | sym | tier | run_day | vehicle | R at last close |", "|---|---|---|---|---|---|"]
     L += [f"| {r['session_date']} | {r['sym']} | {r['tier']} | {r['run_day']} | {r['vehicle']} | {_fmt(r['R'])} |"
           for r in sorted(opened, key=lambda r: (r["session_date"], r["sym"]))]
     L += ["", f"## Closed this week under P0 ({len(shut)})", "",
