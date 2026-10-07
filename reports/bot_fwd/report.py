@@ -77,7 +77,7 @@ def run(conn, log=print):
 
     L += ["", "## Exit policies (closed, fresh)", "",
           "P0 primary; P1 stop + last week; P2a/P2b targets 2x/70% and 3x/90%; P3 no time stop; "
-          "P4 time stop at session 7; P5 hold to DTE 7 / 5; P6 P0 at mid; P7 P0 without no_asym.", "",
+          "P4 time stop at session 7; P5 hold to DTE 7 / 5; P6 P0 at mid; P7 P0 + exit when asymmetry is gone.", "",
           "| policy | vehicle " + hdr, "|---|---" + sep]
     for pol in ("P0", "P1", "P2a", "P2b", "P3", "P4", "P5", "P6", "P7"):
         for v in ("outright", "spread", "stock"):

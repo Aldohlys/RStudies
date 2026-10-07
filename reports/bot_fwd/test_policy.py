@@ -62,10 +62,10 @@ def main():
     # Target: the option's bid high reaches the Black-Scholes value at target.
     U = underlying([100, 103, 106, 109, 110])
     L = leg([2.0, 2.8, 4.0, 5.5, 6.0], bid_highs=[2.0, 2.9, 4.2, 9.0, 9.5])
-    r = P.simulate(outright(), SIG, U, L, {}, {}, FEE, P.POLICIES["P7"])
-    ok &= check("outright target fills at the limit (P7)", r["exit_reason"] == "target" and r["R"] > 1)
     r = P.simulate(outright(), SIG, U, L, {}, {}, FEE, P.POLICIES["P0"])
-    ok &= check("P0: no_asym exits at 2/3 of the way (106 of 95->110)",
+    ok &= check("outright target fills at the limit", r["exit_reason"] == "target" and r["R"] > 1)
+    r = P.simulate(outright(), SIG, U, L, {}, {}, FEE, P.POLICIES["P7"])
+    ok &= check("P7: no_asym exits at 2/3 of the way (106 of 95->110)",
                 r["exit_reason"] == "no_asym" and r["hold_sessions"] == 2)
 
     # Stop: underlying closes below the stop -> exit at the closing bid.
@@ -108,7 +108,7 @@ def main():
     U = underlying([100, 105, 112, 118])
     L = leg([3.0, 5.0, 8.5, 13.5])
     S = leg([0.5, 1.0, 2.0, 4.5], asks=[0.6, 1.1, 2.1, 4.6])
-    r = P.simulate(spread, SIG, U, L, S, {}, FEE, P.POLICIES["P7"])
+    r = P.simulate(spread, SIG, U, L, S, {}, FEE, P.POLICIES["P0"])
     ok &= check("spread target at 80% of width", r["exit_reason"] == "target" and r["exit_price"] == 8.0)
 
     print("ALL OK" if ok else "SOME FAILED")

@@ -11,16 +11,21 @@ Fill rules on daily data:
   max(open, target) when the high reaches the target.
 - stock stop order: min(open, stop) when the low reaches the stop.
 - every other exit: the session's closing bid (closing mid under P6).
+- spreads: long leg at its ask on entry and its bid on exit, short leg at its
+  mid both ways (decided 2026-10-08).
 """
 import datetime as dt
 import math
 
 import common as C
 
-POLICY_VERSION = "v1-2026-10-07"
+POLICY_VERSION = "v2-2026-10-08"  # v2: no_asym out of P0
 
+# no_asym (rule 10) left P0 on 2026-10-08: with a fixed stop it fires once price
+# is two-thirds of the way from the stop to the target, before the target limit
+# can fill. P7 keeps it, to measure what it would have done.
 BASE = {"rules": {"last_week", "spread_expiry", "target", "stop", "dead_delta", "earnings",
-                  "momentum", "sector", "time_stop", "no_asym", "max_hold"},
+                  "momentum", "sector", "time_stop", "max_hold"},
         "time_stop_session": 10, "target_outright": "bs", "target_spread": 0.80,
         "fill": "natural"}
 
@@ -33,10 +38,7 @@ POLICIES = {
     "P4": dict(BASE, time_stop_session=7),
     "P5": dict(BASE, rules={"last_week", "spread_expiry", "max_hold"}),
     "P6": dict(BASE, fill="mid"),
-    # With a fixed stop, no_asym fires once price has covered ~2/3 of the way to
-    # the target ((target - close) < 0.5 x (close - stop)), i.e. before the
-    # target limit can fill. P7 measures what that early exit costs or saves.
-    "P7": dict(BASE, rules=BASE["rules"] - {"no_asym"}),
+    "P7": dict(BASE, rules=BASE["rules"] | {"no_asym"}),   # P0 + exit when asymmetry is gone
 }
 
 MOMENTUM_MIN_DAYS = 5           # bot_momentum_monitor.py MIN_DAYS
@@ -137,7 +139,8 @@ def simulate(pos, sig, U, L, S, gidx, fee, pol):
         s = S[d]
         if s["bid_close"] is None or s["ask_close"] is None:
             return None, None, None
-        b = max(l["bid_close"] - s["ask_close"], 0.0)
+        # Exit mirrors the entry: long leg at its bid, short leg at its mid.
+        b = max(l["bid_close"] - (s["bid_close"] + s["ask_close"]) / 2, 0.0)
         m = ((l["bid_close"] + l["ask_close"]) - (s["bid_close"] + s["ask_close"])) / 2
         return b, max(m, 0.0), None
 

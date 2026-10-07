@@ -23,8 +23,12 @@ IB_HOST, IB_PORT, IB_CLIENT_ID = "127.0.0.1", 7496, 4790
 
 # ── Parameters (proposal §3, §4) ─────────────────────────────────────────────
 DTE_MIN, DTE_MAX = 28, 42
+DTE_MAX_MONTHLY = 49          # fallback: nearest monthly up to 49 DTE when none in 28-42
 DELTA_MIN, DELTA_MAX, DELTA_TARGET = 0.25, 0.35, 0.30
-MAX_BA_PCT = 15.0             # availability test, % of mid
+# Coarse strike grids can skip the band (MET 10-07, 44 DTE: 100C 0.36, 105C 0.19):
+# then the strike closest to 30 delta, if within this wider band.
+DELTA_MIN_WIDE, DELTA_MAX_WIDE = 0.20, 0.40
+MAX_BA_PCT = 20.0             # availability test, % of mid (15 until 2026-10-08)
 RISK_CAP = 300.0              # USD, per trade
 STOCK_NOTIONAL_CAP = 30000.0
 RATE = 0.04                   # flat risk-free rate for Black-Scholes

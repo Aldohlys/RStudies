@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - bot_fwd: expiry, bid-ask and exit decisions
+
+### Changed
+- Monthly-only chains: nearest monthly up to 49 DTE when no expiry falls in 28-42.
+- Bid-ask availability limit 20% of mid (was 15%).
+- P0 no longer exits when asymmetry is gone (`no_asym`); P7 = P0 + that rule. Policy version v2-2026-10-08.
+- Strike selection: when no strike has delta 0.25-0.35, the one closest to 0.30 within 0.20-0.40 (coarse grids, MET 10-07).
+- Spreads priced long leg at ask (entry) / bid (exit), short leg at mid both ways, instead of the combo natural.
+
 ## [2026-10-08] - bot_fwd: BOT forward test
 
 ### Added

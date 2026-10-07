@@ -197,8 +197,15 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
     else:
         ch = chain[0]
         tclass = ch.tradingClass
-        exps = [e for e in sorted(ch.expirations)
-                if C.DTE_MIN <= (dt.datetime.strptime(e, "%Y%m%d").date() - sd).days <= C.DTE_MAX]
+        dte_of = lambda e: (dt.datetime.strptime(e, "%Y%m%d").date() - sd).days
+        exps = [e for e in sorted(ch.expirations) if C.DTE_MIN <= dte_of(e) <= C.DTE_MAX]
+        if not exps:
+            # Monthly-only chains (IR, AME, FTV, LIN, MET: 16 Oct then 20 Nov on
+            # 10-07) miss a 15-day window on about half the sessions: take the
+            # nearest monthly up to DTE_MAX_MONTHLY instead (decided 2026-10-08).
+            monthly = [e for e in sorted(ch.expirations)
+                       if is_monthly(e) and C.DTE_MIN <= dte_of(e) <= C.DTE_MAX_MONTHLY]
+            exps = monthly[:1]
         if not exps:
             reasons = {"outright": "no_expiry", "spread": "no_expiry"}
         else:
@@ -285,9 +292,18 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
     return option_shadow + [pos], contracts, None
 
 
+def _delta_band(ls):
+    """Legs with delta 0.25-0.35, else the one closest to 0.30 within 0.20-0.40."""
+    ls = [l for l in ls if l["delta"] is not None]
+    band = [l for l in ls if C.DELTA_MIN <= l["delta"] <= C.DELTA_MAX]
+    if band:
+        return band
+    wide = [l for l in ls if C.DELTA_MIN_WIDE <= l["delta"] <= C.DELTA_MAX_WIDE]
+    return [min(wide, key=lambda l: abs(l["delta"] - C.DELTA_TARGET))] if wide else []
+
+
 def _pick_outright(legs, base, mult, target_v, fee, sd):
-    band = [l for l in legs.values()
-            if l["delta"] is not None and C.DELTA_MIN <= l["delta"] <= C.DELTA_MAX and l["ask"]]
+    band = [l for l in _delta_band(legs.values()) if l["ask"]]
     if not band:
         return None, "no_strike"
     scored = []
@@ -330,8 +346,7 @@ def _pick_spread(legs, base, mult, target_v, desired_w, fee, sd):
         by_exp.setdefault(e, {})[k] = l
     scored, any_long = [], False
     for e, row in by_exp.items():
-        band = [l for l in row.values()
-                if l["delta"] is not None and C.DELTA_MIN <= l["delta"] <= C.DELTA_MAX]
+        band = _delta_band(row.values())
         if not band:
             continue
         any_long = True
@@ -346,7 +361,10 @@ def _pick_spread(legs, base, mult, target_v, desired_w, fee, sd):
         if not (lg["bid"] and lg["ask"] and sh["bid"] and sh["ask"]):
             scored.append((False, None, lg, sh, "no_bid"))
             continue
-        nat = lg["ask"] - sh["bid"]
+        # Long leg at its ask, short leg at its mid (decided 2026-10-08): the
+        # combo natural (long ask - short bid) stacks two half-spreads on a
+        # small debit and failed 7 of 11 test spreads at 20%.
+        nat = lg["ask"] - sh["mid"]
         mid = lg["mid"] - sh["mid"]
         width = sk - K
         if nat <= 0 or mid <= 0 or nat >= width:
@@ -369,7 +387,7 @@ def _pick_spread(legs, base, mult, target_v, desired_w, fee, sd):
     _, rr, lg, sh, _ = max(ok, key=lambda s: s[1])
     K, sk = lg["c"].strike, sh["c"].strike
     width = sk - K
-    nat, mid = lg["ask"] - sh["bid"], lg["mid"] - sh["mid"]
+    nat, mid = lg["ask"] - sh["mid"], lg["mid"] - sh["mid"]
     f_in = 2 * fee["opt_leg"]
     dpw = nat / width * 100
     be = K + nat
