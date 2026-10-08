@@ -42,6 +42,7 @@ source(file.path(SCRIPT_DIR, "macro_outcomes.R"))
 source(file.path(SCRIPT_DIR, "scenarios.R"))
 source(file.path(SCRIPT_DIR, "intermarket_config.R"))
 source(file.path(SCRIPT_DIR, "intermarket.R"))
+source(file.path(SCRIPT_DIR, "intermarket_xlsx.R"))
 source(file.path(SCRIPT_DIR, "archetypes.R"))
 source(file.path(SCRIPT_DIR, "intermarket_reads.R"))
 source(file.path(SCRIPT_DIR, "intermarket_render.R"))
@@ -138,7 +139,7 @@ if (nrow(.mm_export) > 0) dbWriteTable(conn, "macro_context_mismatches", .mm_exp
 if (!is.null(im)) {
   tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_sectors WHERE cache_date = ?", params = list(.today)),
            error = function(e) NULL)
-  # Table columns as created (bench = "EW"); member lists and tags go to the CSV only
+  # Table columns as created (bench = "EW"); member lists and tags go to the workbook only
   .sx_cols <- c("group", "bench", "trend", "c1m", "c3m", "pos52", "above200", "rs_ratio", "rs_mom",
                 "quadrant", "rs_3m", "driver_score", "drivers", "verdict")
   dbWriteTable(conn, "macro_intermarket_sectors", cbind(cache_date = .today, im$sectors[, .sx_cols]), append = TRUE)
@@ -152,8 +153,8 @@ if (!is.null(im)) {
   tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_scenarios WHERE cache_date = ?", params = list(.today)),
            error = function(e) NULL)
   dbWriteTable(conn, "macro_intermarket_scenarios", .sc, append = TRUE)
-  write.csv(im$sectors, file.path("C:/Users/aldoh/Documents/NewTrading/Reports",
-                                  sprintf("intermarket_sectors_%s.csv", format(Sys.Date(), "%Y%m%d"))), row.names = FALSE)
+  write_sectors_xlsx(im$sectors, file.path("C:/Users/aldoh/Documents/NewTrading/Reports",
+                                           sprintf("intermarket_sectors_%s.xlsx", format(Sys.Date(), "%Y%m%d"))))
 }
 dbDisconnect(conn)
 message("Macro context exported to DB")

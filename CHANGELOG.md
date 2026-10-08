@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: sector map workbook with legend
+
+### Changed
+- The daily BOT sector map is written to `NewTrading/Reports/intermarket_sectors_<date>.xlsx` (sheets Data and Legend) instead of `intermarket_sectors_<date>.csv`. No code read the CSV. `intermarket_xlsx.R` holds the writer and `SECTORS_LEGEND`, a self-contained definition of every column; the run stops if a column has no definition.
+- `openxlsx` 4.2.9 added to the renv library and `renv.lock`.
+
 ## [2026-10-08] - macro_context: state and move scores
 
 ### Added

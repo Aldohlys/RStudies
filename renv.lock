@@ -583,10 +583,10 @@
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.20.12",
+      "Version": "5.20.13",
       "Source": "Local",
       "RemoteType": "local",
-      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.20.12.tar.gz"
+      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.20.13.tar.gz"
     },
     "Tlogger": {
       "Package": "Tlogger",
@@ -2973,6 +2973,11 @@
       "Author": "Jeroen Ooms [aut, cre] (ORCID: <https://orcid.org/0000-0002-4035-0289>), Oliver Keyes [ctb]",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
       "Repository": "CRAN"
+    },
+    "openxlsx": {
+      "Package": "openxlsx",
+      "Version": "4.2.9",
+      "Source": "Repository"
     },
     "otel": {
       "Package": "otel",
