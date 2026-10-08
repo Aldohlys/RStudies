@@ -20,11 +20,12 @@ def run(conn, log=print):
     rows = [dict(r) for r in conn.execute(
         "SELECT * FROM bot_fwd_underlying WHERE sessions_seen IS NULL OR sessions_seen < ?",
         (HORIZON,))]
-    rows = [r for r in rows if r["px"] and r["atr"]]
+    rows = [r for r in rows if r["px"]]
     if not rows:
         log("Shadow: nothing pending")
         return
-    start = min(r["session_date"] for r in rows)
+    # 30 days before the first session, for the ATR14 of rows without one.
+    start = C.ymd(dt.date.fromisoformat(min(r["session_date"] for r in rows)) - dt.timedelta(days=30))
     ys = sorted({r["yahoo"] for r in rows})
     try:
         import yfinance as yf
@@ -43,6 +44,17 @@ def run(conn, log=print):
         fwd = df[df.index.strftime("%Y-%m-%d") > r["session_date"]].head(HORIZON)
         if fwd.empty:
             continue
+        if not r["atr"]:
+            # Files without an atr column (09-25 .. 09-29 09:21): ATR14 from the
+            # Yahoo bars of the 14 sessions before the session.
+            pre = df[df.index.strftime("%Y-%m-%d") < r["session_date"]].tail(15)
+            if len(pre) < 15:
+                continue
+            tr = [max(h - l, abs(h - pc), abs(l - pc)) for h, l, pc in
+                  zip(pre["High"][1:], pre["Low"][1:], pre["Close"][:-1])]
+            r["atr"] = sum(tr) / len(tr)
+            conn.execute("UPDATE bot_fwd_underlying SET atr = ? WHERE session_date = ? AND sym = ?",
+                         (r["atr"], r["session_date"], r["sym"]))
         sgn = -1 if r["direction"] == "short" else 1
         px, atr = r["px"], r["atr"]
         closes = list(fwd["Close"])

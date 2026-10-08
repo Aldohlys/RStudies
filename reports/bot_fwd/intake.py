@@ -142,6 +142,27 @@ def quotes(ib, contracts, ts, live):
     return C.quotes_stream(ib, contracts) if live else quotes_rebuild(ib, contracts, ts)
 
 
+def atr14_ibkr(ib, sym, session_date, px):
+    """ATR14 (simple mean of true range) from IBKR daily bars of the 14
+    sessions before session_date; for bot_daily files without an atr column."""
+    from ib_async import Stock
+    s = Stock(sym, "SMART", "USD")
+    if not ib.qualifyContracts(s):
+        return None
+    end = dt.datetime.combine(dt.date.fromisoformat(session_date), dt.time(0, 0), C.ET)
+    bars = hist(ib, s, end, "30 D", "1 day", "TRADES")
+    bars = [b for b in bars if _d(b) < dt.date.fromisoformat(session_date)][-15:]
+    if len(bars) < 15:
+        return None
+    trs = [max(b.high - b.low, abs(b.high - p.close), abs(b.low - p.close))
+           for p, b in zip(bars[:-1], bars[1:])]
+    return sum(trs) / len(trs)
+
+
+def _d(b):
+    return b.date if not isinstance(b.date, dt.datetime) else b.date.astimezone(C.ET).date()
+
+
 def is_monthly(expiry):
     d = dt.datetime.strptime(expiry, "%Y%m%d").date()
     return int(d.weekday() == 4 and 15 <= d.day <= 21)
@@ -551,6 +572,12 @@ def run(conn, ib, log=print):
                 _insert(conn, "bot_fwd_signal", sig)
                 conn.commit()
                 continue
+            if sig["atr"] is None and None not in (sig["px"], sig["target"], sig["stop"]):
+                # bot_daily files of 09-25 .. 09-29 09:21 carry no atr column.
+                sig["atr"] = atr14_ibkr(ib, sig["vehicle_sym"] if sig["vehicle_sym"] == sym else sym,
+                                        session, sig["px"])
+                if sig["atr"] is not None:
+                    sig["note"] = "atr14_from_ibkr"
             if None in (sig["px"], sig["target"], sig["stop"], sig["atr"]):
                 sig.update(status="skipped", note="missing_target_or_stop")
                 _insert(conn, "bot_fwd_signal", sig)
@@ -565,7 +592,8 @@ def run(conn, ib, log=print):
             if positions is None:
                 log(f"  {sym}: {note} - retried next run")
                 continue
-            sig.update(status="entered" if positions else "no_vehicle", note=note)
+            sig.update(status="entered" if positions else "no_vehicle",
+                       note="; ".join(x for x in (sig.get("note"), note) if x) or None)
             _insert(conn, "bot_fwd_signal", sig)
             stk_until = dt.date.fromisoformat(session) + dt.timedelta(days=60)
             opt_until = dt.date.fromisoformat(session) + dt.timedelta(days=45)

@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: state and move scores
+
+### Added
+- State score per scenario: same weights applied to each asset's position in its 252-session range (`asset_states`, `state_score` in `archetypes.R`). State decides "in place" (`STATE_ACTIVE` 0.50); the 1-month move gives the direction (`SCEN_ACTIVE` 0.40). Statuses BUILDING, ESTABLISHED, MATURE, FADING, EMERGING, FADED, INACTIVE; scenarios ranked by state.
+- `compare_state_move.py`: move vs state vs mix on the calibration episodes, timing, state threshold sweep.
+- Column `state_score` in `macro_intermarket_scenarios` (added by `main.R` when missing).
+
+### Changed
+- Section 00 cards, table, sparklines (state solid, move dotted) and movie text show both scores; Methodology tab M1 rewritten.
+- `HISTORY_DAYS` 450 -> 520 so the 60-day history has full 252-session ranges.
+
 ## [2026-10-08] - macro_context: credit-event scenario, credit stress on HYG/IEF
 
 ### Added
@@ -40,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Spreads priced long leg at ask (entry) / bid (exit), short leg at mid both ways, instead of the combo natural.
 - Earnings date at entry from Yahoo's earnings history (past and upcoming), so backfilled entries see reports inside their hold (MU 09-30, NKE 10-01).
 - Report column "R now" renamed "R at last close".
+- bot_daily files without an `atr` column (09-25 .. 09-29 09:21): ATR14 computed at entry from IBKR daily bars, and in the shadow from Yahoo bars, instead of skipping the signal (57 signals recovered in the backfill from 09-21).
 
 ## [2026-10-08] - bot_fwd: BOT forward test
 
