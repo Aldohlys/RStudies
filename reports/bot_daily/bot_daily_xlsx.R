@@ -17,21 +17,39 @@ BOT_TIERS <- data.frame(stringsAsFactors = FALSE,
   fill = c("#9DC3E6", "#DDEBF7", "#FFD966", "#FFF2CC", "#F2F2F2", "#F4B183"),
   rule = c(
     "tradable = 1, trend_state at least 4/6, asym at least 1.5",
-    "tradable = 1, trend_state at least 4/6, asym from 1 to 1.5",
-    "tradable = 1, trend_state at most 3/6, asym at least 2: high reward/risk against the trend (a pullback), not a breakout continuation",
+    paste("tradable = 1, asym at least 1, and either trend_state at least 4/6 with asym below 1.5,",
+          "or a daily trend paused inside an intact trend: trend_state at most 3/6, w_trend_state at least 4/6,",
+          "close above a rising 50-day EMA (ema50_disp_pct and ema50_slope above 0; below a falling one for a short)"),
+    "tradable = 1, trend_state at most 3/6, asym at least 2, not BOT- above: high reward/risk against the trend (a pullback), not a breakout continuation",
     "tradable = 1, asym at least 1, none of the above",
     "tradable = 1, asym below 1 or empty",
     "tradable = 0: see veto_reason"))
 TIER_TREND_MIN <- 4; TIER_ASYM_BOT <- 1.5; TIER_ASYM_BOT_MINUS <- 1; TIER_ASYM_COUNTER <- 2
 
+trend_n <- function(s) suppressWarnings(as.integer(sub("^\\s*(\\d+)\\s*/\\s*6.*$", "\\1", s)))
+
+# Daily trend paused inside an intact trend (user, 2026-10-08: NET, a flag breakout
+# drifting sideways above the broken level, read 2/6 daily and was COUNTER-TREND):
+# weekly trend at least 4/6 and close above a rising daily EMA50 (short: mirrored).
+# Such a row is BOT- whatever its asym above 1. Same rule as
+# bot_fwd/common.py::weekly_trend_hold, which also records the reason per signal.
+weekly_trend_hold <- function(df) {
+  w <- trend_n(df$w_trend_state)
+  sgn <- ifelse(df$direction == "short", -1, 1)
+  disp <- sgn * suppressWarnings(as.numeric(df$ema50_disp_pct))
+  slope <- sgn * suppressWarnings(as.numeric(df$ema50_slope))
+  !is.na(w) & w >= TIER_TREND_MIN & !is.na(disp) & disp > 0 & !is.na(slope) & slope > 0
+}
+
 bot_tier <- function(df) {
-  n <- suppressWarnings(as.integer(sub("^\\s*(\\d+)\\s*/\\s*6.*$", "\\1", df$trend_state)))
+  n <- trend_n(df$trend_state)
   a <- suppressWarnings(as.numeric(df$asym))
   trend <- !is.na(n) & n >= TIER_TREND_MIN
   ok <- !is.na(a)
+  hold <- weekly_trend_hold(df)
   ifelse(df$tradable == 0, "VETO",
   ifelse(trend & ok & a >= TIER_ASYM_BOT, "BOT",
-  ifelse(trend & ok & a >= TIER_ASYM_BOT_MINUS, "BOT-",
+  ifelse(ok & a >= TIER_ASYM_BOT_MINUS & (trend | hold), "BOT-",
   ifelse(!is.na(n) & !trend & ok & a >= TIER_ASYM_COUNTER, "COUNTER-TREND",
   ifelse(ok & a >= TIER_ASYM_BOT_MINUS, "WATCH", "LOW")))))
 }

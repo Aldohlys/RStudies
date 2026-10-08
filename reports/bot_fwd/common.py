@@ -47,7 +47,7 @@ STK_MARK_SESSIONS = 40
 TIERS_SIMULATED = ("BOT", "BOT-", "COUNTER-TREND")
 INDEX_PROXY = {"SPX": "SPY", "NDX": "QQQ", "RUT": "IWM"}
 
-# Tiers: same rule as NewTrading/scripts/bot_daily_to_xlsx.py::tier_of
+# Tiers: same rule as RStudies/reports/bot_daily/bot_daily_xlsx.R::bot_tier
 TREND_MIN, ASYM_BOT, ASYM_BOT_MINUS, ASYM_COUNTER = 4, 1.5, 1.0, 2.0
 
 
@@ -64,20 +64,42 @@ def fnum(x):
         return None
 
 
-def tier_of(row):
+def weekly_trend_hold(row):
+    """Daily trend paused inside an intact trend (user, 2026-10-08, NET: a flag
+    breakout drifting sideways above the broken level read 2/6 daily and was
+    COUNTER-TREND): weekly trend at least 4/6, close above a rising daily EMA50.
+    False when a field is missing (bot_daily files before 2026-10-08 did not
+    carry them)."""
+    w = trend_count(row.get("w_trend_state"))
+    disp, slope = fnum(row.get("ema50_disp_pct")), fnum(row.get("ema50_slope"))
+    if row.get("direction") == "short" and disp is not None and slope is not None:
+        disp, slope = -disp, -slope
+    return w is not None and w >= TREND_MIN and disp is not None and disp > 0 \
+        and slope is not None and slope > 0
+
+
+def tier_reason(row):
+    """(tier, reason). The reason is recorded on forward-test signals, not shown
+    in the bot_daily workbook: 'daily_trend' or 'weekly_trend_hold' for BOT-."""
     if str(row.get("tradable", "")).strip() not in ("1", "1.0"):
-        return "VETO"
+        return "VETO", "veto"
     n = trend_count(row.get("trend_state"))
     a = fnum(row.get("asym_em", row.get("asym")))
     if n is not None and n >= TREND_MIN and a is not None and a >= ASYM_BOT:
-        return "BOT"
+        return "BOT", "daily_trend"
     if n is not None and n >= TREND_MIN and a is not None and a >= ASYM_BOT_MINUS:
-        return "BOT-"
+        return "BOT-", "daily_trend"
+    if a is not None and a >= ASYM_BOT_MINUS and weekly_trend_hold(row):
+        return "BOT-", "weekly_trend_hold"
     if n is not None and n < TREND_MIN and a is not None and a >= ASYM_COUNTER:
-        return "COUNTER-TREND"
+        return "COUNTER-TREND", "counter_trend"
     if a is not None and a >= ASYM_BOT_MINUS:
-        return "WATCH"
-    return "LOW"
+        return "WATCH", "watch"
+    return "LOW", "low"
+
+
+def tier_of(row):
+    return tier_reason(row)[0]
 
 
 # ── Database ─────────────────────────────────────────────────────────────────
@@ -137,6 +159,9 @@ def db():
 # Columns added after the tables first went live; ensure_schema() adds any
 # that an existing table lacks.
 ADDED_COLUMNS = {
+    "bot_fwd_signal": [
+        ("tier_reason", "TEXT"),     # tier_reason(): which rule put the row in its tier
+    ],
     "bot_fwd_position": [
         ("px_v", "REAL"),            # signal price in the traded symbol's terms
         ("entry_asym", "REAL"),      # (target - entry spot) / (entry spot - stop)

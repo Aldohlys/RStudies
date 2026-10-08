@@ -607,7 +607,7 @@ def run(conn, ib, log=print):
         prev = conn.execute("SELECT MAX(session_date) d FROM bot_fwd_signal WHERE session_date < ?",
                             (session,)).fetchone()["d"]
         for r in rows:
-            tier = C.tier_of(r)
+            tier, reason = C.tier_reason(r)
             if tier not in C.TIERS_SIMULATED:
                 continue
             sym = r["name"]
@@ -636,7 +636,7 @@ def run(conn, ib, log=print):
                 "signal_id": sid, "session_date": session, "sym": sym,
                 "vehicle_sym": C.INDEX_PROXY.get(sym, sym), "run_file": os.path.basename(src),
                 "run_ts": run_ts.isoformat(), "entry_ts": entry_ts.isoformat(), "tier": tier,
-                "run_day": (pr["run_day"] + 1) if pr else 1, "open_same_sym": open_same,
+                "tier_reason": reason, "run_day": (pr["run_day"] + 1) if pr else 1, "open_same_sym": open_same,
                 "direction": r.get("direction"), "px": C.fnum(r.get("px")),
                 "atr": C.fnum(r.get("atr")), "asym": C.fnum(r.get("asym")),
                 "target": C.fnum(r.get("target")), "target_source": r.get("target_source"),

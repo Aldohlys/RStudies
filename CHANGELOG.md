@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - BOT tiers: daily trend paused inside an intact trend is BOT-
+
+### Changed
+- A tradable row with asym at least 1 whose daily trend_state is 3/6 or less is BOT- (no longer COUNTER-TREND or WATCH) when w_trend_state is at least 4/6 and the close is above a rising daily EMA50 (short mirrored). Case: NET 10-08, a flag breakout drifting sideways above the broken level, read 2/6 daily. Same rule in `bot_daily_xlsx.R::bot_tier` and `bot_fwd/common.py::tier_reason`. On the 10-08 17:13 run it moves NET (COUNTER-TREND), BIIB and ARM (WATCH) to BOT-.
+- bot_fwd: new column `bot_fwd_signal.tier_reason` (daily_trend / weekly_trend_hold / counter_trend), not shown in the workbook; backfilled from each signal's stored row. NET 10-08 reclassified BOT-. Runs before 10-08 lack w_trend_state, so the rule cannot fire on them.
+
 ## [2026-10-08] - bot_daily: workbook with legend instead of CSV
 
 ### Changed
