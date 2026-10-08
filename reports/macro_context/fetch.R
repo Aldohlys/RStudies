@@ -7,6 +7,33 @@ source(file.path(SCRIPT_DIR, "..", "shared", "cache.R"))
 
 CACHE_TABLE <- "macro_context_cache"
 
+#' Universe symbol -> Yahoo symbol (Tickers.YahooName when set, else the symbol).
+#' Tdata::getYahooData maps only 3-letter names and returns their rows under the Yahoo
+#' name (FXC -> FXC.SW), so the cache check below never found FXC and appended it again
+#' on every run (four copies on 2026-10-08); EUR.CHF went to Yahoo unmapped and came
+#' back empty. Fetching under the Yahoo name and renaming back keeps the universe symbol.
+yahoo_names <- function(tickers) {
+  conn <- Tdata::safe_db_connect()
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  t <- DBI::dbGetQuery(conn, sprintf("SELECT Name, YahooName FROM Tickers WHERE Name IN (%s)",
+                                     paste(rep("?", length(tickers)), collapse = ",")), params = as.list(tickers))
+  t <- t[!is.na(t$YahooName) & nzchar(t$YahooName) & !duplicated(t$Name), ]
+  yh <- stats::setNames(tickers, tickers)
+  yh[t$Name] <- t$YahooName
+  yh
+}
+
+fetch_yahoo_as_universe <- function(tickers, from_date) {
+  yh <- yahoo_names(tickers)
+  yh <- yh[!duplicated(yh)]
+  d <- Tdata::getYahooData(tickers = unname(yh), from_date = from_date, to_date = Sys.Date())
+  if (is.null(d) || nrow(d) == 0) return(d)
+  back <- stats::setNames(names(yh), yh)
+  hit <- d$ticker %in% names(back)
+  d$ticker[hit] <- back[d$ticker[hit]]
+  d
+}
+
 #' Fetch macro data (cached daily)
 #' @param tickers Character vector of tickers to fetch
 #' @return data.frame with columns: ticker, date, Open, High, Low, Close, Volume
@@ -18,11 +45,11 @@ fetch_macro_data <- function(tickers) {
   if (!is.null(cached)) {
     cached$cache_date <- NULL
     cached$date <- as.Date(cached$date)
+    cached <- cached[!duplicated(cached[c("ticker", "date")]), ]
     # Tickers added since today's cache was written: fetch and append them
     add <- setdiff(tickers, unique(cached$ticker))
     if (length(add)) {
-      extra <- tryCatch(Tdata::getYahooData(tickers = add, from_date = Sys.Date() - 90, to_date = Sys.Date()),
-                        error = function(e) NULL)
+      extra <- tryCatch(fetch_yahoo_as_universe(add, Sys.Date() - 90), error = function(e) NULL)
       if (!is.null(extra) && nrow(extra) > 0) {
         cache_append(CACHE_TABLE, extra, today)
         cached <- rbind(cached, extra[, names(cached)])
@@ -34,7 +61,7 @@ fetch_macro_data <- function(tickers) {
   # Fetch from Yahoo
   message("Fetching market data...")
   raw <- tryCatch(
-    Tdata::getYahooData(tickers = tickers, from_date = Sys.Date() - 90, to_date = Sys.Date()),
+    fetch_yahoo_as_universe(tickers, Sys.Date() - 90),
     error = function(e) { message("ERROR: ", e$message); NULL })
 
   if (!is.null(raw) && nrow(raw) > 0) {

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: macro fetch keeps universe symbols (FXC re-append, empty EUR.CHF)
+
+### Fixed
+- `fetch.R` now requests each universe symbol under its Yahoo name (Tickers.YahooName) and stores the rows under the universe symbol (`fetch_yahoo_as_universe()`). Tdata::getYahooData maps only 3-letter names and returns them under the Yahoo name, so FXC came back as FXC.SW: the cache check never found FXC and appended it again on every run (four copies of 64 rows on 10-08). EUR.CHF was sent to Yahoo unmapped and came back with no closes; it now reads EURCHF=X. Duplicate (ticker, date) rows are dropped when the cache is read. No report figure changes: nothing in macro_context reads either symbol by name.
+
 ## [2026-10-08] - macro_context: roll-free energy futures, empty Yahoo closes re-fetched
 
 ### Fixed
