@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: roll-free energy futures, empty Yahoo closes re-fetched
+
+### Fixed
+- Energy futures without roll gaps. Yahoo's CL=F, BZ=F, NG=F, HO=F and RB=F switch to the next contract at each expiry, so in backwardation each roll read as a fall and in contango as a rise. `roll_adjust()` (intermarket.R) rebuilds each series from daily returns: the listed front contract where Yahoo has it, the continuous series otherwise, a listed contract on older roll days (expired contracts are not served). Levels are rebuilt back from the front contract's last close, so Last is the real front price. The series feed the panels, the OIL scenario asset, the petrodollar chain and the sector-map drivers. Generic last-trading-day rules per root in `intermarket_config.R` (`FUT_LTD`, `fut_front_ym`, `fut_contract`), checked against Yahoo's September 2026 rolls (CL 09-23, NG 09-29, BZ/HO/RB 10-01). On 10-08 (10-07 data), 1M: WTI −4.5% → −0.8% (trend MIXED → UP), Brent +3.1% → +8.1%, natural gas +11.9% → +6.1%, ULSD +2.0% → +7.0%, RBOB −5.2% → +4.8%; Stagflation / oil supply shock state +30% → +38%, move +18% → +23%.
+- Empty closes. At 09:00 on 10-08 Yahoo returned the 10-07 bar with no close for 35 symbols (European and Asian indices, Bund and gilt ETFs, European group members); `get_close()` dropped those rows, so the report showed Tuesday as the last session without a warning. `refetch_empty_closes()` re-fetches symbols whose latest weekday bar has no close and replaces their recent rows in the data and in today's cache (`cache_replace_recent()`, shared/cache.R). Symbols still empty are flagged in their panel row and in the last-session strip, and listed in an amber banner with the scenario inputs they affect. Evening re-run on 10-08: 32 of 35 filled (Euro Stoxx 50 −1.47% on 10-07 now shown); IS0L.DE, GLTL.L and NUCL.L still empty.
+- Methodology: energy futures and missing-close paragraphs, two limitation notes.
+- Reason: `NewTrading/Reports/macro_context_vs_ceresna_20261008.md`, gaps 1 and 2.
+
 ## [2026-10-08] - macro_context: WTI futures curve (+3 and +6 months)
 
 ### Added

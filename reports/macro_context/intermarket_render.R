@@ -50,6 +50,9 @@ sparkline <- function(sp, w = 130, h = 30) {
 row_html <- function(m, meaning = NULL) {
   label <- if (is.null(meaning)) esc(m$label) else
     sprintf("%s<div class='im-sub'>%s</div>", esc(m$label), esc(meaning))
+  if (!is.null(m$stale_missing))
+    label <- sprintf("%s<div class='im-sub im-neg'>No close from Yahoo for %s: figures stop at %s</div>",
+                     label, short_date(m$stale_missing), short_date(m$date))
   a200 <- if (is.na(m$above200)) "&ndash;" else if (m$above200) "above" else "<span class='im-neg'>below</span>"
   paste0("<tr><td>", label, "</td>",
          "<td class='im-num'>", fmt_num(m$last, m$kind), "</td>",
@@ -87,6 +90,24 @@ short_date <- function(d) {
 
 #' One line per region: each index's change from its previous close to its last bar.
 #' Markets close on different days, so every figure carries the date of its last bar.
+#' Warning under the strip: symbols whose last bar had no close (empty_last_closes)
+stale_html <- function(sections, stale) {
+  if (is.null(stale) || !nrow(stale)) return("")
+  all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
+  lab <- setNames(vapply(all_m, `[[`, "", "label"), vapply(all_m, `[[`, "", "sym"))
+  shown <- intersect(stale$ticker, names(lab))
+  fp <- names(Filter(function(a) any(unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE)) %in% stale$ticker),
+                     FP_ASSETS[names(FP_ASSETS) != "ABS_BREADTH"]))
+  n_other <- length(setdiff(stale$ticker, shown))
+  days <- paste(unique(vapply(sort(unique(stale$missing)), short_date, "")), collapse = ", ")
+  paste0("<div class='stale-banner'>NO CLOSE FROM YAHOO FOR ", days, " &mdash; ", nrow(stale), " symbols",
+         "<span class='stale-sub'>Re-fetched once, still empty; these use their previous close. ",
+         if (length(shown)) paste0("Panels: ", esc(paste(lab[shown], collapse = ", ")), ". ") else "",
+         if (length(fp)) paste0("Scenario inputs one session old: ", esc(paste(vapply(fp, fp_label, ""), collapse = ", ")), ". ") else "",
+         if (n_other) sprintf("Also %d other symbols (sector-map members or ratio legs).", n_other) else "",
+         "</span></div>")
+}
+
 daily_strip_html <- function(sections) {
   all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
   by_sym <- setNames(all_m, vapply(all_m, `[[`, "", "sym"))
@@ -96,6 +117,7 @@ daily_strip_html <- function(sections) {
     items <- vapply(ms, function(m) {
       cls <- if (is.na(m$c1d)) "" else if (m$c1d > 0) "im-pos" else if (m$c1d < 0) "im-neg" else ""
       txt <- if (is.na(m$c1d)) "&ndash;" else sprintf("%+.2f%%", m$c1d)
+      if (!is.null(m$stale_missing)) cls <- paste(cls, "im-stale")
       sprintf("<span class='im-day'>%s <b class='%s'>%s</b> <span class='im-sub'>%s</span></span>",
               esc(m$label), cls, txt, short_date(m$date))
     }, "")

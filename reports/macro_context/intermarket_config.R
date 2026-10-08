@@ -241,37 +241,56 @@ GROUP_DRIVERS <- list(
   "Utilities - Regulated utilities"               = c("^TNX" = -1)
 )
 
-# WTI curve: the contracts 3 and 6 months after the front, read as fixed contracts
-# (Yahoo CLG27.NYM etc.), so changes are never roll gaps. The front is the first contract
-# still trading on the report date; CL=F tracks it. CME rule: trading ends 3 business days
-# before the 25th of the month before delivery (4 if the 25th is not a business day);
-# exchange holidays are ignored, so the switch can come a day late.
-CL_MONTH_CODES <- c("F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z")
+# Futures contracts. Yahoo's continuous series (=F) jump to the next contract at each
+# expiry; in backwardation every roll reads as a fall, in contango as a rise (CL=F
+# showed -5.1% over the month to 10-08 while the contract it tracked was -1.8%).
+# Listed contracts (CLX26.NYM...) have about 17 months of history; expired ones are
+# not served. Last trading day per root, exchange holidays ignored (the switch can
+# come a day late); rules checked against Yahoo's own roll dates in September 2026.
+FUT_MONTH_CODES <- c("F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z")
 
-#' Contract for delivery month `ym` (months since year 0)
-cl_contract <- function(ym) {
+bday <- function(d) !(format(d, "%u") %in% c("6", "7"))
+ym_date <- function(ym, day = 1) as.Date(sprintf("%d-%02d-%02d", ym %/% 12, ym %% 12 + 1, day))
+back_bdays <- function(d, n) { while (n > 0) { d <- d - 1; if (bday(d)) n <- n - 1 }; d }
+last_bday <- function(ym) { d <- ym_date(ym + 1) - 1; while (!bday(d)) d <- d - 1; d }
+
+# ym = delivery month as months since year 0 (year * 12 + month - 1)
+FUT_LTD <- list(
+  # NYMEX WTI: 3 business days before the 25th of the month before delivery, 4 if the 25th is not a business day
+  CL = function(ym) { d25 <- ym_date(ym - 1, 25); back_bdays(d25, if (bday(d25)) 3 else 4) },
+  # Brent (NYMEX BZ, follows ICE): last business day of the second month before delivery
+  BZ = function(ym) last_bday(ym - 2),
+  # Henry Hub: 3 business days before the first day of the delivery month
+  NG = function(ym) back_bdays(ym_date(ym), 3),
+  # ULSD and RBOB: last business day of the month before delivery
+  HO = function(ym) last_bday(ym - 1),
+  RB = function(ym) last_bday(ym - 1)
+)
+
+#' Contract of `root` for delivery month `ym`
+fut_contract <- function(root, ym) {
   y <- ym %/% 12; m <- ym %% 12 + 1
-  list(sym = sprintf("CL%s%02d.NYM", CL_MONTH_CODES[m], y %% 100),
+  list(sym = sprintf("%s%s%02d.NYM", root, FUT_MONTH_CODES[m], y %% 100),
        label = sprintf("%s-%02d", month.abb[m], y %% 100), ym = ym)
 }
 
-#' Last trading day of the contract for delivery month `ym`
-cl_ltd <- function(ym) {
-  py <- (ym - 1) %/% 12; pm <- (ym - 1) %% 12 + 1          # month before delivery
-  d25 <- as.Date(sprintf("%d-%02d-25", py, pm))
-  bday <- function(d) !(format(d, "%u") %in% c("6", "7"))
-  n <- if (bday(d25)) 3 else 4
-  d <- d25
-  while (n > 0) { d <- d - 1; if (bday(d)) n <- n - 1 }
-  d
+#' Delivery month of the front contract of `root` on date `d`: the first one still trading
+fut_front_ym <- function(root, d) {
+  lt <- as.POSIXlt(d)
+  ym <- (lt$year + 1900) * 12 + lt$mon
+  while (FUT_LTD[[root]](ym) < d) ym <- ym + 1
+  ym
 }
 
+# Continuous series rebuilt without roll gaps (roll_adjust() in intermarket.R)
+ROLL_ADJUSTED <- c("CL=F" = "CL", "BZ=F" = "BZ", "NG=F" = "NG", "HO=F" = "HO", "RB=F" = "RB")
+
+# WTI curve: the contracts 3 and 6 months after the front, read as fixed contracts
+# so changes are never roll gaps. CL=F tracks the front.
 crude_curve <- function(asof = Sys.Date()) {
-  lt <- as.POSIXlt(asof)
-  ym <- (lt$year + 1900) * 12 + lt$mon + 1                 # next month: earliest possible front
-  while (cl_ltd(ym) < asof) ym <- ym + 1
-  list(front = c(cl_contract(ym), ltd = format(cl_ltd(ym))),
-       m3 = cl_contract(ym + 3), m6 = cl_contract(ym + 6))
+  ym <- fut_front_ym("CL", asof)
+  list(front = c(fut_contract("CL", ym), ltd = format(FUT_LTD$CL(ym))),
+       m3 = fut_contract("CL", ym + 3), m6 = fut_contract("CL", ym + 6))
 }
 
 local({

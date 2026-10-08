@@ -45,6 +45,23 @@ cache_write <- function(table_name, data, date = as.character(Sys.Date())) {
   message(sprintf("Cache written: %s (%d rows)", table_name, nrow(data)))
 }
 
+#' Replace the cached rows of the tickers in `data` from its first date on
+#' (a re-fetch that filled in closes Yahoo had left empty)
+#' @param table_name DB table name
+#' @param data data.frame with ticker and date columns, same layout as the cache
+#' @param date Character date string (default: today)
+cache_replace_recent <- function(table_name, data, date = as.character(Sys.Date())) {
+  conn <- Tdata::safe_db_connect()
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  from <- as.numeric(min(as.Date(data$date)))   # Date columns are stored as days since 1970
+  for (tk in unique(data$ticker))
+    DBI::dbExecute(conn, sprintf("DELETE FROM %s WHERE cache_date = ? AND ticker = ? AND date >= ?", table_name),
+                   params = list(date, tk, from))
+  data$cache_date <- date
+  DBI::dbWriteTable(conn, table_name, data, append = TRUE)
+  message(sprintf("Cache rows replaced: %s (%d tickers, %d rows)", table_name, length(unique(data$ticker)), nrow(data)))
+}
+
 #' Append new rows to existing cache (no delete)
 #' @param table_name DB table name
 #' @param data data.frame to append (cache_date column will be added)

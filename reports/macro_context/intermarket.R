@@ -21,12 +21,57 @@ fetch_intermarket_data <- function() {
         raw <- rbind(raw, extra[, names(raw)])
       }
     }
-    return(raw)
+    return(refetch_empty_closes(raw, today))
   }
   message("Fetching ", length(syms), " intermarket symbols...")
   raw <- tryCatch(Tdata::getYahooData(syms, from_date = Sys.Date() - HISTORY_DAYS, to_date = Sys.Date()),
                   error = function(e) { message("ERROR: ", e$message); NULL })
   if (!is.null(raw) && nrow(raw) > 0) cache_write(INTERMARKET_CACHE, raw, today)
+  if (is.null(raw)) raw else refetch_empty_closes(raw, today)
+}
+
+#' Symbols whose latest weekday bar or bars have no close: data.frame(ticker, missing, last_close)
+#' Yahoo can return a session's bar before its close is filled in (08 Oct 2026, 09:00:
+#' 35 European and Asian symbols had an empty 07 Oct close). get_close() drops empty
+#' rows, so without this check the report shows the session before as if it were the last.
+empty_last_closes <- function(raw) {
+  r <- raw[raw$date < Sys.Date() & bday(raw$date), c("ticker", "date", "Close")]
+  out <- lapply(split(r, r$ticker), function(d) {
+    d <- d[order(d$date), ]
+    ok <- which(!is.na(d$Close))
+    lv <- if (length(ok)) d$date[max(ok)] else as.Date(NA)
+    miss <- d$date[is.na(d$Close) & (is.na(lv) | d$date > lv)]
+    if (!length(miss)) return(NULL)
+    data.frame(ticker = d$ticker[1], missing = max(miss), last_close = lv, stringsAsFactors = FALSE)
+  })
+  out <- do.call(rbind, out)
+  if (is.null(out)) data.frame(ticker = character(), missing = as.Date(character()), last_close = as.Date(character())) else out
+}
+
+#' Re-fetch symbols with an empty last close once; replace their recent rows in the data
+#' and in today's cache when Yahoo now has the close. What is still empty stays in
+#' attr(raw, "stale") so the panels and the scenario text can say so.
+refetch_empty_closes <- function(raw, today) {
+  st <- empty_last_closes(raw)
+  if (nrow(st)) {
+    from <- min(c(st$last_close, st$missing), na.rm = TRUE) - 7
+    message("Empty last close for ", nrow(st), " symbols (", paste(head(st$ticker, 8), collapse = ", "),
+            if (nrow(st) > 8) ", ..." else "", "): re-fetching from ", from)
+    fr <- tryCatch(Tdata::getYahooData(st$ticker, from_date = from, to_date = Sys.Date()), error = function(e) NULL)
+    if (!is.null(fr) && nrow(fr) > 0) {
+      fr <- fr[!is.na(fr$Close), names(raw)]
+      fixed <- intersect(st$ticker, unique(fr$ticker[fr$date >= min(st$missing)]))
+      if (length(fixed)) {
+        fr <- fr[fr$ticker %in% fixed, ]
+        keep <- !(raw$ticker %in% fixed & raw$date >= min(fr$date))
+        raw <- rbind(raw[keep, ], fr)
+        cache_replace_recent(INTERMARKET_CACHE, fr, today)
+      }
+    }
+    st <- empty_last_closes(raw)
+    if (nrow(st)) message("Still no close after re-fetch: ", paste(st$ticker, collapse = ", "))
+  }
+  attr(raw, "stale") <- st
   raw
 }
 
@@ -34,16 +79,65 @@ fetch_intermarket_data <- function() {
 run_intermarket <- function(breadth) {
   raw <- fetch_intermarket_data()
   if (is.null(raw) || nrow(raw) == 0) return(NULL)
+  stale <- attr(raw, "stale")
+  raw <- roll_adjust(raw)
   missing <- setdiff(report_symbols(), unique(raw$ticker[!is.na(raw$Close)]))
   if (length(missing)) message("Intermarket: no data for ", paste(missing, collapse = ", "))
-  sections <- analyze_sections(raw)
+  sections <- mark_stale(analyze_sections(raw), stale)
   sectors <- analyze_sectors(raw)
   bh <- load_breadth_history(raw, if (is.null(breadth)) NA_real_ else breadth$pct)
   z1 <- asset_moves(raw, 21, bh); z3 <- asset_moves(raw, 63, bh); st <- asset_states(raw, bh)
   matches <- add_persistence(match_archetypes(z1, z3, st), scenario_history(raw, bh = bh))
   carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
-  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry)
+  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry,
+       stale = stale)
+}
+
+#' Continuous futures without roll gaps. Each day's return comes from the front
+#' contract of that day when Yahoo still lists it, else from the =F series, except on
+#' a roll day, where the =F return mixes two contracts: there the nearest listed
+#' contract stands in (expired contracts are not served). Levels are rebuilt backwards
+#' from the last close of the listed front, so "Last" is the real front price.
+roll_adjust <- function(raw) {
+  for (key in intersect(names(ROLL_ADJUSTED), unique(raw$ticker))) {
+    root <- ROLL_ADJUSTED[[key]]
+    i <- which(raw$ticker == key & !is.na(raw$Close))
+    i <- i[order(raw$date[i])]
+    if (length(i) < 2) next
+    dt <- raw$date[i]; px <- raw$Close[i]
+    cur <- fut_front_ym(root, max(dt))
+    f <- raw[raw$ticker == fut_contract(root, cur)$sym & !is.na(raw$Close), c("date", "Close")]
+    fpx <- setNames(f$Close, as.character(f$date))
+    fr <- vapply(dt, function(d) fut_front_ym(root, d), 0)
+    r <- numeric(length(dt))
+    for (k in 2:length(dt)) {
+      a <- fpx[as.character(dt[k - 1])]; b <- fpx[as.character(dt[k])]
+      has_f <- !is.na(a) && !is.na(b)
+      r[k] <- if (fr[k] == cur && has_f) log(b / a) else
+        if (fr[k] == fr[k - 1]) log(px[k] / px[k - 1]) else
+        if (has_f) log(b / a) else 0
+    }
+    last <- fpx[as.character(dt[length(dt)])]
+    if (is.na(last)) last <- px[length(px)]
+    adj <- unname(last) / exp(rev(cumsum(rev(c(r[-1], 0)))))
+    raw$Close[i] <- adj
+    if ("Adjusted" %in% names(raw)) raw$Adjusted[i] <- adj
+  }
+  raw
+}
+
+#' Flag panel rows whose last bar had no close (see empty_last_closes)
+mark_stale <- function(sections, stale) {
+  if (is.null(stale) || !nrow(stale)) return(sections)
+  lapply(sections, function(sec) {
+    sec$instruments <- lapply(sec$instruments, function(m) {
+      j <- match(m$sym, stale$ticker)
+      if (!is.na(j)) m$stale_missing <- stale$missing[j]
+      m
+    })
+    sec
+  })
 }
 
 ema <- function(x, n) as.numeric(stats::filter(x * (2 / (n + 1)), 1 - 2 / (n + 1),
@@ -300,5 +394,6 @@ report_symbols <- function() {
          unlist(lapply(GROUP_DRIVERS, function(d) split_keys(names(d)))))
   f <- unlist(lapply(FP_ASSETS[names(FP_ASSETS) != "ABS_BREADTH"],   # breadth comes from the daily runs, not Yahoo
                      function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
-  unique(stats::na.omit(c(BENCHMARK, s, g, f)))
+  fronts <- vapply(ROLL_ADJUSTED, function(root) fut_contract(root, fut_front_ym(root, Sys.Date() - 1))$sym, "")
+  unique(stats::na.omit(c(BENCHMARK, s, g, f, fronts)))
 }
