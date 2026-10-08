@@ -10,6 +10,7 @@ esc <- function(x) {
 fmt_num <- function(x, kind = "price") {
   if (is.na(x)) return("&ndash;")
   if (kind == "yield") return(sprintf("%.2f%%", x))
+  if (kind == "usd") return(sprintf("%s&#36;%.2f", if (x < 0) "&minus;" else "", abs(x)))
   if (abs(x) >= 10000) return(formatC(x, format = "f", digits = 0, big.mark = ","))
   if (abs(x) >= 100) return(formatC(x, format = "f", digits = 1, big.mark = ","))
   if (abs(x) >= 1) return(sprintf("%.2f", x))
@@ -19,7 +20,8 @@ fmt_num <- function(x, kind = "price") {
 im_chg <- function(x, kind = "price") {
   if (is.na(x)) return("<td class='im-num'>&ndash;</td>")
   cls <- if (x > 0) "im-pos" else if (x < 0) "im-neg" else ""
-  txt <- if (kind == "yield") sprintf("%+.0f bp", x) else sprintf("%+.1f%%", x)
+  txt <- if (kind == "yield") sprintf("%+.0f bp", x) else
+    if (kind == "usd") sprintf("%s&#36;%.2f", if (x < 0) "&minus;" else "+", abs(x)) else sprintf("%+.1f%%", x)
   sprintf("<td class='im-num %s'>%s</td>", cls, txt)
 }
 

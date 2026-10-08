@@ -241,6 +241,57 @@ GROUP_DRIVERS <- list(
   "Utilities - Regulated utilities"               = c("^TNX" = -1)
 )
 
+# WTI curve: the contracts 3 and 6 months after the front, read as fixed contracts
+# (Yahoo CLG27.NYM etc.), so changes are never roll gaps. The front is the first contract
+# still trading on the report date; CL=F tracks it. CME rule: trading ends 3 business days
+# before the 25th of the month before delivery (4 if the 25th is not a business day);
+# exchange holidays are ignored, so the switch can come a day late.
+CL_MONTH_CODES <- c("F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z")
+
+#' Contract for delivery month `ym` (months since year 0)
+cl_contract <- function(ym) {
+  y <- ym %/% 12; m <- ym %% 12 + 1
+  list(sym = sprintf("CL%s%02d.NYM", CL_MONTH_CODES[m], y %% 100),
+       label = sprintf("%s-%02d", month.abb[m], y %% 100), ym = ym)
+}
+
+#' Last trading day of the contract for delivery month `ym`
+cl_ltd <- function(ym) {
+  py <- (ym - 1) %/% 12; pm <- (ym - 1) %% 12 + 1          # month before delivery
+  d25 <- as.Date(sprintf("%d-%02d-25", py, pm))
+  bday <- function(d) !(format(d, "%u") %in% c("6", "7"))
+  n <- if (bday(d25)) 3 else 4
+  d <- d25
+  while (n > 0) { d <- d - 1; if (bday(d)) n <- n - 1 }
+  d
+}
+
+crude_curve <- function(asof = Sys.Date()) {
+  lt <- as.POSIXlt(asof)
+  ym <- (lt$year + 1900) * 12 + lt$mon + 1                 # next month: earliest possible front
+  while (cl_ltd(ym) < asof) ym <- ym + 1
+  list(front = c(cl_contract(ym), ltd = format(cl_ltd(ym))),
+       m3 = cl_contract(ym + 3), m6 = cl_contract(ym + 6))
+}
+
+local({
+  cc <- crude_curve()
+  i <- which(vapply(SECTIONS, `[[`, "", "id") == "oil")
+  sec <- SECTIONS[[i]]
+  at <- which(vapply(sec$instruments, `[`, "", 1) == "BZ=F")   # curve rows right after WTI spot and Brent
+  sec$instruments <- append(sec$instruments, list(
+    c(cc$m3$sym, sprintf("WTI +3 months (%s contract)", cc$m3$label), "price"),
+    c(cc$m6$sym, sprintf("WTI +6 months (%s contract)", cc$m6$label), "price")), after = at)
+  note <- sprintf(paste0("Positive = backwardation (prompt barrels dearer than later ones); falling = curve flattening, ",
+                         "later contracts gaining on the front. Front = %s, last trade %s; in its last two weeks ",
+                         "convergence and rolls distort the front, so compare +3 and +6 months instead."),
+                  cc$front$label, cc$front$ltd)
+  sec$spreads <- list(
+    c(cc$front$sym, cc$m3$sym, sprintf("WTI front minus +3 months (%s - %s, $/bbl)", cc$front$label, cc$m3$label), note, "usd"),
+    c(cc$front$sym, cc$m6$sym, sprintf("WTI front minus +6 months (%s - %s, $/bbl)", cc$front$label, cc$m6$label), note, "usd"))
+  SECTIONS[[i]] <<- sec
+})
+
 BENCHMARK <- "^GSPC"
 # Distribution-paying bond/credit ETFs: use dividend-adjusted closes, otherwise each
 # monthly ex-date reads as a price fall (HYG ~0.5%) and shows up as false credit stress.

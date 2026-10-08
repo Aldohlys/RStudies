@@ -200,7 +200,11 @@ md_panels <- function() {
   paste0(
     "<p><b>09 panels.</b> 1D / 1W / 1M / 3M = 1, 5, 21, 63-session changes (yields in bp). 200-day = close vs 200-day simple average. ",
     "Trend: UP = close above EMA50 and EMA20 above EMA50; DOWN = mirror; MIXED otherwise. Ratios divide adjusted closes. ",
-    "FX is joined as-of on the date because Yahoo stamps FX one day early in BST.</p>",
+    "FX is joined as-of on the date because Yahoo stamps FX one day early in BST. ",
+    "WTI curve: WTI crude is the continuous front month (CL=F); the +3 and +6 month rows are the fixed contracts three and six delivery months after the front ",
+    "(currently ", crude_curve()$m3$sym, " and ", crude_curve()$m6$sym, "), so their changes contain no roll. ",
+    "The front is the first contract still trading on the report date (CME rule: last trade 3 business days before the 25th of the month before delivery, exchange holidays ignored). ",
+    "The two curve spreads subtract fixed contracts too and are shown in dollars per barrel, changes in dollars; the contracts move up one month after each expiry.</p>",
     "<p><b>10 sector map.</b> Each correlation group is the equal-weight index of its members (mean daily return, compounded; a day counts when at least half trade). ",
     "RS ratio = 100 &times; (group / S&amp;P 500) / its 50-day average; RS mom = 10-day change of RS ratio. ",
     "Rotation: Leading (ratio &ge; 100, mom &ge; 0), Weakening (&ge; 100, &lt; 0), Improving (&lt; 100, &ge; 0), Lagging (&lt; 100, &lt; 0). ",

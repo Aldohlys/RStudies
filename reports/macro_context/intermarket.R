@@ -89,14 +89,15 @@ trend_state <- function(close, e20, e50) {
   "MIXED"
 }
 
-#' Metrics for one series. kind = "yield" reports changes in basis points.
+#' Metrics for one series. kind = "yield" reports changes in basis points,
+#' kind = "usd" in dollars (price differences such as a futures calendar spread).
 series_metrics <- function(d, kind = "price") {
   if (is.null(d) || nrow(d) < 60) return(NULL)
   x <- d$Close; n <- length(x)
   e20 <- ema(x, 20); e50 <- ema(x, 50); s200 <- sma(x, 200)
   chg <- function(k) {
     if (n <= k) return(NA_real_)
-    if (kind == "yield") 100 * (x[n] - x[n - k]) else 100 * (x[n] / x[n - k] - 1)
+    if (kind == "yield") 100 * (x[n] - x[n - k]) else if (kind == "usd") x[n] - x[n - k] else 100 * (x[n] / x[n - k] - 1)
   }
   last252 <- tail(x, 252)
   rng <- max(last252) - min(last252)
@@ -175,9 +176,10 @@ analyze_sections <- function(raw) {
       a <- get_close(raw, r[1]); b <- get_close(raw, r[2])
       if (is.null(a) || is.null(b)) return(NULL)
       m0 <- merge(a, b, by = "date")
-      m <- series_metrics(data.frame(date = m0$date, Close = m0$Close.x - m0$Close.y), "yield")
+      kind <- if (length(r) >= 5) r[5] else "yield"   # spreads are yields unless the config says otherwise
+      m <- series_metrics(data.frame(date = m0$date, Close = m0$Close.x - m0$Close.y), kind)
       if (is.null(m)) return(NULL)
-      c(list(sym = paste0(r[1], "-", r[2]), label = r[3], meaning = r[4], kind = "yield"), m)
+      c(list(sym = paste0(r[1], "-", r[2]), label = r[3], meaning = r[4], kind = kind), m)
     })
     list(id = sec$id, title = sec$title,
          instruments = Filter(Negate(is.null), inst),

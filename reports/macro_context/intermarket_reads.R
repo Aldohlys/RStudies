@@ -49,8 +49,19 @@ build_movie <- function(sections, breadth, z, matches) {
     sprintf("Gold/silver %s, miners vs gold %s.", tr(gs), tr(mg)))
 
   oil <- g("CL=F"); brent <- g("BZ=F"); eo <- g("XLE/CL=F")
+  cc <- crude_curve()
+  c3 <- g(cc$m3$sym); c6 <- g(cc$m6$sym); s6 <- g(paste0(cc$front$sym, "-", cc$m6$sym))
+  usd <- function(x) sprintf("%s&#36;%.2f", if (x < 0) "&minus;" else "", abs(x))
   p$oil <- paste0(
     sprintf("WTI %s (%s move) and Brent %s, both %s; WTI trend %s. ", pct(oil), zword(z["OIL"]), pct(brent), P1M, tr(oil)),
+    if (!is.null(c3) && !is.null(c6))
+      sprintf("WTI curve: %s contract %s, %s %s; trends %s and %s. ", cc$m3$label, pct(c3), cc$m6$label, pct(c6), tr(c3), tr(c6)) else "",
+    if (!is.null(s6) && !is.na(s6$c1m))
+      sprintf("Front minus +6 months %s (%s), %s%s %s: %s. ", usd(s6$last),
+              if (s6$last > 0) "backwardation" else "contango", if (s6$c1m >= 0) "+" else "", usd(s6$c1m), P1M,
+              if (abs(s6$c1m) < 0.5) "curve shape little changed"
+              else if ((s6$c1m < 0) == (s6$last > 0)) "the curve is flattening, later contracts gaining on the front"
+              else "the curve is steepening, the front gaining on later contracts") else "",
     if (!is.na(z["OIL"]) && !is.na(z["USD"]) && z["OIL"] >= 0.5 && z["USD"] >= 0.5)
       "Oil up while the dollar is up: oil importers pay twice (higher price, dearer dollars), which adds to global dollar demand. " else "",
     sprintf("Energy stocks vs crude %s.", tr(eo)))

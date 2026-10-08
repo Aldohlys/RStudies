@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - macro_context: WTI futures curve (+3 and +6 months)
+
+### Added
+- Oil panel (09): rows for the WTI contracts three and six delivery months after the front (Yahoo `CLG27.NYM`, `CLK27.NYM` on 10-08), read as fixed contracts so their changes contain no roll gaps. Front = first contract still trading on the report date (CME rule: 3 business days before the 25th of the month before delivery, 4 if the 25th is not a business day; holidays ignored). `crude_curve()` in `intermarket_config.R` picks the contracts at each run; they move up one month after each expiry.
+- Relationships: front minus +3 months and front minus +6 months in \$/bbl (new panel kind `usd`: last and changes in dollars). The row text names the front's last trade date, because convergence distorts the front in its last two weeks.
+- Global movie, oil paragraph: 1-month change and trend of both contracts, the front minus +6 months spread and whether the curve is flattening or steepening.
+- Methodology 09 panels: how the contracts are chosen.
+- Reason: the 10-07 Ceresna sessions rest on the curve (November flagging, March/April at higher highs) and the report had no curve view (`NewTrading/Reports/macro_context_vs_ceresna_20261007.md`, gap 2). First reading, 10-07 close: front −4.5%, Feb-27 +4.8%, May-27 +8.0% over 1 month; front minus +6 months \$5.25 of backwardation, −\$8.04 in a month.
+
 ## [2026-10-08] - BOT tiers: COUNTER-TREND removed, rows shown as WATCH
 
 ### Changed
