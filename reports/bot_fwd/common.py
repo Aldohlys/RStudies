@@ -31,6 +31,11 @@ DELTA_MIN_WIDE, DELTA_MAX_WIDE = 0.20, 0.40
 MAX_BA_PCT = 20.0             # availability test, % of mid (15 until 2026-10-08)
 RISK_CAP = 300.0              # USD, per trade
 STOCK_NOTIONAL_CAP = 30000.0
+# Stock risk per share for sizing and 1R is at least this many ATR; the exit
+# stop is unchanged. An entry that gapped to just above the stop otherwise
+# sizes off a sliver (DUOL 09-28: 0.05 ATR, 222 shares, 1R USD 88, +42 R;
+# HYG 09-28: 0.06 ATR, 1R USD 9).
+STOCK_MIN_RISK_ATR = 0.5
 RATE = 0.04                   # flat risk-free rate for Black-Scholes
 ENTRY_DELAY_MIN = 30          # entry 30 min after the open when the run is outside RTH
                               # (at +15 the 5-min bar is 09:40-09:45: AMGN 30d call 45% wide)

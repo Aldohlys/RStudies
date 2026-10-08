@@ -316,9 +316,9 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
     fb = f"outright:{reasons.get('outright')};spread:{reasons.get('spread')}"
     if not sask or not sbid:
         return option_shadow, contracts, "stock_no_quote|" + fb
-    risk_ps = sask - stop_v
-    if risk_ps <= 0:
+    if sask - stop_v <= 0:
         return option_shadow, contracts, "stop_above_price|" + fb
+    risk_ps = stock_risk_ps(sask, stop_v, atr_v)
     shares = max(1, int(C.RISK_CAP // risk_ps))
     capped = 0
     if shares * sask > C.STOCK_NOTIONAL_CAP:
@@ -336,6 +336,12 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
                over_budget=int(risk_ps > C.RISK_CAP), notional=shares * sask,
                notional_capped=capped, available=1)
     return option_shadow + [pos], contracts, None
+
+
+def stock_risk_ps(ask, stop_v, atr_v):
+    """Risk per share for stock sizing and 1R: distance to the stop, floored at
+    C.STOCK_MIN_RISK_ATR x ATR."""
+    return max(ask - stop_v, C.STOCK_MIN_RISK_ATR * atr_v if atr_v else 0.0)
 
 
 def _delta_band(ls):
