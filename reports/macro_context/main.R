@@ -143,9 +143,12 @@ if (!is.null(im)) {
                 "quadrant", "rs_3m", "driver_score", "drivers", "verdict")
   dbWriteTable(conn, "macro_intermarket_sectors", cbind(cache_date = .today, im$sectors[, .sx_cols]), append = TRUE)
   .sc <- data.frame(cache_date = .today, scenario = vapply(im$matches, `[[`, "", "id"),
+                    state_score = vapply(im$matches, `[[`, 0, "state"),
                     score_1m = vapply(im$matches, `[[`, 0, "score"), score_3m = vapply(im$matches, `[[`, 0, "score3m"),
                     age = vapply(im$matches, function(m) m$age$status, ""),
                     days_in_place = vapply(im$matches, function(m) m$age$run, 0))
+  if (!"state_score" %in% dbListFields(conn, "macro_intermarket_scenarios"))   # column added 2026-10-08
+    dbExecute(conn, "ALTER TABLE macro_intermarket_scenarios ADD COLUMN state_score REAL")
   tryCatch(dbExecute(conn, "DELETE FROM macro_intermarket_scenarios WHERE cache_date = ?", params = list(.today)),
            error = function(e) NULL)
   dbWriteTable(conn, "macro_intermarket_scenarios", .sc, append = TRUE)

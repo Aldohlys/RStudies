@@ -245,4 +245,4 @@ BENCHMARK <- "^GSPC"
 # Distribution-paying bond/credit ETFs: use dividend-adjusted closes, otherwise each
 # monthly ex-date reads as a price fall (HYG ~0.5%) and shows up as false credit stress.
 ADJUSTED_SYMBOLS <- c("HYG", "LQD", "IEF", "TIP", "TLT")
-HISTORY_DAYS <- 450   # calendar days: covers the 200-day average plus a 1-year chart
+HISTORY_DAYS <- 520   # calendar days: 200-day average, 1-year chart, and 252-session state ranges for 60 days of history

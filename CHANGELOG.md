@@ -51,6 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Spreads priced long leg at ask (entry) / bid (exit), short leg at mid both ways, instead of the combo natural.
 - Earnings date at entry from Yahoo's earnings history (past and upcoming), so backfilled entries see reports inside their hold (MU 09-30, NKE 10-01).
 - Report column "R now" renamed "R at last close".
+- Entry asymmetry and extension recorded per position (`px_v`, `entry_asym`, `entry_ext_atr`; report section "Entry extension and asymmetry"); filled for earlier positions on the next run. Index proxies now scaled from the proxy's last close before the session instead of the entry price, so their extension is measurable (targets and stops of the 10 proxy positions re-scaled).
 - bot_daily files without an `atr` column (09-25 .. 09-29 09:21): ATR14 computed at entry from IBKR daily bars, and in the shadow from Yahoo bars, instead of skipping the signal (57 signals recovered in the backfill from 09-21).
 
 ## [2026-10-08] - bot_fwd: BOT forward test

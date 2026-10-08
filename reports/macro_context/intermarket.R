@@ -39,11 +39,11 @@ run_intermarket <- function(breadth) {
   sections <- analyze_sections(raw)
   sectors <- analyze_sectors(raw)
   bh <- load_breadth_history(raw, if (is.null(breadth)) NA_real_ else breadth$pct)
-  z1 <- asset_moves(raw, 21, bh); z3 <- asset_moves(raw, 63, bh)
-  matches <- add_persistence(match_archetypes(z1, z3), scenario_history(raw, bh = bh))
+  z1 <- asset_moves(raw, 21, bh); z3 <- asset_moves(raw, 63, bh); st <- asset_states(raw, bh)
+  matches <- add_persistence(match_archetypes(z1, z3, st), scenario_history(raw, bh = bh))
   carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
-  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, matches = matches, movie = movie, carry = carry)
+  list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry)
 }
 
 ema <- function(x, n) as.numeric(stats::filter(x * (2 / (n + 1)), 1 - 2 / (n + 1),

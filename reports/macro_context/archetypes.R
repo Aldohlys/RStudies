@@ -282,8 +282,44 @@ asset_moves <- function(raw, n = 21, bh = NULL) {
   }, 0)
 }
 
-#' Match every archetype against today's z-scores
-match_archetypes <- function(z, z3) {
+# ── State: where each asset stands in its 1-year range ──────────────────────
+# state = 2 * (last - min) / (max - min) - 1 over the last STATE_WINDOW sessions (bottom -1, top +1), sign as in
+# FP_ASSETS. Needs at least STATE_MIN_ROWS sessions. Absolute breadth is already a level: its state is its
+# capped value, (level - 50) / 15 / 1.5. Chosen over the move for "in place" by compare_state_move.py (2026-10-08).
+STATE_WINDOW   <- 252
+STATE_MIN_ROWS <- 240
+STATE_ACTIVE   <- 0.50   # state score at which a scenario is in place (mean false positives 9% on 2004-2026 episodes)
+
+state_pos <- function(d, x) {
+  if (is.null(d)) return(NA_real_)
+  v <- d$Close[!is.na(d$Close)]
+  if (length(v) < STATE_MIN_ROWS) return(NA_real_)
+  v <- tail(v, STATE_WINDOW); lo <- min(v); hi <- max(v)
+  if (hi <= lo) return(NA_real_)
+  2 * (tail(v, 1) - lo) / (hi - lo) - 1
+}
+
+#' State of every fingerprint asset on date d (default: last S&P session)
+asset_states <- function(raw, bh = NULL, d = NULL, series = NULL) {
+  if (is.null(d)) d <- max(get_close(raw, "^GSPC")$date)
+  vapply(names(FP_ASSETS), function(k) {
+    if (k == "ABS_BREADTH") return(pmax(-1, pmin(1, abs_breadth_z(bh, d, 21) / 1.5)))
+    a <- FP_ASSETS[[k]]
+    ss <- if (is.null(series)) lapply(a[[1]], function(sym) fp_series(raw, sym)) else series[[k]]
+    v <- vapply(ss, function(x) if (is.null(x)) NA_real_ else state_pos(x[x$date <= d, ]), 0)
+    a[[2]] * mean(v, na.rm = TRUE)
+  }, 0)
+}
+
+#' Weighted state score of one fingerprint (positions are already in [-1, 1], no cap)
+state_score <- function(fp, st) {
+  keys <- intersect(names(fp), names(st)[!is.na(st)])
+  if (!length(keys)) return(NA_real_)
+  sum(fp[keys] * st[keys]) / sum(abs(fp[keys]))
+}
+
+#' Match every archetype: state (where markets stand) and move (21- and 63-session moves)
+match_archetypes <- function(z, z3, st = NULL) {
   clip <- function(v) pmax(-1, pmin(1, v / 1.5))
   one <- function(a, zz) {
     keys <- intersect(names(a$fp), names(zz)[!is.na(zz)])
@@ -295,9 +331,11 @@ match_archetypes <- function(z, z3) {
     agree <- keys[sign(a$fp[keys]) * z[keys] >= 0.5]
     against <- keys[sign(a$fp[keys]) * z[keys] <= -0.5]
     list(id = a$id, name = a$name, score = one(a, z), score3m = one(a, z3),
+         state = if (is.null(st)) NA_real_ else state_score(a$fp, st),
          agree = agree, against = against, a = a)
   })
-  rows[order(-vapply(rows, `[[`, 0, "score"))]
+  key <- vapply(rows, function(r) if (is.na(r$state)) r$score else r$state, 0)   # rank by state, move as fallback
+  rows[order(-key, -vapply(rows, `[[`, 0, "score"))]
 }
 
 fp_label <- function(k) FP_ASSETS[[k]][[3]]
@@ -365,20 +403,20 @@ carry_alert <- function(raw) {
   list(today = today, rows = rows, last_fired = if (length(fired)) fired[[length(fired)]]$date else NULL)
 }
 
-# ── Persistence: how long has each scenario been in place? ──────────────────
-# One day does not make a trend. Scores are recomputed for the last HIST_DAYS trading days
-# from price history (same fingerprints as today, so the series is consistent even when
-# fingerprints change), then each scenario gets an age label.
+# ── Persistence: state decides "in place", move gives the direction ──────────
+# One day does not make a trend. State and move scores are recomputed for the last HIST_DAYS trading days
+# from price history (same fingerprints as today), then each scenario gets a status.
 
-SCEN_ACTIVE <- 0.40   # match score at which a scenario counts as "in place"
+SCEN_ACTIVE <- 0.40   # move score at which a scenario counts as moving strongly toward it (calibrated 2026-10-08)
 HIST_DAYS <- 60
 
-#' Scenario scores for each of the last `days` trading days (rows = dates, cols = scenario ids)
+#' State and move scores for each of the last `days` trading days: list(state, move), rows = dates, cols = ids
 scenario_history <- function(raw, days = HIST_DAYS, bh = NULL) {
   series <- lapply(FP_ASSETS, function(a) lapply(a[[1]], function(s) fp_series(raw, s)))
   dates <- tail(sort(unique(get_close(raw, "^GSPC")$date)), days)
   clip <- function(v) pmax(-1, pmin(1, v / 1.5))
-  out <- t(vapply(seq_along(dates), function(i) {
+  ids <- vapply(ARCHETYPES, `[[`, "", "id")
+  per_day <- lapply(seq_along(dates), function(i) {
     d <- dates[i]
     z <- vapply(names(FP_ASSETS), function(k) {
       if (k == "ABS_BREADTH") return(abs_breadth_z(bh, d, 21))
@@ -390,51 +428,51 @@ scenario_history <- function(raw, days = HIST_DAYS, bh = NULL) {
       }, series[[k]], a[[1]])
       a[[2]] * mean(zs, na.rm = TRUE)
     }, 0)
-    vapply(ARCHETYPES, function(a) {
+    st <- asset_states(raw, bh, d, series)
+    rbind(move = vapply(ARCHETYPES, function(a) {
       keys <- intersect(names(a$fp), names(z)[!is.na(z)])
       w <- a$fp[keys]
       sum(w * clip(z[keys])) / sum(abs(w))
-    }, 0)
-  }, numeric(length(ARCHETYPES))))
-  if (length(ARCHETYPES) == 1) out <- t(out)
-  colnames(out) <- vapply(ARCHETYPES, `[[`, "", "id")
-  data.frame(date = dates, out, check.names = FALSE)
+    }, 0), state = vapply(ARCHETYPES, function(a) state_score(a$fp, st), 0))
+  })
+  mk <- function(row) {
+    m <- do.call(rbind, lapply(per_day, function(x) x[row, ]))
+    colnames(m) <- ids
+    data.frame(date = dates, m, check.names = FALSE)
+  }
+  list(move = mk("move"), state = mk("state"))
 }
 
-#' Age label for one scenario from its score history (oldest first, today last)
-scenario_age <- function(s) {
-  n <- length(s); s0 <- s[n]
-  prev5 <- s[max(1, n - 5):(n - 1)]
-  act <- s >= SCEN_ACTIVE
+#' Status from the state history (in place) and today's move (direction); oldest first, today last
+scenario_age <- function(st, mv) {
+  n <- length(st); s0 <- st[n]; m0 <- mv[n]
+  act <- !is.na(st) & st >= STATE_ACTIVE
+  prev5 <- act[max(1, n - 5):(n - 1)]
   run <- 0; for (i in n:1) if (act[i]) run <- run + 1 else break
-  days_on <- sum(act)   # days in place within the window
   if (!act[n]) {
-    if (any(prev5 >= SCEN_ACTIVE)) return(list(status = "FADED", run = 0,
-      text = "In place in recent reports but no longer: the move that defined it has stopped."))
+    if (isTRUE(m0 >= SCEN_ACTIVE)) return(list(status = "EMERGING", run = 0, text = sprintf(
+      "Emerging: not in place yet (state %+.0f%%, needs %+.0f%%), but the last month's moves point strongly toward it. The early part of a scenario; watch whether the state follows.",
+      100 * s0, 100 * STATE_ACTIVE)))
+    if (any(prev5)) return(list(status = "FADED", run = 0,
+      text = "In place in recent reports but no longer: markets have moved away from it."))
     return(list(status = "INACTIVE", run = 0, text = ""))
   }
-  if (sum(prev5 >= SCEN_ACTIVE) <= 1) return(list(status = "NEW", run = run, text =
-    "New: at most one of the previous five reports showed it. One day does not make a trend; wait for it to persist before acting on it."))
-  if (run < 15) {
-    if (s0 >= mean(prev5)) return(list(status = "BUILDING", run = run, text = sprintf(
-      "Building: in place for %d trading days and strengthening. The early, most rewarding part of a scenario.", run)))
-    return(list(status = "WAVERING", run = run, text = sprintf(
-      "Wavering: in place for %d trading days but weaker than in recent reports.", run)))
-  }
-  if (run < 40) {
-    if (s0 >= s[max(1, n - 5)]) return(list(status = "ESTABLISHED", run = run, text = sprintf(
-      "Established and reinforcing: in place for %d trading days, score still rising.", run)))
-    return(list(status = "ESTABLISHED", run = run, text = sprintf(
-      "Established but losing momentum: in place for %d trading days, score lower than a week ago.", run)))
-  }
+  if (isTRUE(m0 < 0)) return(list(status = "FADING", run = run, text = sprintf(
+    "Fading: in place for %d trading days, but over the last month its assets moved against it (move %+.0f%%). Often the start of its end.",
+    run, 100 * m0)))
+  if (isTRUE(m0 >= SCEN_ACTIVE)) return(list(status = "BUILDING", run = run, text = sprintf(
+    "Building: in place for %d trading days and still strengthening (move %+.0f%%).", run, 100 * m0)))
+  if (run < 40) return(list(status = "ESTABLISHED", run = run, text = sprintf(
+    "Established: in place for %d trading days; the last month's moves no longer add much (move %+.0f%%).", run, 100 * m0)))
   list(status = "MATURE", run = run, text = sprintf(
-    "Mature: in place for %d trading days or more. Scenarios this old are nearer their end than their start; watch the signs that would rule it out.", run))
+    "Mature: in place for %d trading days or more, moves flat (%+.0f%%). Scenarios this old are nearer their end than their start; watch the signs that would rule it out.",
+    run, 100 * m0))
 }
 
-#' Attach history and age to each match
+#' Attach history and status to each match
 add_persistence <- function(matches, hist) {
   lapply(matches, function(m) {
-    s <- hist[[m$id]]
-    c(m, list(hist = s, age = scenario_age(s), prev5 = tail(head(s, -1), 5)))
+    st <- hist$state[[m$id]]; mv <- hist$move[[m$id]]
+    c(m, list(hist = st, hist_move = mv, age = scenario_age(st, mv), prev5 = tail(head(st, -1), 5)))
   })
 }

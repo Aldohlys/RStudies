@@ -80,10 +80,14 @@ build_movie <- function(sections, breadth, z, matches) {
 
   # How it fits together
   top <- matches[[1]]
-  fit <- vapply(matches[1:3], function(m) sprintf("%s %+.0f%% on 1-month moves (on 3-month moves: %+.0f%%; %s%s)", m$name, 100 * m$score,
-    100 * m$score3m, tolower(m$age$status), if (m$age$run > 0) sprintf(", %d days", m$age$run) else ""), "")
+  st_txt <- function(m) if (is.na(m$state)) "n/a" else sprintf("%+.0f%%", 100 * m$state)
+  fit <- vapply(matches[1:3], function(m) sprintf("%s: state %s, move %+.0f%% %s (%s%s)", m$name, st_txt(m), 100 * m$score,
+    P1M, tolower(m$age$status), if (m$age$run > 0) sprintf(", %d days in place", m$age$run) else ""), "")
+  emerging <- Filter(function(m) m$age$status == "EMERGING", matches)
   p$fit <- paste0(
-    sprintf("Closest scenarios: %s. ", paste(fit, collapse = "; ")),
+    sprintf("Closest scenarios by state (where markets stand): %s. ", paste(fit, collapse = "; ")),
+    if (length(emerging)) sprintf("Emerging (not in place, but moving toward it): %s. ", paste(vapply(emerging, function(m)
+      sprintf("%s (state %s, move %+.0f%%)", m$name, st_txt(m), 100 * m$score), ""), collapse = "; ")) else "",
     sprintf("For the closest one, %s, the moves that fit, %s, are: %s. ", top$name, P1M,
             if (length(top$agree)) paste(vapply(top$agree, function(k) describe_z(k, z[k]), ""), collapse = "; ") else "none"),
     if (length(top$against)) sprintf("What does not fit (the present is not a repeat), %s: %s.", P1M,

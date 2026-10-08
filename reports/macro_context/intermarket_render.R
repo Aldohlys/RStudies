@@ -118,16 +118,22 @@ verdict_tag <- function(etf, sectors) {
                          collapse = " "))
 }
 
-#' 60-day score line with the "in place" threshold dashed
-score_spark <- function(h, w = 160, h_px = 34) {
+#' 60-day lines: state solid, move dotted, the state "in place" threshold dashed
+score_spark <- function(h, w = 160, h_px = 34, hm = NULL) {
   if (is.null(h) || length(h) < 2) return("")
   lo <- -1; hi <- 1
   xs <- seq(0, w, length.out = length(h))
-  y <- function(v) h_px - 2 - (v - lo) / (hi - lo) * (h_px - 4)
-  sprintf(paste0("<svg class='im-spark' viewBox='0 0 %d %d' width='%d' height='%d' aria-label='60-day match score'>",
-                 "<line class='im-sp-ema' x1='0' x2='%d' y1='%.1f' y2='%.1f'/><polyline class='im-sp-px' points='%s'/></svg>"),
-          w, h_px, w, h_px, w, y(SCEN_ACTIVE), y(SCEN_ACTIVE), paste(sprintf("%.1f,%.1f", xs, y(h)), collapse = " "))
+  y <- function(v) h_px - 2 - (pmax(lo, pmin(hi, v)) - lo) / (hi - lo) * (h_px - 4)
+  pts <- function(v) { ok <- !is.na(v); paste(sprintf("%.1f,%.1f", xs[ok], y(v[ok])), collapse = " ") }
+  mv <- if (is.null(hm) || length(hm) != length(h)) "" else sprintf("<polyline class='im-sp-mv' points='%s'/>", pts(hm))
+  sprintf(paste0("<svg class='im-spark' viewBox='0 0 %d %d' width='%d' height='%d' aria-label='60-day state and move scores'>",
+                 "<line class='im-sp-ema' x1='0' x2='%d' y1='%.1f' y2='%.1f'/>%s<polyline class='im-sp-px' points='%s'/></svg>"),
+          w, h_px, w, h_px, w, y(STATE_ACTIVE), y(STATE_ACTIVE), mv, pts(h))
 }
+
+score_pair <- function(m) sprintf(
+  "state %s &middot; move %+.0f%% <span class='im-sub'>1M</span> / %+.0f%% <span class='im-sub'>3M</span>",
+  if (is.na(m$state)) "n/a" else sprintf("%+.0f%%", 100 * m$state), 100 * m$score, 100 * m$score3m)
 
 age_badge <- function(st) sprintf("<span class='im-badge im-age-%s'>%s</span>", tolower(st), st)
 
@@ -136,13 +142,13 @@ scenario_card <- function(m, sectors, rank) {
   impl <- function(etfs) if (length(etfs)) paste(vapply(etfs, verdict_tag, "", sectors = sectors), collapse = " ") else "none"
   sprintf(paste0(
     "<div class='im-card%s'><div class='im-card-h'><span class='im-card-name'>%s</span>",
-    "<span class='im-score'>%+.0f%% <span class='im-sub'>1M</span> &middot; %+.0f%% <span class='im-sub'>3M</span></span></div>",
-    "<p class='im-age'>%s %s <span class='im-sub'>last 60 trading days, dashed = in place (%.0f%%)</span><br>%s</p>",
+    "<span class='im-score'>%s</span></div>",
+    "<p class='im-age'>%s %s <span class='im-sub'>last 60 trading days: solid = state, dotted = move, dashed = in place (state %.0f%%)</span><br>%s</p>",
     "<p>%s</p><p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p>",
     "<p><b>Signs to watch.</b> %s</p><p><b>Not this scenario if.</b> %s</p>",
     "<p><b>BOT.</b> %s<br>Long side: %s<br>Short side: %s</p></div>"),
-    if (rank == 1) " im-top" else "", esc(a$name), 100 * m$score, 100 * m$score3m,
-    age_badge(m$age$status), score_spark(m$hist), 100 * SCEN_ACTIVE, m$age$text,
+    if (rank == 1) " im-top" else "", esc(a$name), score_pair(m),
+    age_badge(m$age$status), score_spark(m$hist, hm = m$hist_move), 100 * STATE_ACTIVE, m$age$text,
     a$movie, a$analogs, a$after, a$tells, a$invalid, a$bot$note, impl(a$bot$long), impl(a$bot$short))
 }
 
@@ -184,24 +190,25 @@ movie_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
   paras <- paste(vapply(names(MOVIE_TITLES), function(k)
     sprintf("<p><b>%s.</b> %s</p>", MOVIE_TITLES[[k]], movie[[k]]), ""), collapse = "\n")
   all_scores <- paste(vapply(matches, function(m) sprintf(
-    "<tr><td>%s</td><td class='im-num'>%+.0f%%</td><td class='im-num'>%+.0f%%</td><td>%s</td><td class='im-num'>%s</td><td class='im-num im-sub'>%s</td><td>%s</td></tr>",
-    esc(m$name), 100 * m$score, 100 * m$score3m, age_badge(m$age$status),
-    if (m$age$run > 0) m$age$run else "&ndash;",
-    paste(sprintf("%+.0f", 100 * m$prev5), collapse = " "), score_spark(m$hist, 120, 26)), ""), collapse = "")
+    "<tr><td>%s</td><td class='im-num'>%s</td><td class='im-num'>%+.0f%%</td><td class='im-num'>%+.0f%%</td><td>%s</td><td class='im-num'>%s</td><td class='im-num im-sub'>%s</td><td>%s</td></tr>",
+    esc(m$name), if (is.na(m$state)) "n/a" else sprintf("%+.0f%%", 100 * m$state), 100 * m$score, 100 * m$score3m,
+    age_badge(m$age$status), if (m$age$run > 0) m$age$run else "&ndash;",
+    paste(sprintf("%+.0f", 100 * m$prev5), collapse = " "), score_spark(m$hist, 120, 26, m$hist_move)), ""), collapse = "")
   paste0(
     "<div class='im-movie'>", paras,
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
     "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>", chains_html(z), carry_html(carry),
-    "<details class='im-details'><summary>All scenarios: match score</summary><table>",
-    "<tr class='im-head'><td>Scenario</td><td>1 month</td><td>3 months</td><td>Age</td><td>Days in place</td><td>Previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table>",
-    "<div class='im-legend'>Match = weighted agreement between today's moves and the scenario's typical moves, ",
-    "-100% (opposite) to +100% (identical). Each asset's move is measured as a z-score: the 1-month (or 3-month) change ",
-    "divided by its usual volatility over that horizon, so moves in different assets are comparable. ",
-    "A 1-month score above the 3-month score means the scenario is emerging; below it, the scenario is fading. ",
-    "Age (scores recomputed from price history for each of the last 60 trading days; in place = score &ge; 40%): ",
-    "NEW = in place today but in at most one of the previous five reports, be cautious; BUILDING = in place under 15 days and strengthening; ",
-    "WAVERING = under 15 days and weakening; ESTABLISHED = 15-39 days; MATURE = 40 days or more, may be near its end; ",
-    "FADED = in place in one of the previous five reports but not today.</div></details>")
+    "<details class='im-details'><summary>All scenarios: state and move scores</summary><table>",
+    "<tr class='im-head'><td>Scenario</td><td>State</td><td>Move 1M</td><td>Move 3M</td><td>Status</td><td>Days in place</td><td>State, previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table>",
+    "<div class='im-legend'>Both scores are weighted agreements with the scenario's fingerprint, &minus;100% (opposite) to +100% (identical). ",
+    sprintf("State = where each asset stands in its range of the last %d sessions (bottom &minus;1, top +1): it decides whether the scenario is in place (state &ge; %.0f%%). ",
+            STATE_WINDOW, 100 * STATE_ACTIVE),
+    "Move = each asset's change over the last 21 sessions (Move 1M) or 63 sessions (Move 3M), divided by its usual volatility over that horizon: it gives the direction. ",
+    sprintf("Status (recomputed for each of the last %d trading days): BUILDING = in place and move &ge; %.0f%%; ESTABLISHED = in place, move between 0 and %.0f%%, under 40 days; ",
+            HIST_DAYS, 100 * SCEN_ACTIVE, 100 * SCEN_ACTIVE),
+    "MATURE = the same after 40 days or more; FADING = in place but move below 0 (assets moving against it); ",
+    sprintf("EMERGING = not in place but move &ge; %.0f%%; FADED = in place in one of the previous five reports but not today. ", 100 * SCEN_ACTIVE),
+    "Ranked by state. Thresholds calibrated on dated 2004-2026 episodes (Methodology tab, M1).</div></details>")
 }
 
 sectors_html <- function(sx) {
