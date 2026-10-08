@@ -142,6 +142,14 @@ def quotes(ib, contracts, ts, live):
     return C.quotes_stream(ib, contracts) if live else quotes_rebuild(ib, contracts, ts)
 
 
+def prev_close(ib, contract, session_date):
+    """Last daily close before session_date."""
+    end = dt.datetime.combine(dt.date.fromisoformat(session_date), dt.time(0, 0), C.ET)
+    bars = [b for b in hist(ib, contract, end, "10 D", "1 day", "TRADES")
+            if _d(b) < dt.date.fromisoformat(session_date)]
+    return bars[-1].close if bars else None
+
+
 def atr14_ibkr(ib, sym, session_date, px):
     """ATR14 (simple mean of true range) from IBKR daily bars of the 14
     sessions before session_date; for bot_daily files without an atr column."""
@@ -192,12 +200,17 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
         return None, [], "no_spot"
 
     # Target and stop in the vehicle's price: unchanged for a name traded
-    # itself; for an index proxy, the same percentage distance from spot.
+    # itself; for an index proxy, scaled by proxy / index at the signal's close
+    # (the proxy's last close before the session), so the entry's extension
+    # past the signal price stays measurable.
     if vsym != sig["sym"]:
-        k = spot / sig["px"]
+        px_v = prev_close(ib, stk, session) or spot
+        k = px_v / sig["px"]
         target_v, stop_v, atr_v = sig["target"] * k, sig["stop"] * k, sig["atr"] * k
     else:
+        px_v = sig["px"]
         target_v, stop_v, atr_v = sig["target"], sig["stop"], sig["atr"]
+    entry_asym, entry_ext = C.entry_metrics(spot, px_v, target_v, stop_v, atr_v)
 
     # bot_daily reads the last completed session, so an intraday run can see a
     # name that has already traded through the row's stop (CAT 10-07: row px
@@ -209,6 +222,7 @@ def price_entry(ib, vsym, info, sig, ts, live, conn):
     fee = C.fee_model(conn)
     base = {"signal_id": sig["signal_id"], "sym": vsym, "stk_conid": stk.conId,
             "spot_entry": spot, "target_v": target_v, "stop_v": stop_v, "atr_v": atr_v,
+            "px_v": px_v, "entry_asym": entry_asym, "entry_ext_atr": entry_ext,
             "source": "live" if live else "hist_rebuild",
             "fee_model_version": fee["version"], "vol_bump": sig.get("vol_bump", 0)}
     contracts = [{"conid": stk.conId, "kind": "STK", "sym": vsym, "mult": 1,
@@ -473,7 +487,51 @@ def register_contracts(conn, contracts, session_date, vehicle_until):
                  c["mult"], c["trading_class"], session_date, until))
 
 
+def fill_entry_metrics(conn, log=print):
+    """px_v / entry_asym / entry_ext_atr for positions entered before those
+    columns existed (2026-10-08). Index proxies are re-scaled from the proxy's
+    last close before the session (Yahoo), as price_entry() now does."""
+    rows = [dict(r) for r in conn.execute(
+        """SELECT p.pos_id, p.sym AS vsym, p.spot_entry, p.target_v, p.stop_v, p.atr_v,
+                  s.sym, s.px, s.target, s.stop, s.atr, s.session_date
+           FROM bot_fwd_position p JOIN bot_fwd_signal s USING (signal_id)
+           WHERE p.entry_asym IS NULL AND p.entry_ext_atr IS NULL""")]
+    if not rows:
+        return
+    prev = {}
+    proxies = {(r["vsym"], r["session_date"]) for r in rows if r["vsym"] != r["sym"]}
+    if proxies:
+        import yfinance as yf
+        start = min(d for _, d in proxies)
+        start = C.ymd(dt.date.fromisoformat(start) - dt.timedelta(days=10))
+        for v in {v for v, _ in proxies}:
+            df = yf.download(v, start=start, interval="1d", auto_adjust=False, progress=False)
+            closes = df["Close"].squeeze()
+            for vv, d in proxies:
+                if vv == v:
+                    before = closes[closes.index.strftime("%Y-%m-%d") < d]
+                    prev[(v, d)] = float(before.iloc[-1]) if len(before) else None
+    n = 0
+    for r in rows:
+        if r["vsym"] != r["sym"]:
+            px_v = prev.get((r["vsym"], r["session_date"]))
+            if not px_v:
+                continue
+            k = px_v / r["px"]
+            tv, sv, av = r["target"] * k, r["stop"] * k, r["atr"] * k
+        else:
+            px_v, tv, sv, av = r["px"], r["target_v"], r["stop_v"], r["atr_v"]
+        a, e = C.entry_metrics(r["spot_entry"], px_v, tv, sv, av)
+        conn.execute("""UPDATE bot_fwd_position SET px_v = ?, entry_asym = ?, entry_ext_atr = ?,
+                        target_v = ?, stop_v = ?, atr_v = ? WHERE pos_id = ?""",
+                     (px_v, a, e, tv, sv, av, r["pos_id"]))
+        n += 1
+    conn.commit()
+    log(f"Entry metrics filled for {n} earlier positions")
+
+
 def run(conn, ib, log=print):
+    fill_entry_metrics(conn, log)
     ref = Ref(conn)
     now = dt.datetime.now(C.LOCAL)
     since = (now - dt.timedelta(days=int(os.environ.get("BOT_FWD_CATCHUP", C.CATCHUP_DAYS)))).date()

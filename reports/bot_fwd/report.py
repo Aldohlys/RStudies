@@ -28,6 +28,7 @@ def run(conn, log=print):
     q = conn.execute
     res = [dict(r) for r in q(
         """SELECT r.*, p.vehicle, p.sym AS vsym, p.cost_R, p.fallback_reason, p.accept, p.available,
+                  p.entry_asym, p.entry_ext_atr,
                   s.tier, s.run_day, s.session_date, s.sym, s.sector, s.group_name
            FROM bot_fwd_result r JOIN bot_fwd_position p ON p.pos_id = r.pos_id
            JOIN bot_fwd_signal s ON s.signal_id = p.signal_id""")]
@@ -85,6 +86,35 @@ def run(conn, log=print):
                   and r["run_day"] == 1 and r["vehicle"] == v]
             if rs:
                 L.append(f"| {pol} | {v} | " + _agg(rs) + " |")
+
+    def bucket(x, edges, labels):
+        if x is None:
+            return "n/a"
+        for e, lab in zip(edges, labels):
+            if x < e:
+                return lab
+        return labels[-1]
+
+    L += ["", "## Entry extension and asymmetry (P0, closed, fresh)", "",
+          "Extension = (entry price - signal price) / ATR: bot_daily reads the last completed "
+          "session, the entry is at the run or 30 min after the open. Trading plan 7.1: do not "
+          "chase a bar already +1.5 ATR through the level. Entry asymmetry = (target - entry) / "
+          "(entry - stop).", "", "| extension | vehicle " + hdr, "|---|---" + sep]
+    ext_lab = ["< 0", "0 to 0.5", "0.5 to 1.5", ">= 1.5"]
+    for lab in ext_lab:
+        for v in ("outright", "spread", "stock"):
+            rs = [r["R"] for r in fresh if r["vehicle"] == v
+                  and bucket(r["entry_ext_atr"], [0, 0.5, 1.5, 1e9], ext_lab) == lab]
+            if rs:
+                L.append(f"| {lab} | {v} | " + _agg(rs) + " |")
+    L += ["", "| entry asymmetry | vehicle " + hdr, "|---|---" + sep]
+    asym_lab = ["< 0.5", "0.5 to 1.5", ">= 1.5"]
+    for lab in asym_lab:
+        for v in ("outright", "spread", "stock"):
+            rs = [r["R"] for r in fresh if r["vehicle"] == v
+                  and bucket(r["entry_asym"], [0.5, 1.5, 1e9], asym_lab) == lab]
+            if rs:
+                L.append(f"| {lab} | {v} | " + _agg(rs) + " |")
 
     L += ["", "## Exit reasons (P0, closed, fresh)", "", "| reason " + hdr, "|---" + sep]
     for reason in sorted({r["exit_reason"] for r in fresh}):

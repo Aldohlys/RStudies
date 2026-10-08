@@ -129,9 +129,35 @@ def db():
     return conn
 
 
+# Columns added after the tables first went live; ensure_schema() adds any
+# that an existing table lacks.
+ADDED_COLUMNS = {
+    "bot_fwd_position": [
+        ("px_v", "REAL"),            # signal price in the traded symbol's terms
+        ("entry_asym", "REAL"),      # (target - entry spot) / (entry spot - stop)
+        ("entry_ext_atr", "REAL"),   # (entry spot - signal price) / ATR
+    ],
+}
+
+
 def ensure_schema(conn):
     conn.executescript(SCHEMA)
+    for table, cols in ADDED_COLUMNS.items():
+        have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        for name, typ in cols:
+            if name not in have:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {typ}")
     conn.commit()
+
+
+def entry_metrics(spot, px_v, target_v, stop_v, atr_v):
+    """Asymmetry left at the entry price, and how far the entry price has moved
+    from the signal's price (bot_daily reads the last completed session), in ATR.
+    Trading plan 7.1: do not chase a bar already +1.5 ATR through the level."""
+    asym = ((target_v - spot) / (spot - stop_v)
+            if None not in (spot, target_v, stop_v) and spot > stop_v else None)
+    ext = ((spot - px_v) / atr_v if None not in (spot, px_v, atr_v) and atr_v else None)
+    return asym, ext
 
 
 def now_iso():
