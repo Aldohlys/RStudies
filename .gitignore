@@ -68,3 +68,7 @@ quotes/
 
 # Research script outputs (bot_*_trial.R): caches and results, regenerable
 /output/
+
+# Python bytecode
+__pycache__/
+*.pyc
