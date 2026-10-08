@@ -1,15 +1,16 @@
 # reports/bot_daily/main.R — BOT_daily, the technical tool.
 #
-# Writes bot_daily_<yyyymmdd>_<hhmm>.csv (time of writing) exactly as specified in
-# docs/BOT_TOOLS_DESIGN.md section 3. Price and volume only: no TWS, no option
+# Writes bot_daily_<yyyymmdd>_<hhmm>.xlsx (time of writing) with the fields
+# specified in docs/BOT_TOOLS_DESIGN.md section 3 (bot_daily_xlsx.R: sheets Data,
+# Detail, Legend; CSV until 2026-10-08). Price and volume only: no TWS, no option
 # chain, no database writes.
 #
 # Run from the RStudies project root (renv):
 #   Rscript reports/bot_daily/main.R [--detail] [--direction long|short|both]
-#                                    [--out PATH] [SYM ...]
+#                                    [--out PATH.xlsx] [SYM ...]
 #
-# The default emits the 13 columns read daily (BOT_READ_DEFAULT); --detail
-# emits every field.
+# Sheet Data holds the 13 columns read daily (BOT_READ_DEFAULT); --detail puts
+# every field there too. Sheet Detail always holds every field.
 # The per-name read itself lives in shared/bot_read.R, shared with /analyze.
 # Naming an explicit symbol list bypasses universe membership.
 
@@ -28,6 +29,7 @@ source(file.path(SH, "gates.R"))
 source(file.path(SH, "market_calendar.R"))
 source(file.path(SH, "name_attributes.R"))   # touch_coefs(), for names without stored coefficients
 source(file.path(SH, "bot_read.R"))
+source(file.path(SCRIPT_DIR, "bot_daily_xlsx.R"))
 
 OUT_DIR    <- "C:/Users/aldoh/Documents/NewTrading/reports"
 UNIVERSE_CSV <- "C:/Users/aldoh/Documents/NewTrading/Strategies/tradable_universe_20260827.csv"
@@ -146,21 +148,17 @@ df <- df[order(-df$tradable,
                -ifelse(is.na(df$asym), -Inf, df$asym),
                ifelse(is.na(df$sess_target_p75), Inf, df$sess_target_p75)), , drop = FALSE]
 
+run_time <- Sys.time()
 if (is.na(out_path))
-  out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.csv", format(Sys.time(), "%Y%m%d_%H%M")))
+  out_path <- file.path(OUT_DIR, sprintf("bot_daily_%s.xlsx", format(run_time, "%Y%m%d_%H%M")))
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
-out <- if (detail) df else df[, BOT_READ_DEFAULT, drop = FALSE]
-utils::write.table(out, out_path, sep = ";", row.names = FALSE, na = "", qmethod = "double")
-# The BOT forward test (reports/bot_fwd) records every field at entry, so a
-# default run also leaves the full row set in bot_daily_detail/ under the same
-# file name. The daily sheet itself stays short.
-if (!detail && is.na(opt_at("--out", NA_character_))) {
-  side <- file.path(dirname(out_path), "bot_daily_detail", basename(out_path))
-  dir.create(dirname(side), showWarnings = FALSE, recursive = TRUE)
-  utils::write.table(df, side, sep = ";", row.names = FALSE, na = "", qmethod = "double")
-}
+# Data sheet: the daily columns (every field with --detail); Detail sheet: every
+# field, read by the BOT forward test (reports/bot_fwd) at entry.
+tiers <- write_bot_daily_xlsx(df, out_path, data_cols = if (detail) BOT_READ_COLS else BOT_READ_DEFAULT,
+                              run_time = run_time)
 
-message(sprintf("Wrote %d rows x %d cols -> %s", nrow(out), ncol(out), out_path))
+message(sprintf("Wrote %d rows -> %s (%s)", nrow(df), out_path,
+                paste(sprintf("%s %d", names(tiers), tiers), collapse = ", ")))
 filled <- unique(df$name[df$bar_source == "ibkr"])
 if (length(filled))
   message(sprintf("Last session filled from IBKR for %d name(s): %s",

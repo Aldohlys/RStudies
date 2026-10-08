@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - bot_daily: workbook with legend instead of CSV
+
+### Changed
+- BOT_daily writes `NewTrading/Reports/bot_daily_<date>_<hhmm>.xlsx` instead of `bot_daily_<date>_<hhmm>.csv` and the `bot_daily_detail/` sidecar. Sheet Data: `tier` plus the daily columns, rows shaded by tier, filter on the header row. Sheet Detail: every field. Sheet Legend: tier rules with counts and a plain-words definition of every column. `reports/bot_daily/bot_daily_xlsx.R` holds the writer and `BOT_DAILY_LEGEND`; the run stops if a column has no definition. `--detail` now puts every field on Data.
+- bot_fwd reads the Detail sheet (openpyxl read-only: openxlsx files link a drawing part they do not contain, which the full loader rejects); CSV runs before the switch are still read.
+- `NewTrading/scripts/run_bot_daily.bat` no longer calls `bot_daily_to_xlsx.py` and opens the workbook from `Reports/`.
+
+## [2026-10-08] - bot_fwd: stock risk floor
+
+### Fixed
+- Stock risk per share for sizing and 1R is at least 0.5 ATR (`STOCK_MIN_RISK_ATR`); the exit stop is unchanged. DUOL 09-28 had sized off 0.05 ATR (1R USD 88, +42 R).
+
 ## [2026-10-08] - macro_context: sector map workbook with legend
 
 ### Changed

@@ -16,30 +16,58 @@ import re
 
 import common as C
 
-FILE_RE = re.compile(r"bot_daily_(\d{8})(?:_(\d{4}))?\.csv$")
+FILE_RE = re.compile(r"bot_daily_(\d{8})(?:_(\d{4}))?\.(?:csv|xlsx)$")
 
 
 # ── bot_daily files ──────────────────────────────────────────────────────────
 def run_files(since):
-    out = []
-    for f in glob.glob(os.path.join(C.CSV_DIR, "bot_daily_*.csv")):
+    """bot_daily runs since a date, one file per run: the workbook
+    (bot_daily_<date>_<hhmm>.xlsx, from 2026-10-08) or, before it, the CSV."""
+    runs = {}
+    for f in glob.glob(os.path.join(C.CSV_DIR, "bot_daily_*.*")):
         m = FILE_RE.search(os.path.basename(f))
         if not m:
             continue
         d = dt.datetime.strptime(m.group(1) + (m.group(2) or "1712"), "%Y%m%d%H%M")
         ts = d.replace(tzinfo=C.LOCAL)
-        if ts.date() >= since:
-            out.append((ts, f))
-    return sorted(out)
+        if ts.date() >= since and (ts not in runs or f.endswith(".xlsx")):
+            runs[ts] = f
+    return sorted(runs.items())
+
+
+def _cell_text(v):
+    """A workbook cell as the CSV carried it: empty for a blank, 1 not 1.0."""
+    if v is None:
+        return ""
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    if isinstance(v, (dt.datetime, dt.date)):
+        return v.strftime("%Y-%m-%d")
+    return str(v)
 
 
 def read_rows(path):
-    """The detail sidecar (bot_daily_detail/<same name>) when it exists, else
-    the daily file. Files of 2026-09-24..28 have no tradable column: skipped."""
-    side = os.path.join(C.DETAIL_DIR, os.path.basename(path))
-    src = side if os.path.exists(side) else path
-    with open(src, newline="", encoding="utf-8-sig") as fh:
-        rows = list(csv.DictReader(fh, delimiter=";"))
+    """Every field of a run: sheet Detail of the workbook; for a CSV run, the
+    detail sidecar (bot_daily_detail/<same name>) when it exists, else the
+    daily file. Files of 2026-09-24..28 have no tradable column: skipped."""
+    if path.endswith(".xlsx"):
+        import openpyxl
+        # read_only: openxlsx links a drawing part it does not write, which the
+        # full loader rejects; reset_dimensions: its <dimension> reads A1.
+        wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        ws = wb["Detail"]
+        ws.reset_dimensions()
+        it = ws.iter_rows(values_only=True)
+        head = [h for h in next(it)]
+        rows = [{h: _cell_text(v) for h, v in zip(head, r) if h and h != "tier"}
+                for r in it if any(v is not None for v in r)]
+        wb.close()
+        src = path
+    else:
+        side = os.path.join(C.DETAIL_DIR, os.path.basename(path))
+        src = side if os.path.exists(side) else path
+        with open(src, newline="", encoding="utf-8-sig") as fh:
+            rows = list(csv.DictReader(fh, delimiter=";"))
     if not rows or "tradable" not in rows[0]:
         return [], src
     return rows, src

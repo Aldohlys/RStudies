@@ -1,6 +1,6 @@
 # reports/shared/bot_read.R — BOT_daily's per-name read, callable from any tool.
 #
-# One row of bot_daily_<date>.csv for one name and direction, as specified in
+# One row of bot_daily_<date>_<hhmm>.xlsx for one name and direction, as specified in
 # docs/BOT_TOOLS_DESIGN.md section 3. BOT_daily loops it over the universe;
 # /analyze calls it for the name it reports on, so both tools read a name
 # through the same function.
