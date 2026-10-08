@@ -1,7 +1,7 @@
 """Signal intake and entry pricing (proposal §2, §3).
 
 Every bot_daily file of the last CATCHUP_DAYS days is re-read on each run. A name
-in BOT / BOT- / COUNTER-TREND opens one position per vehicle per session, from
+in BOT / BOT- (and WATCH rows of reason counter_trend) opens one position per vehicle per session, from
 the first run of the session that shows it. Entries are priced at the run's
 timestamp: live quotes when the run is fresh, otherwise rebuilt from IBKR 5-minute
 BID/ASK bars (the contracts are still live, so IBKR serves their history).
@@ -608,7 +608,7 @@ def run(conn, ib, log=print):
                             (session,)).fetchone()["d"]
         for r in rows:
             tier, reason = C.tier_reason(r)
-            if tier not in C.TIERS_SIMULATED:
+            if not C.simulated(tier, reason):
                 continue
             sym = r["name"]
             if only and sym not in only:
@@ -698,7 +698,7 @@ def run(conn, ib, log=print):
             conn.commit()
             n_new += 1
             n_pos += len(positions)
-            log(f"  {session} {sym:7s} {tier:13s} -> "
+            log(f"  {session} {sym:7s} {C.group_of(tier, reason):19s} -> "
                 + (", ".join(f"{p['vehicle']} {p.get('long_strike') or ''}"
                              f"{('/' + str(p['short_strike'])) if p.get('short_strike') else ''}"
                              f" {p.get('expiry') or ''} @ {p['entry_price']:.2f}"

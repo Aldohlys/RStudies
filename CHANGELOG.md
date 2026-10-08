@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-08] - BOT tiers: COUNTER-TREND removed, rows shown as WATCH
+
+### Changed
+- The COUNTER-TREND tier is gone from the bot_daily workbook: a row with daily trend_state 3/6 or less and asym at least 2 (not paused-trend BOT-) is WATCH. User: a falling name is not a BOT long without positive price action ("don't catch a falling knife"; SAF, MS, KO on 10-08). WATCH's legend rule says it is a level to watch, not an entry.
+- bot_fwd keeps simulating those rows: tier WATCH, `tier_reason` counter_trend (`C.REASONS_SIMULATED`). The weekly report groups by tier/reason (`C.GROUPS`). 114 past COUNTER-TREND signals and 101 underlying rows relabelled. On the 72 first-day signals so far, five sessions after the signal the name was lower on average (-0.4 to -0.7 ATR, up 20 of 66), and a one-day rebound on the signal bar did not improve R.
+
 ## [2026-10-08] - BOT tiers: daily trend paused inside an intact trend is BOT-
 
 ### Changed

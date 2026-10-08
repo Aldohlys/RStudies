@@ -1,4 +1,4 @@
-"""BOT forward test — simulate every BOT / BOT- / COUNTER-TREND signal of
+"""BOT forward test — simulate every BOT / BOT- signal (and counter-trend WATCH) of
 bot_daily with a 30-delta call and a bull call spread (stock when neither can be
 traded), at IBKR ask/bid with IBKR fees, exited by the trading plan's rules.
 

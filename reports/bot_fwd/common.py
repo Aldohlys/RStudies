@@ -44,7 +44,20 @@ CATCHUP_DAYS = 10             # bot_daily files re-read on every run
 OPT_MARK_SESSIONS = 30
 STK_MARK_SESSIONS = 40
 
-TIERS_SIMULATED = ("BOT", "BOT-", "COUNTER-TREND")
+TIERS_SIMULATED = ("BOT", "BOT-")
+# WATCH rows of this reason are simulated too: the COUNTER-TREND tier until
+# 2026-10-08, kept as a hidden "bought the falling knife" baseline.
+REASONS_SIMULATED = ("counter_trend",)
+# Report groups: tier, or tier/reason where a reason splits a tier.
+GROUPS = ("BOT", "BOT-", "BOT-/weekly_trend_hold", "WATCH/counter_trend")
+
+
+def simulated(tier, reason):
+    return tier in TIERS_SIMULATED or reason in REASONS_SIMULATED
+
+
+def group_of(tier, reason):
+    return f"{tier}/{reason}" if reason in ("weekly_trend_hold", "counter_trend") else tier
 INDEX_PROXY = {"SPX": "SPY", "NDX": "QQQ", "RUT": "IWM"}
 
 # Tiers: same rule as RStudies/reports/bot_daily/bot_daily_xlsx.R::bot_tier
@@ -91,8 +104,9 @@ def tier_reason(row):
         return "BOT-", "daily_trend"
     if a is not None and a >= ASYM_BOT_MINUS and weekly_trend_hold(row):
         return "BOT-", "weekly_trend_hold"
+    # The COUNTER-TREND tier until 2026-10-08: shown as WATCH, simulated by reason.
     if n is not None and n < TREND_MIN and a is not None and a >= ASYM_COUNTER:
-        return "COUNTER-TREND", "counter_trend"
+        return "WATCH", "counter_trend"
     if a is not None and a >= ASYM_BOT_MINUS:
         return "WATCH", "watch"
     return "LOW", "low"

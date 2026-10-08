@@ -9,27 +9,31 @@
 # change them together. write_bot_daily_xlsx() stops if a column has no legend row.
 #
 # Tiers are a highlighting rule chosen by the user on 2026-09-23 ("trend first"),
-# not a ranking. Same rule as bot_fwd/common.py::tier_of. Colours are blue / amber /
+# not a ranking. Same rule as bot_fwd/common.py::tier_reason. Colours are blue / amber /
 # orange, not green / red: the user is colour-blind.
+#
+# No COUNTER-TREND tier since 2026-10-08 (user: a falling name with a far target is
+# not a BOT long entry without positive price action — "don't catch a falling
+# knife"); those rows are WATCH. The forward test still simulates them, by reason.
 
 BOT_TIERS <- data.frame(stringsAsFactors = FALSE,
-  tier = c("BOT", "BOT-", "COUNTER-TREND", "WATCH", "LOW", "VETO"),
-  fill = c("#9DC3E6", "#DDEBF7", "#FFD966", "#FFF2CC", "#F2F2F2", "#F4B183"),
+  tier = c("BOT", "BOT-", "WATCH", "LOW", "VETO"),
+  fill = c("#9DC3E6", "#DDEBF7", "#FFF2CC", "#F2F2F2", "#F4B183"),
   rule = c(
     "tradable = 1, trend_state at least 4/6, asym at least 1.5",
     paste("tradable = 1, asym at least 1, and either trend_state at least 4/6 with asym below 1.5,",
           "or a daily trend paused inside an intact trend: trend_state at most 3/6, w_trend_state at least 4/6,",
           "close above a rising 50-day EMA (ema50_disp_pct and ema50_slope above 0; below a falling one for a short)"),
-    "tradable = 1, trend_state at most 3/6, asym at least 2, not BOT- above: high reward/risk against the trend (a pullback), not a breakout continuation",
-    "tradable = 1, asym at least 1, none of the above",
+    paste("tradable = 1, asym at least 1, none of the above: reward/risk is there but the trend is not.",
+          "A level to watch, not an entry: a long needs positive price action first (a higher low, a reclaimed level)"),
     "tradable = 1, asym below 1 or empty",
     "tradable = 0: see veto_reason"))
-TIER_TREND_MIN <- 4; TIER_ASYM_BOT <- 1.5; TIER_ASYM_BOT_MINUS <- 1; TIER_ASYM_COUNTER <- 2
+TIER_TREND_MIN <- 4; TIER_ASYM_BOT <- 1.5; TIER_ASYM_BOT_MINUS <- 1
 
 trend_n <- function(s) suppressWarnings(as.integer(sub("^\\s*(\\d+)\\s*/\\s*6.*$", "\\1", s)))
 
 # Daily trend paused inside an intact trend (user, 2026-10-08: NET, a flag breakout
-# drifting sideways above the broken level, read 2/6 daily and was COUNTER-TREND):
+# drifting sideways above the broken level, read 2/6 daily and was then COUNTER-TREND):
 # weekly trend at least 4/6 and close above a rising daily EMA50 (short: mirrored).
 # Such a row is BOT- whatever its asym above 1. Same rule as
 # bot_fwd/common.py::weekly_trend_hold, which also records the reason per signal.
@@ -50,14 +54,13 @@ bot_tier <- function(df) {
   ifelse(df$tradable == 0, "VETO",
   ifelse(trend & ok & a >= TIER_ASYM_BOT, "BOT",
   ifelse(ok & a >= TIER_ASYM_BOT_MINUS & (trend | hold), "BOT-",
-  ifelse(!is.na(n) & !trend & ok & a >= TIER_ASYM_COUNTER, "COUNTER-TREND",
-  ifelse(ok & a >= TIER_ASYM_BOT_MINUS, "WATCH", "LOW")))))
+  ifelse(ok & a >= TIER_ASYM_BOT_MINUS, "WATCH", "LOW"))))
 }
 
 # Column, unit / values, definition. Order = BOT_READ_COLS, tier first.
 # "Target side" / "stop side": above / below the price for a long, mirrored for a short.
 BOT_DAILY_LEGEND <- data.frame(stringsAsFactors = FALSE, check.names = FALSE, matrix(byrow = TRUE, ncol = 3, dimnames = list(NULL, c("Column", "Unit / values", "Definition")), c(
-  "tier", "BOT / BOT- / COUNTER-TREND / WATCH / LOW / VETO",
+  "tier", "BOT / BOT- / WATCH / LOW / VETO",
   "Highlight tier of the row, from the rules in the table above. A colour code for reading, not a ranking.",
 
   # Identity and price

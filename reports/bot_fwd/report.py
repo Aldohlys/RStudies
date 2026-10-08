@@ -29,9 +29,12 @@ def run(conn, log=print):
     res = [dict(r) for r in q(
         """SELECT r.*, p.vehicle, p.sym AS vsym, p.cost_R, p.fallback_reason, p.accept, p.available,
                   p.entry_asym, p.entry_ext_atr,
-                  s.tier, s.run_day, s.session_date, s.sym, s.sector, s.group_name
+                  s.tier, s.tier_reason, s.run_day, s.session_date, s.sym, s.sector, s.group_name
            FROM bot_fwd_result r JOIN bot_fwd_position p ON p.pos_id = r.pos_id
            JOIN bot_fwd_signal s ON s.signal_id = p.signal_id""")]
+    # Tier as reported: tier/reason where a reason splits a tier (C.GROUPS).
+    for r in res:
+        r["tier"] = C.group_of(r["tier"], r["tier_reason"])
     wide = [r for r in res if r["policy"] == "P0" and r["available"] == 0 and r["status"] == "closed"]
     res = [r for r in res if r["available"] != 0]
     p0 = [r for r in res if r["policy"] == "P0"]
@@ -67,7 +70,7 @@ def run(conn, log=print):
     hdr = "| n | mean R | median R | win | total R |"
     sep = "|---|---|---|---|---|"
     L += ["", "## Tier x vehicle (P0, closed, fresh)", "", "| tier | vehicle " + hdr, "|---|---" + sep]
-    for t in C.TIERS_SIMULATED:
+    for t in C.GROUPS:
         for v in ("outright", "spread", "stock"):
             L.append(f"| {t} | {v} | " + _agg([r["R"] for r in fresh if r["tier"] == t and r["vehicle"] == v]) + " |")
 
