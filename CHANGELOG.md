@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-12] - macro_context: summary band, cross-asset heatmap, scenario map
+
+### Added
+- Summary band at the top of the report (`summary_render.R::summary_html`, placeholder `{{SUMMARY}}`):
+  - head line: top scenario with its status and scores, yen-carry and chain alerts as status lights;
+  - 8 tiles (VIX with VIX/VIX3M, MOVE, US 10-year, DXY, HYG/IEF, WTI, gold, breadth): level, 1M change, 63-session sparkline, 1-month z-score from the scenario match (`im$z1`). Colour: green when the move supports risk and liquidity, red when it drains them, amber for a large oil or gold move (|z| >= 1);
+  - scenario map: the 13 archetypes as state (x) against 1-month move (y), regions = the status rules (BUILDING, ESTABLISHED / MATURE, FADING, EMERGING), 5-session tails, numbered markers matching a ranked list;
+  - 60-session timeline of the scenario in place (highest state at or above `STATE_ACTIVE`), with its runs listed by date;
+  - regime-model line (section 07 probabilities, which set the daily bias), shown next to the archetypes so the two models are read together;
+  - "Changed since <previous report>": bias, VIX zone, breadth zone (20/35/50/75%), top scenario, scenario status and sector verdict changes, from the previous `cache_date` in `macro_context_results`, `macro_intermarket_scenarios` and `macro_intermarket_sectors` (`load_prev_report()`, read in main.R before today's rows are written);
+  - BOT sector map verdicts as LONG / SHORT chips.
+- Cross-asset heatmap at the top of section 09 (`heatmap_html`, `{{HEATMAP}}`): every panel instrument by asset class, 1D / 1W / 1M / 3M change coloured by change / usual volatility (same z definition as `move_z()`), 52-week position and trend; ratios and spreads in a collapsed second heatmap. The panels stay below, collapsed.
+- `run_intermarket()` also returns `bh` (breadth history) and `hist_dates` (dates of the 60-day scenario history); `render_macro_html()` takes `vix`, `scenario_scores` and `prev` (all optional).
+- No signal, threshold or DB write changes.
+
 ## [2026-10-12] - macro_context: roll-free metals and grains
 
 ### Fixed
