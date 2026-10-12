@@ -264,13 +264,30 @@ FUT_LTD <- list(
   NG = function(ym) back_bdays(ym_date(ym), 3),
   # ULSD and RBOB: last business day of the month before delivery
   HO = function(ym) last_bday(ym - 1),
-  RB = function(ym) last_bday(ym - 1)
+  RB = function(ym) last_bday(ym - 1),
+  # Gold: Yahoo's GC=F leaves a contract the day before its first notice day (last business
+  # day of the month before delivery) and moves to the next active month (Aug -> Dec on 2026-07-31)
+  GC = function(ym) back_bdays(last_bday(ym - 1), 1),
+  # Silver, copper, platinum, palladium: third-last business day of the delivery month (rolled 2026-09-29)
+  SI = function(ym) back_bdays(last_bday(ym), 2),
+  HG = function(ym) back_bdays(last_bday(ym), 2),
+  PL = function(ym) back_bdays(last_bday(ym), 2),
+  PA = function(ym) back_bdays(last_bday(ym), 2),
+  # Corn, wheat: business day before the 15th of the delivery month (rolled 2026-09-15)
+  ZC = function(ym) back_bdays(ym_date(ym, 15), 1),
+  ZW = function(ym) back_bdays(ym_date(ym, 15), 1)
 )
+
+# Delivery months the continuous series steps through (default: every month)
+FUT_MONTHS <- list(GC = c(2, 4, 6, 8, 12), ZC = c(3, 5, 7, 9, 12), ZW = c(3, 5, 7, 9, 12))
+# Yahoo exchange suffix (default .NYM)
+FUT_EXCH <- c(GC = ".CMX", SI = ".CMX", HG = ".CMX", ZC = ".CBT", ZW = ".CBT")
 
 #' Contract of `root` for delivery month `ym`
 fut_contract <- function(root, ym) {
   y <- ym %/% 12; m <- ym %% 12 + 1
-  list(sym = sprintf("%s%s%02d.NYM", root, FUT_MONTH_CODES[m], y %% 100),
+  ex <- if (root %in% names(FUT_EXCH)) FUT_EXCH[[root]] else ".NYM"
+  list(sym = sprintf("%s%s%02d%s", root, FUT_MONTH_CODES[m], y %% 100, ex),
        label = sprintf("%s-%02d", month.abb[m], y %% 100), ym = ym)
 }
 
@@ -278,12 +295,26 @@ fut_contract <- function(root, ym) {
 fut_front_ym <- function(root, d) {
   lt <- as.POSIXlt(d)
   ym <- (lt$year + 1900) * 12 + lt$mon
-  while (FUT_LTD[[root]](ym) < d) ym <- ym + 1
+  months <- if (is.null(FUT_MONTHS[[root]])) 1:12 else FUT_MONTHS[[root]]
+  while (!((ym %% 12 + 1) %in% months) || FUT_LTD[[root]](ym) < d) ym <- ym + 1
   ym
 }
 
+#' Front contract of `root` on date `d` and the next `n` delivery months it steps through.
+#' A front with a short history (PAV26 had 52 bars on 2026-10-09) leaves older roll days
+#' without a stand-in; the later contracts fill them.
+fut_chain <- function(root, d, n = 3) {
+  months <- if (is.null(FUT_MONTHS[[root]])) 1:12 else FUT_MONTHS[[root]]
+  ym <- fut_front_ym(root, d)
+  out <- ym
+  while (length(out) <= n) { ym <- ym + 1; if ((ym %% 12 + 1) %in% months) out <- c(out, ym) }
+  out
+}
+
 # Continuous series rebuilt without roll gaps (roll_adjust() in intermarket.R)
-ROLL_ADJUSTED <- c("CL=F" = "CL", "BZ=F" = "BZ", "NG=F" = "NG", "HO=F" = "HO", "RB=F" = "RB")
+ROLL_ADJUSTED <- c("CL=F" = "CL", "BZ=F" = "BZ", "NG=F" = "NG", "HO=F" = "HO", "RB=F" = "RB",
+                   "GC=F" = "GC", "SI=F" = "SI", "HG=F" = "HG", "PL=F" = "PL", "PA=F" = "PA",
+                   "ZC=F" = "ZC", "ZW=F" = "ZW")
 
 # WTI curve: the contracts 3 and 6 months after the front, read as fixed contracts
 # so changes are never roll gaps. CL=F tracks the front.

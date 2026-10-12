@@ -71,8 +71,19 @@ refetch_empty_closes <- function(raw, today) {
     st <- empty_last_closes(raw)
     if (nrow(st)) message("Still no close after re-fetch: ", paste(st$ticker, collapse = ", "))
   }
-  attr(raw, "stale") <- st
+  attr(raw, "stale") <- st[!st$ticker %in% roll_standins(), , drop = FALSE]
   raw
+}
+
+#' Later contracts fetched only to stand in on roll days (fut_chain() beyond the front).
+#' Some do not exist (PAF27: palladium lists no January), so they are left out of the
+#' missing-data message and the empty-close banner.
+roll_standins <- function() {
+  s <- unlist(lapply(ROLL_ADJUSTED, function(root)
+    vapply(fut_chain(root, Sys.Date() - 1)[-1], function(ym) fut_contract(root, ym)$sym, "")))
+  panel <- unlist(lapply(SECTIONS, function(sec) c(vapply(sec$instruments, `[`, "", 1),
+                                                   unlist(lapply(sec$spreads %||% list(), `[`, 1:2)))))
+  setdiff(s, panel)
 }
 
 #' Everything the report needs from the intermarket side
@@ -81,7 +92,7 @@ run_intermarket <- function(breadth) {
   if (is.null(raw) || nrow(raw) == 0) return(NULL)
   stale <- attr(raw, "stale")
   raw <- roll_adjust(raw)
-  missing <- setdiff(report_symbols(), unique(raw$ticker[!is.na(raw$Close)]))
+  missing <- setdiff(report_symbols(), c(unique(raw$ticker[!is.na(raw$Close)]), roll_standins()))
   if (length(missing)) message("Intermarket: no data for ", paste(missing, collapse = ", "))
   sections <- mark_stale(analyze_sections(raw), stale)
   sectors <- analyze_sectors(raw)
@@ -97,8 +108,9 @@ run_intermarket <- function(breadth) {
 #' Continuous futures without roll gaps. Each day's return comes from the front
 #' contract of that day when Yahoo still lists it, else from the =F series, except on
 #' a roll day, where the =F return mixes two contracts: there the nearest listed
-#' contract stands in (expired contracts are not served). Levels are rebuilt backwards
-#' from the last close of the listed front, so "Last" is the real front price.
+#' contract with both closes stands in (the front, then the next months of fut_chain();
+#' expired contracts are not served). Levels are rebuilt backwards from the last close
+#' of the listed front, so "Last" is the real front price.
 roll_adjust <- function(raw) {
   for (key in intersect(names(ROLL_ADJUSTED), unique(raw$ticker))) {
     root <- ROLL_ADJUSTED[[key]]
@@ -106,17 +118,26 @@ roll_adjust <- function(raw) {
     i <- i[order(raw$date[i])]
     if (length(i) < 2) next
     dt <- raw$date[i]; px <- raw$Close[i]
-    cur <- fut_front_ym(root, max(dt))
-    f <- raw[raw$ticker == fut_contract(root, cur)$sym & !is.na(raw$Close), c("date", "Close")]
-    fpx <- setNames(f$Close, as.character(f$date))
+    chain <- fut_chain(root, max(dt))
+    cur <- chain[1]
+    cpx <- lapply(chain, function(ym) {
+      f <- raw[raw$ticker == fut_contract(root, ym)$sym & !is.na(raw$Close), c("date", "Close")]
+      setNames(f$Close, as.character(f$date))
+    })
+    fpx <- cpx[[1]]
+    proxy_ret <- function(k) {
+      for (p in cpx) {
+        a <- p[as.character(dt[k - 1])]; b <- p[as.character(dt[k])]
+        if (!is.na(a) && !is.na(b)) return(log(b / a))
+      }
+      0
+    }
     fr <- vapply(dt, function(d) fut_front_ym(root, d), 0)
     r <- numeric(length(dt))
     for (k in 2:length(dt)) {
       a <- fpx[as.character(dt[k - 1])]; b <- fpx[as.character(dt[k])]
-      has_f <- !is.na(a) && !is.na(b)
-      r[k] <- if (fr[k] == cur && has_f) log(b / a) else
-        if (fr[k] == fr[k - 1]) log(px[k] / px[k - 1]) else
-        if (has_f) log(b / a) else 0
+      r[k] <- if (fr[k] == cur && !is.na(a) && !is.na(b)) log(b / a) else
+        if (fr[k] == fr[k - 1]) log(px[k] / px[k - 1]) else proxy_ret(k)
     }
     last <- fpx[as.character(dt[length(dt)])]
     if (is.na(last)) last <- px[length(px)]
@@ -394,6 +415,7 @@ report_symbols <- function() {
          unlist(lapply(GROUP_DRIVERS, function(d) split_keys(names(d)))))
   f <- unlist(lapply(FP_ASSETS[names(FP_ASSETS) != "ABS_BREADTH"],   # breadth comes from the daily runs, not Yahoo
                      function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
-  fronts <- vapply(ROLL_ADJUSTED, function(root) fut_contract(root, fut_front_ym(root, Sys.Date() - 1))$sym, "")
+  fronts <- unlist(lapply(ROLL_ADJUSTED, function(root)
+    vapply(fut_chain(root, Sys.Date() - 1), function(ym) fut_contract(root, ym)$sym, "")))
   unique(stats::na.omit(c(BENCHMARK, s, g, f, fronts)))
 }

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-12] - macro_context: roll-free metals and grains
+
+### Fixed
+- `roll_adjust()` now also rebuilds GC=F, SI=F, HG=F, PL=F, PA=F, ZC=F and ZW=F. Per-root rules in `intermarket_config.R`: delivery months the continuous series steps through (`FUT_MONTHS`: gold Feb/Apr/Jun/Aug/Dec, corn and wheat Mar/May/Jul/Sep/Dec, others every month), Yahoo exchange suffix (`FUT_EXCH`: .CMX, .CBT) and last day held (`FUT_LTD`: gold the business day before first notice, silver/copper/platinum/palladium the third-last business day of the delivery month, corn/wheat the business day before the 15th). Checked against Yahoo: the rules reproduce the current fronts' switches (gold 07-31, metals 09-29, grains 09-15), and the largest gaps between the continuous and a listed contract's daily returns fall on the predicted roll days (gold 05-29 +0.7% and 07-31 +1.5%; corn 05-15 +3.1%, 07-15 +1.2%, 09-15 +4.1%; wheat 05-15, 07-15, 09-15).
+- Roll days without a front-contract close now use the next listed months (`fut_chain()`, front + 3); PAV26 had only 52 bars. Those stand-in contracts are fetched but left out of the missing-data message and the empty-close banner (`roll_standins()`; PAF27 does not exist).
+- Effect on 10-12 (data to 10-09), 1M / 3M: corn −6.7% / +9.6% → −10.4% / +4.0%; wheat −7.2% / +7.0% → −9.2% / +2.4%, trend MIXED → DOWN; gold 3M +5.3% → +3.7%; silver, copper, platinum, palladium within 0.5 point (monthly rolls cost about 0.1%). Grain curves are in contango, so each roll had added a gain.
+- Softs (cocoa, coffee, sugar) and lumber still use Yahoo's continuous series (lumber contracts are barely quoted on Yahoo).
+
 ## [2026-10-08] - macro_context: macro fetch keeps universe symbols (FXC re-append, empty EUR.CHF)
 
 ### Fixed
