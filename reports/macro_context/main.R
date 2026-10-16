@@ -73,7 +73,8 @@ message(sprintf("Breadth: %.1f%% (%d/%d) in %.1fs",
 # 4. Analyze
 vx_curve   <- fetch_vx_curve()
 vix_res    <- analyze_vix(raw, vx_curve)
-rates_res  <- analyze_rates(raw)
+fred       <- tryCatch(fetch_fred(), error = function(e) { message("FRED failed: ", conditionMessage(e)); NULL })
+rates_res  <- analyze_rates(raw, fred)
 comm_res   <- analyze_commodities(raw)
 spy_res    <- analyze_spy(raw)
 macro_env  <- build_macro_env(vix_res, rates_res, breadth, comm_res)

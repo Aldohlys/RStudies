@@ -91,6 +91,8 @@ run_intermarket <- function(breadth) {
   raw <- fetch_intermarket_data()
   if (is.null(raw) || nrow(raw) == 0) return(NULL)
   stale <- attr(raw, "stale")
+  # Year to date on front-month prices: the roll-adjusted series adds the roll yield (Brent 2026: +123% vs spot +74%)
+  ytd <- tryCatch(ytd_ranges(raw), error = function(e) { message("YTD ranges failed: ", conditionMessage(e)); NULL })
   raw <- roll_adjust(raw)
   missing <- setdiff(report_symbols(), c(unique(raw$ticker[!is.na(raw$Close)]), roll_standins()))
   if (length(missing)) message("Intermarket: no data for ", paste(missing, collapse = ", "))
@@ -103,7 +105,8 @@ run_intermarket <- function(breadth) {
   carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
   list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry,
-       stale = stale, bh = bh, hist_dates = sh$state$date)
+       stale = stale, bh = bh, hist_dates = sh$state$date,
+       ytd = ytd)
 }
 
 #' Continuous futures without roll gaps. Each day's return comes from the front
@@ -419,4 +422,27 @@ report_symbols <- function() {
   fronts <- unlist(lapply(ROLL_ADJUSTED, function(root)
     vapply(fut_chain(root, Sys.Date() - 1), function(ym) fut_contract(root, ym)$sym, "")))
   unique(stats::na.omit(c(BENCHMARK, s, g, f, fronts)))
+}
+
+# ── Year to date: low, high and current return per asset ───────────────────
+YTD_ASSETS <- c("^GSPC" = "S&P 500", "^STOXX50E" = "Euro Stoxx 50", "EEM" = "Emerging markets (USD)",
+                "LQD" = "US investment grade", "HYG" = "US high yield", "IS0L.DE" = "German Bunds 10y+",
+                "GLTL.L" = "UK Gilts 15y+", "DX-Y.NYB" = "Dollar index", "GC=F" = "Gold",
+                "BZ=F" = "Brent crude", "BTC-USD" = "Bitcoin")
+
+#' Return path since the last close of the previous year: lowest, highest and current (%)
+#' @param raw intermarket data before roll_adjust(): futures as front-month prices, like spot
+#' @return data.frame(sym, name, low, high, cur, base_date); assets without a prior-year close left out
+ytd_ranges <- function(raw, asof = Sys.Date()) {
+  y0 <- as.Date(sprintf("%s-12-31", as.integer(format(asof, "%Y")) - 1))
+  out <- lapply(names(YTD_ASSETS), function(s) {
+    d <- raw[raw$ticker == s & !is.na(raw$Close), c("date", "Close")]
+    d <- d[order(d$date), ]
+    b <- d[d$date <= y0, ]
+    if (!nrow(b) || !any(d$date > y0)) return(NULL)
+    r <- (d$Close[d$date > y0] / tail(b$Close, 1) - 1) * 100
+    data.frame(sym = s, name = YTD_ASSETS[[s]], low = min(r), high = max(r), cur = tail(r, 1),
+               base_date = max(b$date), stringsAsFactors = FALSE)
+  })
+  do.call(rbind, out)
 }

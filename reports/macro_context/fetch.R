@@ -96,3 +96,36 @@ fetch_vx_curve <- function(n = 2, max_back = 10) {
   do.call(rbind, c(list(data.frame(date = as.Date(character()), vx1_sym = character(), vx1 = numeric(),
                                    vx2_sym = character(), vx2 = numeric())), out))
 }
+
+# ── FRED: yield decomposition, 2-year yield, fed funds ─────────────────────
+FRED_CACHE <- "macro_fred_cache"
+
+#' FRED series used by analyze_rates(): series id -> label
+FRED_SERIES <- c(DGS2 = "2Y yield", DGS10 = "10Y yield", DFII10 = "10Y real yield (TIPS)",
+                 T10YIE = "10Y breakeven inflation", THREEFYTP10 = "10Y term premium (Kim-Wright)",
+                 DFF = "Effective fed funds")
+
+#' Daily FRED series from the public graph CSV (no API key), cached daily in the DB.
+#' Rows are kept from the last business days of the previous year on, for the
+#' year-to-date changes. Holidays come back empty and are dropped.
+#' @return data.frame(ticker, date, Close) with ticker = FRED series id; NULL if nothing came back
+fetch_fred <- function(ids = names(FRED_SERIES), from = as.Date(sprintf("%d-12-01", as.integer(format(Sys.Date(), "%Y")) - 1))) {
+  today <- as.character(Sys.Date())
+  cached <- cache_read(FRED_CACHE, today)
+  if (!is.null(cached)) {
+    cached$cache_date <- NULL
+    cached$date <- as.Date(cached$date)
+    return(cached)
+  }
+  out <- lapply(ids, function(id) {
+    u <- sprintf("https://fred.stlouisfed.org/graph/fredgraph.csv?id=%s&cosd=%s", id, format(from))
+    s <- tryCatch(read.csv(url(u), stringsAsFactors = FALSE, na.strings = c("", ".")), error = function(e) NULL)
+    if (is.null(s) || ncol(s) < 2) { message("FRED ", id, ": no data"); return(NULL) }
+    d <- data.frame(ticker = id, date = as.Date(s[[1]]), Close = suppressWarnings(as.numeric(s[[2]])))
+    d[!is.na(d$Close), ]
+  })
+  d <- do.call(rbind, out)
+  if (is.null(d) || nrow(d) == 0) return(NULL)
+  cache_write(FRED_CACHE, d, today)
+  d
+}

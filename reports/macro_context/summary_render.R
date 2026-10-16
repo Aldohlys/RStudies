@@ -111,7 +111,7 @@ tile_html <- function(t, by_sym, z1, breadth = NULL, bh = NULL, vix = NULL) {
       sub <- sprintf("%s &middot; VIX/VIX3M %.2f%s", sub, vix$ratio, if (vix$ratio >= 1) " <b>inverted</b>" else "")
     if (!is.null(m$stale_missing)) sub <- paste(sub, "<span class='im-neg'>(no last close)</span>")
   }
-  tip <- sprintf("1-month move z-score %s. Colour: green = the move supports risk and liquidity, red = it drains them, amber = large move whose reading depends on the scenario (|z| &ge; 1).",
+  tip <- sprintf("1-month move z-score %s. Colour: blue = the move supports risk and liquidity, red = it drains them, black = large move whose reading depends on the scenario (|z| &ge; 1).",
                  if (is.na(z)) "n/a" else sprintf("%+.2f", z))
   sprintf(paste0("<div class='ck-tile %s' title='%s'><div class='ck-t-label'>%s</div>",
                  "<div class='ck-t-val'>%s<span class='ck-t-z'>%s</span></div><div class='ck-t-sub'>%s</div>%s</div>"),
@@ -395,8 +395,8 @@ heatmap_html <- function(sections) {
     "<div class='hz-grid'>", inst, "</div>",
     "<details class='im-details'><summary>Relationships heatmap: ratios and spreads (hover a name for its meaning)</summary><div class='hz-grid'>", rat, "</div></details>",
     "<div class='im-legend'>Cell text = the change (bp for yields and spreads). Colour = that change divided by the instrument's usual volatility ",
-    "over the same horizon (standard deviation of daily changes over 120 sessions &times; &radic;days): green up, red down; ",
+    "over the same horizon (standard deviation of daily changes over 120 sessions &times; &radic;days): blue up, red down; ",
     "light 0.5&ndash;1&times;, medium 1&ndash;2&times;, strong 2&times; or more; no colour below 0.5&times;. ",
-    "Up is up in price: a rising VIX, yield or USD/JPY is green. 52w = position in the 52-week range. ",
+    "Up is up in price: a rising VIX, yield or USD/JPY is blue. 52w = position in the 52-week range. ",
     "Arrow = trend (&#9650; UP, &#9660; DOWN, &#9670; MIXED). Full tables with sparklines: the panels below.</div>")
 }

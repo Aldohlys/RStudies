@@ -10,16 +10,16 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
   sec1 <- paste0(
     html_row_tip("VIX spot", vix$vix, vix$vix_zone,
       paste0(vix$vix_label, " | 1d:", fmt_chg(vix$vix, vix$vix_prev)),
-      "Source: Yahoo ^VIX | Spot value | GREEN <20, ORANGE 20-25, RED 25-30, DARKRED >30"),
+      "Source: Yahoo ^VIX | Spot value | BLUE <20, BLACK 20-25, RED 25-30, DARKRED >30"),
     if (!is.na(vix$vvix)) html_row_tip("VVIX", vix$vvix, vix$vvix_zone, vix$vvix_label,
-      "Source: Yahoo ^VVIX | Vol-of-vol | GREEN <80, ORANGE 80-100, RED 100-120, DARKRED >120") else "",
+      "Source: Yahoo ^VVIX | Vol-of-vol | BLUE <80, BLACK 80-100, RED 100-120, DARKRED >120") else "",
     html_sub_tip(paste0("Term structure: ", vix$ts_r), "", vix$ts_zone, vix$ts_n,
       "VIX9D vs VIX vs VIX3M | Contango = normal, Backwardation = fear"),
     if (!is.na(vix$ratio)) html_sub_tip("VIX/VIX3M", sprintf("%.3f", vix$ratio), vix$r_zone, vix$r_note,
-      "VIX / VIX3M ratio | GREEN <0.90 contango, ORANGE 0.90-1.00, RED >=1.00 backwardation | 10y median 0.88, p95 1.02") else "",
+      "VIX / VIX3M ratio | BLUE <0.90 contango, BLACK 0.90-1.00, RED >=1.00 backwardation | 10y median 0.88, p95 1.02") else "",
     if (!is.na(vix$vx_spread)) html_sub_tip("VX1-VX2", sprintf("%+.2f", vix$vx_spread), vix$vx_zone,
       paste0(vix$vx_label, " | 1d:", fmt_chg(vix$vx_spread, vix$vx_prev), " | ", vix$vx_detail),
-      "Source: CBOE daily settlement, front minus second monthly VIX future | GREEN < -0.5 contango, ORANGE -0.5 to 0, RED 0 to +0.5, DARKRED > +0.5 backwardation")
+      "Source: CBOE daily settlement, front minus second monthly VIX future | BLUE < -0.5 contango, BLACK -0.5 to 0, RED 0 to +0.5, DARKRED > +0.5 backwardation")
     else html_sub_tip("VX1-VX2", "NO DATA", "ORANGE", "CBOE settlement unavailable",
       "Source: CBOE daily settlement, front minus second monthly VIX future"),
     if (!is.na(vix$vix_20d)) html_sub_tip("VIX 20d ago", sprintf("%.2f", vix$vix_20d),
@@ -31,16 +31,17 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
   sec2 <- paste0(
     html_row_tip("10Y Yield", rates$y10, rates$y10_zone,
       paste0(rates$y10_label, " | 1d:", fmt_chg(rates$y10, rates$y10_prev)),
-      "Source: Yahoo ^TNX | Spot yield | GREEN <4.5%, ORANGE 4.5-5%, RED >5%"),
+      "Source: Yahoo ^TNX | Spot yield | BLUE <4.5%, BLACK 4.5-5%, RED >5%"),
     if (!is.na(rates$y30)) html_row_tip("30Y Yield", rates$y30, rates$y30_zone,
       paste0("1d:", fmt_chg(rates$y30, rates$y30_prev)),
       "Source: Yahoo ^TYX | 30-year yield | Same thresholds as 10Y") else "",
     if (!is.na(rates$sp)) html_sub_tip("3M/10Y spread", sprintf("%+.2f%%", rates$sp), rates$sp_zone, paste0(rates$sp_label, " | ", rates$sp_shape),
-      "10Y (^TNX) minus 13-week bill (^IRX) | Level: negative = inversion | Colour from the 20d move when the spread moved >= 5bp: RED bear steepening (long end selling off), GREEN bull steepening, ORANGE flattening") else "",
+      "10Y (^TNX) minus 13-week bill (^IRX) | Level: negative = inversion | Colour from the 20d move when the spread moved >= 5bp: RED bear steepening (long end selling off), BLUE bull steepening, BLACK flattening") else "",
     if (!is.na(rates$tlt_pct)) html_sub_tip("TLT 20d", sprintf("%+.1f%%", rates$tlt_pct), rates$tlt_zone, rates$tlt_n,
-      "Source: Yahoo TLT | 20-day return | GREEN >+1%, RED <-1%") else "",
-    if (!is.na(rates$tips_pct)) html_sub_tip("TIP 20d", sprintf("%+.1f%%", rates$tips_pct), rates$tips_zone, rates$tips_n,
-      "Source: Yahoo TIP | 20-day return | Real yield proxy | GREEN >+0.5%, RED <-0.5%") else ""
+      "Source: Yahoo TLT | 20-day return | BLUE >+1%, RED <-1%") else "",
+    if (!isTRUE(rates$fred_ok) && !is.na(rates$tips_pct)) html_sub_tip("TIP 20d", sprintf("%+.1f%%", rates$tips_pct), rates$tips_zone, rates$tips_n,
+      "Source: Yahoo TIP | 20-day return | Real yield proxy (shown only when FRED is unavailable) | BLUE >+0.5%, RED <-0.5%") else "",
+    rates_fred_rows(rates)
   )
 
   # Section 3: Breadth
@@ -54,17 +55,17 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
     html_row_tip(sprintf("MA50 Breadth (%d/%d stocks)", breadth$n_above, breadth$n_valid),
              S5FI_VALUE, s5fi_zone,
              paste0(s5fi_label, sprintf(" | %.1fs", breadth$elapsed)),
-             "Computed: % S&P500 stocks > MA50 | Wikipedia constituents + Yahoo data | GREEN >50%, RED <35%, DARKRED <20%"),
+             "Computed: % S&P500 stocks > MA50 | Wikipedia constituents + Yahoo data | BLUE >50%, RED <35%, DARKRED <20%"),
     if (!is.na(spy$spy_c)) html_sub_tip(
       sprintf("SPY $%.2f", spy$spy_c),
       sprintf("MA20:%.0f MA50:%.0f", spy$spy_m20, spy$spy_m50),
       spy$spy_z, spy$spy_n,
-      "Source: Yahoo SPY | Position vs MA20/MA50 | GREEN = above both, RED = below both") else ""
+      "Source: Yahoo SPY | Position vs MA20/MA50 | BLUE = above both, RED = below both") else ""
   )
 
   # Section 4: Dollar + Commodities
   comm_tips <- c(
-    "DX-Y.NYB" = "Source: Yahoo DX-Y.NYB | US Dollar Index 20d return | GREEN <+1%, RED >3%",
+    "DX-Y.NYB" = "Source: Yahoo DX-Y.NYB | US Dollar Index 20d return | BLUE <+1%, RED >3%",
     "USO"      = "Source: Yahoo USO | Oil ETF | MA20 position + 20d return",
     "GLD"      = "Source: Yahoo GLD | Gold ETF | MA20 position + 20d return",
     "XLE"      = "Source: Yahoo XLE | Energy sector ETF | MA20 position + 20d return"
@@ -211,6 +212,36 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
        data_banner = data_banner)
 }
 
+# ── Rates rows from FRED: decomposition, 2Y, policy pricing ────────────────
+rates_fred_rows <- function(rates) {
+  if (!isTRUE(rates$fred_ok)) return(html_sub_tip("FRED rates", "NO DATA", "ORANGE", "FRED unavailable: no decomposition today", ""))
+  chg <- function(x) sprintf("20d %s | YTD %s", if (is.na(x$c20)) "n/a" else sprintf("%+.2f", x$c20),
+                             if (is.na(x$ytd)) "n/a" else sprintf("%+.2f", x$ytd))
+  asof <- function(x) if (!is.na(x$d) && x$d < Sys.Date() - 3) sprintf(" | as of %s", format(x$d, "%d %b")) else ""
+  split_txt <- function(s, lbl) if (is.null(s) || any(is.na(s))) "" else
+    sprintf("%s: 10Y %+.2f = breakeven %+.2f + term premium %+.2f + real path %+.2f",
+            lbl, s[["nominal"]], s[["breakeven"]], s[["term_premium"]], s[["real_path"]])
+  r <- rates
+  paste0(
+    html_sub_tip("10Y real yield", sprintf("%.2f%%", r$real$v), r$real$zone, paste0(chg(r$real), asof(r$real)),
+      "Source: FRED DFII10 (10-year TIPS yield) | BLUE <1.5%, BLACK 1.5-2.5%, RED >=2.5% | Rising real yields = headwind for gold, long-duration equities"),
+    html_sub_tip("10Y breakeven", sprintf("%.2f%%", r$be$v), r$be$zone, paste0(chg(r$be), asof(r$be)),
+      "Source: FRED T10YIE (10Y nominal minus 10Y TIPS) = inflation expected by the bond market | BLACK <1.8% (deflation scare), BLUE 1.8-2.6%, RED >=2.6% (inflation scare)"),
+    html_sub_tip("10Y term premium", sprintf("%.2f%%", r$tp$v), r$tp$zone, paste0(chg(r$tp), asof(r$tp)),
+      "Source: FRED THREEFYTP10 (Kim-Wright model, about one week lag) = extra yield demanded to hold 10 years instead of rolling bills | BLUE <0.5%, BLACK 0.5-1.0%, RED >=1.0%"),
+    if (!is.na(r$driver20)) html_sub_tip("10Y move driver", r$driver20, r$split_zone,
+      paste0(split_txt(r$split20, "20d"), " | ", split_txt(r$split_ytd, "YTD"),
+             if (!is.na(r$driver_ytd)) paste0(" (YTD driver: ", r$driver_ytd, ")") else "",
+             sprintf(" | as of %s", format(r$split_date, "%d %b"))),
+      "Splits the 10Y change into breakeven + term premium + real path (real yield minus term premium); the three add up to the 10Y change. Driver = the part contributing most in the direction of the move. RED = rising 10Y led by term premium (bond-rout tell), BLACK = rising otherwise or little change, BLUE = 10Y falling") else "",
+    html_sub_tip("2Y yield", sprintf("%.2f%%", r$y2$v), "ORANGE", paste0(chg(r$y2), asof(r$y2)), "Source: FRED DGS2"),
+    html_sub_tip("2Y/10Y spread", sprintf("%+.2f%%", r$s210$v), r$s210$zone, paste0(r$s210$label, " | ", r$s210$shape),
+      "FRED DGS10 minus DGS2 | Level: negative = inversion | Colour from the 20d move when the spread moved >= 5bp: RED bear steepening, BLUE bull steepening, BLACK flattening"),
+    html_sub_tip("Policy priced (2Y - fed funds)", sprintf("%+.2f%%", r$pol$v), r$pol$zone, paste0(r$pol$label, " | ", chg(r$pol)),
+      "FRED DGS2 minus DFF (effective fed funds) = rough measure of the policy change priced over about a year | BLUE < -0.25 cuts priced, BLACK on hold, RED > +0.25 hikes priced | YTD change = repricing of the Fed path since January")
+  )
+}
+
 # ── Render final HTML ───────────────────────────────────────────────────────
 render_macro_html <- function(sections, synthesis, breadth, out_dir, im = NULL, cot = NULL,
                               vix = NULL, scenario_scores = NULL, prev = NULL) {
@@ -224,7 +255,7 @@ render_macro_html <- function(sections, synthesis, breadth, out_dir, im = NULL, 
     "{{BIAS_EXPLAIN}}" = synthesis$bias_explain,
     "{{MOVIE}}"       = if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else paste0(daily_strip_html(im$sections), stale_html(im$sections, im$stale), movie_html(im$movie, im$matches, im$sectors, im$z1, im$carry)),
     "{{SUMMARY}}"     = summary_html(im, synthesis, breadth, vix, scenario_scores, prev),
-    "{{HEATMAP}}"     = if (is.null(im)) "" else heatmap_html(im$sections),
+    "{{HEATMAP}}"     = if (is.null(im)) "" else paste0(ytd_band_html(im$ytd), heatmap_html(im$sections)),
     "{{PANELS}}"      = if (is.null(im)) "" else panels_html(im$sections),
     "{{SECTOR_MAP}}"  = if (is.null(im)) "" else sectors_html(im$sectors),
     "{{COT_DASHBOARD}}" = cot_dashboard_html(cot),

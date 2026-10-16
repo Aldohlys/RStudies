@@ -161,7 +161,7 @@ md_regimes <- function() {
 md_mismatches <- function() {
   flags <- list(
     c("vix_stress", "VIX &gt; 25"), c("backwardation", "VIX9D &gt; VIX3M"), c("rates_high", "10Y &gt; 4.5%"),
-    c("curve_inv", "10Y &minus; 2Y &lt; 0"), c("dxy_strong", "DXY 20-day return &gt; +2%"), c("dxy_weak", "DXY 20-day return &lt; &minus;2%"),
+    c("curve_inv", "10Y &minus; 3M bill (^TNX &minus; ^IRX) &lt; 0"), c("dxy_strong", "DXY 20-day return &gt; +2%"), c("dxy_weak", "DXY 20-day return &lt; &minus;2%"),
     c("oil_surging", "USO 20-day return &gt; +10%"), c("gold_rising", "GLD 20-day return &gt; +5%"),
     c("s5fi_bear", "breadth &lt; 35%"), c("s5fi_bull", "breadth &gt; 50%"))
   rule_rows <- lapply(names(SECTOR_RULES), function(s) c(s, SECTOR_ETFS_MAP[[s]],
@@ -182,18 +182,24 @@ md_mismatches <- function() {
 # ── Static sections ─────────────────────────────────────────────────────────
 md_basic_sections <- function() {
   md_table(c("Section", "Measure", "Rule"), list(
-    c("01 VIX", "VIX spot", "GREEN &lt; 20, ORANGE 20&ndash;25, RED 25&ndash;30, DARKRED &gt; 30"),
-    c("01 VIX", "VVIX", "GREEN &lt; 80, ORANGE 80&ndash;100, RED 100&ndash;120, DARKRED &gt; 120"),
-    c("01 VIX", "VIX / VIX3M", "GREEN &lt; 0.90 contango, ORANGE 0.90&ndash;1.00, RED &ge; 1.00 backwardation (10-year median 0.88, p95 1.02)"),
-    c("01 VIX", "VX1 &minus; VX2", "CBOE settlement, front minus second future: GREEN &lt; &minus;0.5, ORANGE &minus;0.5 to 0, RED 0 to +0.5, DARKRED &gt; +0.5"),
+    c("01 VIX", "VIX spot", "BLUE &lt; 20, BLACK 20&ndash;25, RED 25&ndash;30, DARKRED &gt; 30"),
+    c("01 VIX", "VVIX", "BLUE &lt; 80, BLACK 80&ndash;100, RED 100&ndash;120, DARKRED &gt; 120"),
+    c("01 VIX", "VIX / VIX3M", "BLUE &lt; 0.90 contango, BLACK 0.90&ndash;1.00, RED &ge; 1.00 backwardation (10-year median 0.88, p95 1.02)"),
+    c("01 VIX", "VX1 &minus; VX2", "CBOE settlement, front minus second future: BLUE &lt; &minus;0.5, BLACK &minus;0.5 to 0, RED 0 to +0.5, DARKRED &gt; +0.5"),
     c("01 VIX", "VIX 20d ago", "RED when VIX is above its level 20 sessions ago"),
-    c("02 Rates", "10Y / 30Y", "GREEN &lt; 4.5%, ORANGE 4.5&ndash;5%, RED &gt; 5%"),
-    c("02 Rates", "3M/10Y spread", "^TNX minus ^IRX; colour from the 20-day move when it is &ge; 5 bp: RED bear steepening (10Y up more), GREEN bull steepening, ORANGE flattening"),
-    c("02 Rates", "TLT 20d", "GREEN &gt; +1%, RED &lt; &minus;1%"),
-    c("02 Rates", "TIP 20d", "Real-yield proxy: GREEN &gt; +0.5%, RED &lt; &minus;0.5%"),
-    c("03 Breadth", "% S&amp;P 500 above MA50", "Constituents from Wikipedia, each stock's close vs its 50-day average. DARKRED &lt; 20, RED 20&ndash;35, ORANGE 35&ndash;50, GREEN 50&ndash;75, ORANGE &gt; 75. Absolute measure, unlike the equal-weight / S&amp;P ratio used in the scenarios"),
-    c("03 Breadth", "SPY vs MA20 / MA50", "GREEN above both, RED below both"),
-    c("04 Dollar + commodities", "DXY, USO, GLD, XLE", "Position vs MA20 and 20-day return; DXY GREEN &lt; +1%, RED &gt; +3%")))
+    c("02 Rates", "10Y / 30Y", "BLUE &lt; 4.5%, BLACK 4.5&ndash;5%, RED &gt; 5%"),
+    c("02 Rates", "3M/10Y spread", "^TNX minus ^IRX; colour from the 20-day move when it is &ge; 5 bp: RED bear steepening (10Y up more), BLUE bull steepening, BLACK flattening"),
+    c("02 Rates", "TLT 20d", "BLUE &gt; +1%, RED &lt; &minus;1%"),
+    c("02 Rates", "TIP 20d", "Real-yield proxy, shown only when FRED is unavailable: BLUE &gt; +0.5%, RED &lt; &minus;0.5%"),
+    c("02 Rates", "10Y real yield", "FRED DFII10 (10-year TIPS): BLUE &lt; 1.5%, BLACK 1.5&ndash;2.5%, RED &ge; 2.5%"),
+    c("02 Rates", "10Y breakeven", "FRED T10YIE = 10Y nominal &minus; 10Y TIPS: BLACK &lt; 1.8% (deflation scare), BLUE 1.8&ndash;2.6%, RED &ge; 2.6%"),
+    c("02 Rates", "10Y term premium", "FRED THREEFYTP10 (Kim-Wright model, about one week lag): BLUE &lt; 0.5%, BLACK 0.5&ndash;1.0%, RED &ge; 1.0%"),
+    c("02 Rates", "10Y move driver", "10Y change (20 sessions and since 31 Dec) = &Delta;breakeven + &Delta;term premium + &Delta;real path, real path = real yield &minus; term premium, on the last date all four series share. Driver = the part contributing most in the direction of the move (none below 10 bp). RED rising 10Y led by term premium, BLUE falling 10Y, BLACK otherwise"),
+    c("02 Rates", "2Y/10Y spread", "FRED DGS10 &minus; DGS2; level and 20-day shape coloured as the 3M/10Y spread"),
+    c("02 Rates", "Policy priced", "FRED DGS2 &minus; DFF (effective fed funds), a rough measure of the policy change priced over about a year: BLUE &lt; &minus;0.25 cuts priced, BLACK on hold, RED &gt; +0.25 hikes priced"),
+    c("03 Breadth", "% S&amp;P 500 above MA50", "Constituents from Wikipedia, each stock's close vs its 50-day average. DARKRED &lt; 20, RED 20&ndash;35, BLACK 35&ndash;50, BLUE 50&ndash;75, BLACK &gt; 75. Absolute measure, unlike the equal-weight / S&amp;P ratio used in the scenarios"),
+    c("03 Breadth", "SPY vs MA20 / MA50", "BLUE above both, RED below both"),
+    c("04 Dollar + commodities", "DXY, USO, GLD, XLE", "Position vs MA20 and 20-day return; DXY BLUE &lt; +1%, RED &gt; +3%")))
 }
 
 md_panels <- function() {
@@ -219,7 +225,7 @@ md_panels <- function() {
     "The two curve spreads subtract fixed contracts too and are shown in dollars per barrel, changes in dollars; the contracts move up one month after each expiry.</p>",
     "<p><b>Missing closes.</b> Yahoo can return a session's bar before its close is filled in (08 Oct 2026, 09:00: 35 European and Asian symbols for 07 Oct). ",
     "Symbols whose latest weekday bar has no close are re-fetched once; those still empty use their previous close, are flagged in their panel row and the last-session strip, ",
-    "and listed in an amber banner with the scenario inputs they affect.</p>",
+    "and listed in an black banner with the scenario inputs they affect.</p>",
     "<p><b>10 sector map.</b> Each correlation group is the equal-weight index of its members (mean daily return, compounded; a day counts when at least half trade). ",
     "RS ratio = 100 &times; (group / S&amp;P 500) / its 50-day average; RS mom = 10-day change of RS ratio. ",
     "Rotation: Leading (ratio &ge; 100, mom &ge; 0), Weakening (&ge; 100, &lt; 0), Improving (&lt; 100, &ge; 0), Lagging (&lt; 100, &lt; 0). ",

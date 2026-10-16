@@ -94,9 +94,25 @@ analyze_vix <- function(raw, vx = NULL) {
 }
 
 # ── Rates ────────────────────────────────────────────────────────────────────
-analyze_rates <- function(raw) {
+#' Curve shape from the 20-day moves of the long and the short yield (percentage points).
+#' @return list(text, zone): zone NA when the spread moved less than 5 bp (level colour stays)
+curve_shape <- function(d_long, d_short, short_lbl) {
+  d_sp <- d_long - d_short; d_lvl <- (d_long + d_short) / 2
+  moves <- sprintf("20d: 10Y %+.2f, %s %+.2f", d_long, short_lbl, d_short)
+  if (abs(d_sp) < 0.05) return(list(text = paste0("Shape stable | ", moves), zone = NA_character_))
+  kind <- paste(if (d_lvl > 0) "Bear" else "Bull", if (d_sp > 0) "steepening" else "flattening")
+  why  <- switch(kind,
+    "Bear steepening"  = "long end selling off: term premium / bond stress",
+    "Bull steepening"  = "short end falling: easing priced",
+    "Bear flattening"  = "short end rising: tightening priced",
+    "Bull flattening"  = "long end rallying: growth scare / haven bid")
+  list(text = sprintf("%s — %s | %s", kind, why, moves),
+       zone = switch(kind, "Bear steepening" = "RED", "Bull steepening" = "GREEN", "ORANGE"))
+}
+
+analyze_rates <- function(raw, fred = NULL) {
   y10 <- last_close(raw, "^TNX")
-  y2  <- last_close(raw, "^IRX")
+  y3m <- last_close(raw, "^IRX")
   y30 <- last_close(raw, "^TYX")
   y10_prev <- prev_close(raw, "^TNX")
   y30_prev <- prev_close(raw, "^TYX")
@@ -110,28 +126,16 @@ analyze_rates <- function(raw) {
   # 3M/10Y curve (^IRX is the 13-week bill: Yahoo has no 2Y). The level says
   # little about the cause; the 20-day move does: steepening vs flattening, and
   # bear (yields rising on average) vs bull (yields falling).
-  sp       <- if (!is.na(y2) && !is.na(y10)) y10 - y2 else NA
+  sp       <- if (!is.na(y3m) && !is.na(y10)) y10 - y3m else NA
   sp_zone  <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0), c("DARKRED","RED","ORANGE","GREEN","GREEN")) else "ORANGE"
   sp_label <- if (!is.na(sp)) zone(sp, c(-0.5,0,0.25,1.0),
     c("Deep inversion","Mild inversion","Flat","Normal slope","Steep slope")) else "n/a"
   sp_shape <- "n/a"
-  y10_20d <- prev_close(raw, "^TNX", 20); y2_20d <- prev_close(raw, "^IRX", 20)
-  if (!is.na(sp) && !is.na(y10_20d) && !is.na(y2_20d)) {
-    d10 <- y10 - y10_20d; d2 <- y2 - y2_20d
-    d_sp <- d10 - d2; d_lvl <- (d10 + d2) / 2
-    moves <- sprintf("20d: 10Y %+.2f, 3M %+.2f", d10, d2)
-    if (abs(d_sp) < 0.05) {
-      sp_shape <- paste0("Shape stable | ", moves)
-    } else {
-      kind <- paste(if (d_lvl > 0) "Bear" else "Bull", if (d_sp > 0) "steepening" else "flattening")
-      why  <- switch(kind,
-        "Bear steepening"  = "long end selling off: term premium / bond stress",
-        "Bull steepening"  = "short end falling: easing priced",
-        "Bear flattening"  = "short end rising: tightening priced",
-        "Bull flattening"  = "long end rallying: growth scare / haven bid")
-      sp_zone  <- switch(kind, "Bear steepening" = "RED", "Bull steepening" = "GREEN", "ORANGE")
-      sp_shape <- sprintf("%s — %s | %s", kind, why, moves)
-    }
+  y10_20d <- prev_close(raw, "^TNX", 20); y3m_20d <- prev_close(raw, "^IRX", 20)
+  if (!is.na(sp) && !is.na(y10_20d) && !is.na(y3m_20d)) {
+    cs <- curve_shape(y10 - y10_20d, y3m - y3m_20d, "3M")
+    sp_shape <- cs$text
+    if (!is.na(cs$zone)) sp_zone <- cs$zone
   }
 
   tlt_s <- get_series(raw, "TLT", 30); tlt_pct <- NA; tlt_zone <- "ORANGE"; tlt_n <- ""
@@ -153,11 +157,98 @@ analyze_rates <- function(raw) {
     }
   }
 
-  list(y10 = y10, y2 = y2, y30 = y30, y10_prev = y10_prev, y30_prev = y30_prev,
-       y10_zone = y10_zone, y10_label = y10_label, y30_zone = y30_zone,
-       sp = sp, sp_zone = sp_zone, sp_label = sp_label, sp_shape = sp_shape,
-       tlt_pct = tlt_pct, tlt_zone = tlt_zone, tlt_n = tlt_n,
-       tips_pct = tips_pct, tips_zone = tips_zone, tips_n = tips_n)
+  c(list(y10 = y10, y3m = y3m, y30 = y30, y10_prev = y10_prev, y30_prev = y30_prev,
+         y10_zone = y10_zone, y10_label = y10_label, y30_zone = y30_zone,
+         sp = sp, sp_zone = sp_zone, sp_label = sp_label, sp_shape = sp_shape,
+         tlt_pct = tlt_pct, tlt_zone = tlt_zone, tlt_n = tlt_n,
+         tips_pct = tips_pct, tips_zone = tips_zone, tips_n = tips_n),
+    analyze_fred_rates(fred))
+}
+
+# ── 10-year yield decomposition, 2Y, policy pricing (FRED) ─────────────────
+# 10Y nominal = real (TIPS, DFII10) + breakeven (T10YIE = DGS10 - DFII10, exact).
+# The real yield splits further into the Kim-Wright term premium (THREEFYTP10, a model
+# estimate published with about a week's lag) and the rest, the expected path of real
+# short rates. Changes therefore add up: d10Y = d breakeven + d term premium + d real path.
+# 2Y minus effective fed funds approximates the policy change priced over about a year.
+
+#' Value of a FRED series on its last date at or before `d`
+fred_at <- function(fred, id, d) {
+  s <- fred[fred$ticker == id & fred$date <= d, ]
+  if (!nrow(s)) NA_real_ else s$Close[which.max(s$date)]
+}
+
+#' Last date at or before `d` on which every series in `ids` has a value
+fred_common_date <- function(fred, ids, d = Sys.Date()) {
+  ds <- Reduce(intersect, lapply(ids, function(id) as.numeric(fred$date[fred$ticker == id & fred$date <= d])))
+  if (!length(ds)) as.Date(NA) else as.Date(max(ds))
+}
+
+#' Date `n` observations before `d` among the dates every series in `ids` shares
+fred_back_date <- function(fred, ids, d, n = 20) {
+  ds <- sort(Reduce(intersect, lapply(ids, function(id) as.numeric(fred$date[fred$ticker == id & fred$date <= d]))))
+  if (length(ds) <= n) as.Date(NA) else as.Date(ds[length(ds) - n])
+}
+
+analyze_fred_rates <- function(fred) {
+  empty <- list(fred_ok = FALSE)
+  if (is.null(fred) || !nrow(fred)) return(empty)
+  ytd0 <- as.Date(sprintf("%s-12-31", as.integer(format(Sys.Date(), "%Y")) - 1))
+  # Level and changes of one series (or a difference of two) at its own last date
+  lvl <- function(id, minus = NULL) {
+    ids <- c(id, minus)
+    d <- fred_common_date(fred, ids)
+    if (is.na(d)) return(list(v = NA_real_, d = d, c20 = NA_real_, ytd = NA_real_))
+    val <- function(x) fred_at(fred, id, x) - (if (is.null(minus)) 0 else fred_at(fred, minus, x))
+    d20 <- fred_back_date(fred, ids, d); y0 <- fred_common_date(fred, ids, ytd0)
+    list(v = val(d), d = d, c20 = if (is.na(d20)) NA_real_ else val(d) - val(d20),
+         ytd = if (is.na(y0)) NA_real_ else val(d) - val(y0))
+  }
+  real <- lvl("DFII10"); be <- lvl("T10YIE"); tp <- lvl("THREEFYTP10")
+  y2 <- lvl("DGS2"); s210 <- lvl("DGS10", "DGS2"); pol <- lvl("DGS2", "DFF")
+
+  # Decomposition on the last date all four series share (the term premium lags)
+  ids <- c("DGS10", "DFII10", "T10YIE", "THREEFYTP10")
+  dd <- fred_common_date(fred, ids)
+  split_at <- function(d0) {
+    if (is.na(d0) || is.na(dd)) return(NULL)
+    f <- function(id) fred_at(fred, id, dd) - fred_at(fred, id, d0)
+    c(nominal = f("DGS10"), breakeven = f("T10YIE"), term_premium = f("THREEFYTP10"),
+      real_path = f("DFII10") - f("THREEFYTP10"))
+  }
+  split20 <- split_at(fred_back_date(fred, ids, dd)); split_ytd <- split_at(fred_common_date(fred, ids, ytd0))
+  driver <- function(s) {
+    if (is.null(s) || any(is.na(s))) return(NA_character_)
+    if (abs(s[["nominal"]]) < 0.10) return("little change")
+    p <- s[c("breakeven", "term_premium", "real_path")]
+    k <- names(p)[which.max(p * sign(s[["nominal"]]))]   # largest part moving with the 10Y
+    c(breakeven = "inflation expectations", term_premium = "term premium", real_path = "expected real policy path")[[k]]
+  }
+  # Rising 10Y led by term premium = bond rout tell; led by breakeven = inflation scare
+  split_zone <- function(s, drv) {
+    if (is.na(drv) || drv == "little change") return("ORANGE")
+    if (s[["nominal"]] < 0) return("GREEN")
+    if (drv == "term premium") "RED" else "ORANGE"
+  }
+
+  real$zone <- zone(real$v, c(1.5, 2.5), c("GREEN", "ORANGE", "RED"))
+  be$zone   <- zone(be$v, c(1.8, 2.6), c("ORANGE", "GREEN", "RED"))
+  tp$zone   <- zone(tp$v, c(0.5, 1.0), c("GREEN", "ORANGE", "RED"))
+  s210$zone  <- zone(s210$v, c(-0.5, 0, 0.25), c("DARKRED", "RED", "ORANGE", "GREEN"))
+  s210$label <- zone(s210$v, c(-0.5, 0, 0.25), c("Deep inversion", "Mild inversion", "Flat", "Normal slope"))
+  y10f <- lvl("DGS10")
+  s210$shape <- if (is.na(y10f$c20) || is.na(y2$c20)) "n/a" else {
+    cs <- curve_shape(y10f$c20, y2$c20, "2Y")
+    if (!is.na(cs$zone)) s210$zone <- cs$zone
+    cs$text
+  }
+  pol$zone  <- zone(pol$v, c(-0.25, 0.25), c("GREEN", "ORANGE", "RED"))
+  pol$label <- zone(pol$v, c(-0.25, 0.25), c("Cuts priced", "On hold", "Hikes priced"))
+
+  list(fred_ok = TRUE, real = real, be = be, tp = tp, y2 = y2, s210 = s210, pol = pol,
+       split_date = dd, split20 = split20, split_ytd = split_ytd,
+       driver20 = driver(split20), driver_ytd = driver(split_ytd),
+       split_zone = split_zone(split20, driver(split20)))
 }
 
 # ── Dollar + Commodities ────────────────────────────────────────────────────
@@ -275,7 +366,7 @@ build_macro_env <- function(vix_res, rates_res, breadth, commodities_res) {
     vix_stress    = !is.na(vix_res$vix)           && vix_res$vix > 25,
     backwardation = !is.na(vix_res$vix9d)          && !is.na(vix_res$vix3m) && vix_res$vix9d > vix_res$vix3m,
     rates_high    = !is.na(rates_res$y10)          && rates_res$y10 > 4.5,
-    curve_inv     = !is.na(rates_res$y2)           && !is.na(rates_res$y10) && (rates_res$y10 - rates_res$y2) < 0,
+    curve_inv     = !is.na(rates_res$y3m)          && !is.na(rates_res$y10) && (rates_res$y10 - rates_res$y3m) < 0,
     dxy_strong    = !is.na(commodities_res$dxy_ret20) && commodities_res$dxy_ret20 > 2,
     dxy_weak      = !is.na(commodities_res$dxy_ret20) && commodities_res$dxy_ret20 < -2,
     oil_surging   = !is.na(commodities_res$uso_ret20) && commodities_res$uso_ret20 > 10,

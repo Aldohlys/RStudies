@@ -269,3 +269,27 @@ sectors_html <- function(sx) {
          "Verdict: LONG = trend UP, rotation Leading or Improving, drivers &ge; 0. SHORT = trend DOWN, rotation Lagging or Weakening, drivers &le; 0. ",
          "AVOID = trend MIXED, or drivers &le; &minus;0.5 against an UP trend (&ge; +0.5 against a DOWN trend). WATCH = all other cases.</div>")
 }
+
+#' Year-to-date band per asset: grey bar = lowest to highest return since 31 Dec, dot = today
+ytd_band_html <- function(y) {
+  if (is.null(y) || !nrow(y)) return("")
+  lo <- min(0, y$low); hi <- max(0, y$high); pad <- (hi - lo) * 0.03; lo <- lo - pad; hi <- hi + pad
+  x <- function(v) 100 * (v - lo) / (hi - lo)
+  rows <- vapply(seq_len(nrow(y)), function(i) {
+    r <- y[i, ]
+    sprintf(paste0("<tr><td class='ytd-name'>%s</td><td class='ytd-cell'><div class='ytd-track'>",
+                   "<div class='ytd-zero' style='left:%.1f%%'></div>",
+                   "<div class='ytd-range' style='left:%.1f%%;width:%.1f%%'></div>",
+                   "<div class='ytd-dot %s' style='left:%.1f%%'></div></div></td>",
+                   "<td class='ytd-num %s'>%+.1f%%</td><td class='ytd-num ytd-dim'>%+.1f / %+.1f</td></tr>"),
+            esc(r$name), x(0), x(r$low), max(0.4, x(r$high) - x(r$low)),
+            if (r$cur >= 0) "ytd-up" else "ytd-dn", x(r$cur),
+            if (r$cur >= 0) "ytd-up" else "ytd-dn", r$cur, r$low, r$high)
+  }, "")
+  paste0("<div class='im-h3'>Year to date &mdash; range since 31 Dec and where each asset stands now</div>",
+         "<table class='ytd-table'><tr class='im-head'><td></td><td></td><td>YTD</td><td>Low / high</td></tr>",
+         paste(rows, collapse = ""), "</table>",
+         "<div class='im-legend'>Grey bar = lowest to highest return reached since the last close of last year; dot = today; ",
+         "vertical line = 0. Price returns in each asset's own currency (EEM, LQD, HYG in USD); gold and Brent on the front-month future (not roll-adjusted); bond ETFs fall when yields rise. ",
+         "A dot near the left end of its bar = the asset gave back the year's gains.</div>")
+}

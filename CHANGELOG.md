@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-16] - macro_context: 10-year yield decomposition, 2Y, policy pricing, year-to-date band
+
+### Added
+- `fetch.R::fetch_fred()`: daily FRED series from the public graph CSV (no API key), from 1 Dec of the previous year, cached daily in DB table `macro_fred_cache`: DGS2, DGS10, DFII10, T10YIE, THREEFYTP10, DFF.
+- Section 02 Rates (`analyze.R::analyze_fred_rates`, `render_html.R::rates_fred_rows`), each with 20-session and year-to-date changes:
+  - 10Y real yield (DFII10), 10Y breakeven (T10YIE), 10Y term premium (Kim-Wright, about one week lag);
+  - 10Y move driver: 10Y change = breakeven + term premium + real path (real yield minus term premium), over 20 sessions and since 31 Dec, on the last date all four series share; RED when a rising 10Y is led by term premium;
+  - 2Y yield and 2Y/10Y spread with the same bear/bull steepening read as 3M/10Y (`curve_shape()`, factored out);
+  - policy priced = 2Y minus effective fed funds (cuts / on hold / hikes, ±0.25).
+- Section 09: year-to-date band (`intermarket.R::ytd_ranges`, `intermarket_render.R::ytd_band_html`) for 11 assets: low, high and current return since the last close of last year. Futures on the front month, not roll-adjusted (Brent 2026: roll-adjusted +123% vs front-month +74%).
+- Methodology M5 rows for the new indicators.
+
+### Changed
+- TIP 20d row shown only when FRED is unavailable.
+- `analyze_rates()` result field `y2` renamed `y3m` (it always was the 13-week bill); methodology now states `curve_inv` = 10Y − 3M bill, as the code computes it (it said 10Y − 2Y).
+- No change to the regime signals, the bias or the DB exports.
+
 ## [2026-10-12] - macro_context: summary band, cross-asset heatmap, scenario map
 
 ### Added
