@@ -155,8 +155,12 @@ scenario_map_svg <- function(matches) {
     if (n >= 2 && length(m$hist_move) == n) {
       k <- max(1, n - 5):n
       ok <- !is.na(m$hist[k]) & !is.na(m$hist_move[k])
-      if (sum(ok) >= 2) tail_svg <- sprintf("<polyline class='ck-m-tail' points='%s'/>",
-        paste(sprintf("%.1f,%.1f", px(m$hist[k][ok]), py(m$hist_move[k][ok])), collapse = " "))
+      if (sum(ok) >= 2) {
+        tx <- px(m$hist[k][ok]); ty <- py(m$hist_move[k][ok])
+        # Hollow dot on the oldest point: the trail runs from it to the marker (today)
+        tail_svg <- sprintf("<polyline class='ck-m-tail' points='%s'/><circle class='ck-m-start' cx='%.1f' cy='%.1f' r='2.5'/>",
+          paste(sprintf("%.1f,%.1f", tx, ty), collapse = " "), tx[1], ty[1])
+      }
     }
     st <- tolower(m$age$status)
     sprintf(paste0("<g class='ck-m-pt ck-s-%s'>%s<circle cx='%.1f' cy='%.1f' r='9'/>",
