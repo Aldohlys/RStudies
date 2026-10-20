@@ -492,6 +492,9 @@ bot_read_row <- function(row, direction, bench_ret20, ibkr_fill = FALSE, rotatio
 
     em10_lo = em_lo, em10_hi = em_hi,
 
+    ema21 = round(.br_n(gi$ema21), 4),
+    ema21_disp_pct = round(.br_pct(px - .br_n(gi$ema21), .br_n(gi$ema21)), 3),
+    ema21_disp_atr = if (is.finite(atr) && atr > 0) round((px - .br_n(gi$ema21)) / atr, 2) else NA_real_,
     ema50 = round(.br_n(gi$ema50), 4),
     ema50_disp_pct = round(.br_pct(px - .br_n(gi$ema50), .br_n(gi$ema50)), 3),
     ema50_slope = round(.br_n(gi$ema50_slope), 3),
@@ -556,6 +559,7 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
   "target","target_source","target_agree","stop","stop_source","stop_agree",
   "gap_p95_pct","gap_vs_stop",
   "level_basis","asym","asym_fib","sess_target_p90","sess_target_p75","em10_lo","em10_hi",
+  "ema21","ema21_disp_pct","ema21_disp_atr",
   "ema50","ema50_disp_pct","ema50_slope","w_ema50","w_ema50_disp_pct",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","group","grp_rs","grp_rank","adx10",
@@ -564,9 +568,9 @@ BOT_READ_COLS <- c("date","bar_lag","bar_source","name","yahoo","direction","tra
 # Default output: the few columns read every day. BOT_daily is a daily sheet,
 # so it stays short; --detail emits every field.
 BOT_READ_DEFAULT <- c("name","direction","px","atr","tradable","asym",
-  "target","target_source","stop","sess_target_p90","sess_target_p75","trend_state","zone_state")
+  "target","target_source","stop","sess_target_p90","sess_target_p75","trend_state","zone_state","ema21_disp_atr")
 BOT_READ_DETAIL_ONLY <- c("yahoo","atr_pct","zz_th","n_pivots","rng_pct_20","rng_dyn",
   "res_first","res_dist_pct","sup_first","sup_dist_pct",
-  "fib_ret_382","fib_ret_500","em10_lo","ema50","ema50_slope","w_ema50",
+  "fib_ret_382","fib_ret_500","em10_lo","ema21","ema21_disp_pct","ema50","ema50_slope","w_ema50",
   "d_squeeze","w_squeeze","d_vol_decline","w_vol_decline","d_vol_surge","w_vol_surge",
   "obv_slope","obv_slope_days","rsi14","rsi_slope","updn_ratio","ret20","rs20","rs_bench","group","grp_rs","grp_rank","adx10")

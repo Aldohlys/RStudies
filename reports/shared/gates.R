@@ -37,6 +37,7 @@ gate_inputs <- function(last, rs20 = NA_real_) {
     rs20           = num(rs20),
     adx10          = num(ll$adx10),
     rng_pct_20     = num(ll$rng_pct),
+    ema21          = num(ll$ema21),
     ema50          = num(ll$ma50),
     ema50_slope    = num(ll$ma50_slope))
 }

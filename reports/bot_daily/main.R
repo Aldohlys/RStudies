@@ -9,7 +9,7 @@
 #   Rscript reports/bot_daily/main.R [--detail] [--direction long|short|both]
 #                                    [--out PATH.xlsx] [SYM ...]
 #
-# Sheet Data holds the 13 columns read daily (BOT_READ_DEFAULT); --detail puts
+# Sheet Data holds the 14 columns read daily (BOT_READ_DEFAULT); --detail puts
 # every field there too. Sheet Detail always holds every field.
 # The per-name read itself lives in shared/bot_read.R, shared with /analyze.
 # Naming an explicit symbol list bypasses universe membership.

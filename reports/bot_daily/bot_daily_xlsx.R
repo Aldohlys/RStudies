@@ -202,6 +202,12 @@ BOT_DAILY_LEGEND <- data.frame(stringsAsFactors = FALSE, check.names = FALSE, ma
   "Large up-move of the name over 10 sessions: the 90th percentile, same construction. px x em10_hi / 100 is the move in price that caps the target.",
 
   # Moving averages
+  "ema21", "price",
+  "21-day exponential moving average of the close.",
+  "ema21_disp_pct", "%",
+  "Distance of px from ema21, in percent of ema21. Positive = above. Not comparable across names: the same move is a larger percent for a volatile name; read ema21_disp_atr.",
+  "ema21_disp_atr", "ATR multiples",
+  "Distance of px from ema21, in multiples of atr. Positive = above, not mirrored for a short. Comparable across names, unlike ema21_disp_pct.",
   "ema50", "price",
   "50-day exponential moving average of the close.",
   "ema50_disp_pct", "%",
