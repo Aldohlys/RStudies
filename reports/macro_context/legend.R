@@ -71,7 +71,10 @@ LEGEND_GLOSSARY <- list(
     c("Base rate", "In M7: the share of all Fridays on which the stated move happened; the comparison point for a condition's hit rate.")),
   "Events (section 08)" = list(
     c("CPI, PMI, claims, &hellip;", "Economic releases: consumer price index, purchasing managers' index (flash = first estimate), weekly unemployment claims."),
-    c("CRITICAL / HIGH / MODERATE", "Expected market impact of a calendar event, set by keyword rules in events.R (e.g. central-bank decisions HIGH, US elections CRITICAL).")),
+    c("CRITICAL / HIGH / MODERATE", "Expected market impact of a calendar event, set by keyword rules in events.R (e.g. central-bank decisions HIGH, US elections CRITICAL)."),
+    c("FOMC decision row", "Scheduled Fed decision (last day of the meeting, federalreserve.gov list in event_history.R) within the next 28 days, with what followed past decisions (event_study.py, 149 decisions 2008&ndash;2026). Listed only: it does not change the scenario scores."),
+    c("Mag 7 earnings rows", "NVDA, MSFT, AAPL, AMZN, GOOGL, META, TSLA announcement dates within the next 28 days, from Yahoo (may be an estimate until the company confirms). Reaction session = next session when announced after the close. With what followed past reactions (event_study.py). Listed only: no effect on the scenario scores."),
+    c("FOMC-made (tiles)", "Tag on a tile with |z| &ge; 1 when the FOMC decision session and the next session made at least 50% of the 1-month move. The next session is included because gold and oil settle before the 14:00 ET statement. The tile tooltip gives how such moves continued in 2008&ndash;2026 (event_study.py: 20-session z with a 252-session SD, close to but not the same as the tile's 21-session z with a 120-session SD).")),
   "COT positioning (section 11)" = list(
     c("COT", "CFTC Commitments of Traders report: futures positions by trader group, as of each Tuesday, published Friday."),
     c("Managed money / Leveraged funds / Asset managers", "Trader groups of the CFTC reports: managed money (commodities, disaggregated report); leveraged funds and asset managers (financial futures, TFF report). USD uses leveraged funds + asset managers net."),

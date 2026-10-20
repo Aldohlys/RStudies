@@ -113,6 +113,12 @@ tile_html <- function(t, by_sym, z1, breadth = NULL, bh = NULL, vix = NULL) {
   }
   tip <- sprintf("1-month move z-score %s. Colour: blue = the move supports risk and liquidity, red = it drains them, black = large move whose reading depends on the scenario (|z| &ge; 1).",
                  if (is.na(z)) "n/a" else sprintf("%+.2f", z))
+  fn <- if (t$sym == "S5FI" || is.null(by_sym[[t$sym]])) NULL else
+    fomc_tile_note(t$fp, by_sym[[t$sym]]$spark$date, by_sym[[t$sym]]$spark$close, by_sym[[t$sym]]$kind, z)
+  if (!is.null(fn)) {
+    sub <- sprintf("%s &middot; <b>%s</b>", sub, fn$tag)
+    tip <- paste(tip, gsub("'", "&#39;", fn$tip))
+  }
   sprintf(paste0("<div class='ck-tile %s' title='%s'><div class='ck-t-label'>%s</div>",
                  "<div class='ck-t-val'>%s<span class='ck-t-z'>%s</span></div><div class='ck-t-sub'>%s</div>%s</div>"),
           tile_class(z, t$tone), tip, esc(t$label), value, zt, sub, spark)

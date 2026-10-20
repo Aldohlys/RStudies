@@ -25,13 +25,14 @@ IMPACT_RULES <- list(
       "Advance GDP"
     ),
     action_map = list(
-      "Non-Farm"   = "No new positions before 8:30 ET. Expect IV crush post-release. Widen stops or flatten short-dated.",
-      "Interest Rate Decision" = "Fed decision — expect vol spike. No new positions until statement + press conference digested.",
-      "Interest Rate Decisions" = "Central bank decision day — expect vol spike across affected currencies.",
-      "FOMC"       = "FOMC minutes can shift rate expectations — watch for hawkish/dovish surprises.",
-      "CPI"        = "Key inflation print — large surprise moves broad market. No directional bets before release.",
-      "ISM Manufacturing PMI" = "First hard data of the month — sub-50 = contraction risk, moves broad market.",
-      "Advance GDP" = "First GDP estimate — large miss can reprice growth expectations and move rates."
+      "Non-Farm"   = "US payrolls and unemployment rate, 8:30 ET. Not tested.",
+      "FOMC.*Minutes|Minutes.*FOMC" = "FOMC minutes: not tested (the event study covers decisions only).",
+      "Interest Rate Decision" = "What followed historically: see the 'FOMC decision' row.",
+      "Interest Rate Decisions" = "Several central-bank decisions on the same day. Not tested.",
+      "FOMC"       = "What followed historically: see the 'FOMC decision' row.",
+      "CPI"        = "US consumer prices, 8:30 ET. Not tested.",
+      "ISM Manufacturing PMI" = "US manufacturing survey (ISM), first major release of the month; below 50 = contraction. Not tested.",
+      "Advance GDP" = "First estimate of US quarterly GDP. Not tested."
     )
   ),
   HIGH = list(
@@ -63,26 +64,26 @@ IMPACT_RULES <- list(
       "German Prelim GDP"
     ),
     action_map = list(
-      "ADP"        = "NFP preview — watch for large surprise, do not trade directionally on ADP alone.",
-      "ISM Services" = "Services > Manufacturing for GDP weight — watch for divergence.",
-      "PCE"        = "Fed's preferred inflation gauge — surprise moves rate expectations.",
-      "PPI"        = "Producer prices feed into CPI — watch for upstream inflation pressure.",
-      "Unemployment Rate" = "Labor market gauge — rising rate can shift Fed stance.",
-      "Hourly Earnings" = "Wage inflation proxy — hot print = hawkish Fed expectations.",
-      "Consumer Confidence" = "Sentiment gauge — large miss can move equities and USD.",
-      "Consumer Sentiment" = "UoM sentiment — watch expectations component for inflation outlook.",
-      "Inflation Expectations" = "Inflation expectations — Fed watches this closely, surprise moves rates.",
-      "Empire State" = "Regional manufacturing gauge — first data point of the month.",
-      "Flash.*PMI"  = "Flash PMI — early growth signal, moves on large surprise.",
-      "GDP"        = "GDP release — watch for revisions vs consensus.",
-      "Retail Sales" = "Consumer spending gauge — drives 70% of GDP.",
-      "Durable Goods" = "Capex proxy — watch core (ex-transport) for business investment signal.",
-      "Interest Rate" = "Central bank decision — expect vol in affected currency.",
-      "German.*CPI" = "Sets tone for Eurozone CPI — directional for EUR.",
-      "CPI Flash"  = "Eurozone flash CPI — key ECB input, watch core vs headline.",
-      "ZEW"        = "German economic sentiment — forward-looking indicator for EUR.",
-      "Bank Holiday.*USD" = "US market holiday — thin liquidity, wider spreads.",
-      "German Prelim GDP" = "Eurozone growth signal — watch for contraction risk."
+      "ADP"        = "Private payrolls (ADP), two days before the official payrolls. Not tested.",
+      "ISM Services" = "US services survey (ISM); services weigh more in GDP than manufacturing. Not tested.",
+      "PCE"        = "US personal consumption prices, the inflation measure the Fed targets. Not tested.",
+      "PPI"        = "US producer prices, an upstream input to consumer prices. Not tested.",
+      "Unemployment Rate" = "US unemployment rate. Not tested.",
+      "Hourly Earnings" = "US average hourly earnings (wage growth). Not tested.",
+      "Consumer Confidence" = "Conference Board consumer confidence survey. Not tested.",
+      "Consumer Sentiment" = "University of Michigan consumer sentiment survey. Not tested.",
+      "Inflation Expectations" = "University of Michigan household inflation expectations. Not tested.",
+      "Empire State" = "New York Fed regional manufacturing survey. Not tested.",
+      "Flash.*PMI"  = "Flash (first-estimate) purchasing managers' survey. Not tested.",
+      "GDP"        = "GDP release (later estimate or price index). Not tested.",
+      "Retail Sales" = "US retail sales; consumer spending is about 70% of GDP. Not tested.",
+      "Durable Goods" = "US durable goods orders; the ex-transport figure is a proxy for business investment. Not tested.",
+      "Interest Rate" = "Non-US central-bank rate decision. Not tested.",
+      "German.*CPI" = "German preliminary consumer prices, released before the eurozone figure. Not tested.",
+      "CPI Flash"  = "Eurozone flash consumer prices, an ECB input. Not tested.",
+      "ZEW"        = "ZEW survey of German financial analysts. Not tested.",
+      "Bank Holiday.*USD" = "US market holiday. Not tested.",
+      "German Prelim GDP" = "German preliminary GDP. Not tested."
     )
   ),
   MODERATE = list(
@@ -107,21 +108,21 @@ IMPACT_RULES <- list(
       "OPEC"
     ),
     action_map = list(
-      "Unemployment Claims" = "Weekly labor pulse — watch deviation from 4-week trend.",
-      "Home Sales"    = "Housing activity gauge — watch for trend change.",
-      "Construction"  = "Construction activity — secondary indicator.",
-      "Halifax"       = "UK house prices — secondary for FX.",
-      "Final.*PMI"    = "Final PMI — rarely revised, low impact unless large change from flash.",
-      "Claimant Count" = "UK labor data — watch for trend change.",
-      "Earnings Index" = "UK wage growth — feeds into BoE rate expectations.",
-      "GDP m/m"       = "UK monthly GDP — watch for contraction signal.",
-      "CPI.*GBP"      = "UK inflation — BoE rate expectations driver.",
-      "Retail Sales.*GBP" = "UK consumer spending — secondary for GBP.",
-      "Revised UoM"   = "Revised reading — rarely moves market unless large revision.",
-      "Richmond"      = "Regional manufacturing — secondary indicator.",
-      "Federal Budget" = "Budget balance — minimal direct market impact.",
-      "Employment Cost" = "Labor cost — feeds into inflation outlook.",
-      "OPEC"          = "OPEC meeting — watch for production quota changes, moves oil."
+      "Unemployment Claims" = "US weekly initial jobless claims. Not tested.",
+      "Home Sales"    = "US home sales. Not tested.",
+      "Construction"  = "Construction purchasing managers' survey. Not tested.",
+      "Halifax"       = "UK house prices (Halifax). Not tested.",
+      "Final.*PMI"    = "Final purchasing managers' survey (revision of the flash figure). Not tested.",
+      "Claimant Count" = "UK jobless claims. Not tested.",
+      "Earnings Index" = "UK average earnings (wage growth). Not tested.",
+      "GDP m/m"       = "UK monthly GDP. Not tested.",
+      "CPI.*GBP"      = "UK consumer prices. Not tested.",
+      "Retail Sales.*GBP" = "UK retail sales. Not tested.",
+      "Revised UoM"   = "Revised University of Michigan sentiment and inflation expectations. Not tested.",
+      "Richmond"      = "Richmond Fed regional manufacturing survey. Not tested.",
+      "Federal Budget" = "US monthly federal budget balance. Not tested.",
+      "Employment Cost" = "US employment cost index (wages and benefits). Not tested.",
+      "OPEC"          = "OPEC meeting on production quotas. Not tested."
     )
   )
 )
@@ -134,18 +135,18 @@ SKIP_PATTERNS <- c(
 )
 
 # ── Scheduled political events (not in the economic calendar) ────────────────
-# Shown from `lead` days before the date, so positions can be sized ahead of them.
+# Shown from `lead` days before the date.
 # boost = FALSE: listed in the table but no catalyst boost to the US regime scores.
 SCHEDULED_EVENTS <- list(
   list(date = as.Date("2026-10-04"), event = "Brazil general election, first round (BRL)", impact = "HIGH",
        lead = 30, boost = FALSE,
-       action = "Binary for Bovespa, BRL and EWZ: the gap comes Monday. Runoff Oct-25 if no candidate tops 50%. Size Brazil exposure for either result; no new positions into the weekend."),
+       action = "Sunday vote; Bovespa, BRL and EWZ first trade on the result on Monday. Runoff Oct-25 if no candidate tops 50%. Not tested."),
   list(date = as.Date("2026-10-25"), event = "Brazil presidential runoff (BRL)", impact = "HIGH",
        lead = 30, boost = FALSE,
-       action = "Binary for Bovespa, BRL and EWZ: the gap comes Monday. Size Brazil exposure for either result; no new positions into the weekend."),
+       action = "Sunday vote; Bovespa, BRL and EWZ first trade on the result on Monday. Not tested."),
   list(date = as.Date("2026-11-03"), event = "US midterm elections (USD)", impact = "CRITICAL",
        lead = 30, boost = TRUE,
-       action = "Control of Congress sets the fiscal path (deficits, issuance, term premium). Index IV is bid into the date and falls after; avoid short-dated options that straddle it.")
+       action = "Control of Congress sets the fiscal path (deficits, Treasury issuance, term premium). Not tested.")
 )
 
 #' Scheduled events whose lead window covers today
@@ -169,7 +170,7 @@ classify_event <- function(event_name) {
     for (pat in rules$patterns) {
       if (grepl(pat, event_name, perl = TRUE)) {
         # Find matching action
-        action <- "Monitor for surprise — adjust positioning if needed."
+        action <- "Not tested."
         for (key in names(rules$action_map)) {
           if (grepl(key, event_name, perl = TRUE)) {
             action <- rules$action_map[[key]]
@@ -255,7 +256,8 @@ parse_calendar_page <- function(month_name, year) {
 
 # ── Main fetch function ──────────────────────────────────────────────────────
 
-#' Fetch upcoming economic events for the next 7 days
+#' Fetch upcoming economic events for the next 7 days, plus the FOMC decision and Mag 7 earnings rows
+#' (event_history.R, next EVENT_LOOKAHEAD days, boost = FALSE)
 #' @param today Date object (default: Sys.Date())
 #' @return List of events in same format as previous hardcoded EVENTS
 fetch_events <- function(today = Sys.Date()) {
@@ -281,7 +283,7 @@ fetch_events <- function(today = Sys.Date()) {
 
   if (length(all_events) == 0) {
     log_warn("No events fetched — events section shows scheduled events only", namespace = "RStudies")
-    return(scheduled_events(today))
+    return(sort_events(c(scheduled_events(today), event_history_rows(today)), today))
   }
 
   # Filter to next 7 days (force C locale for English month parsing)
@@ -298,9 +300,19 @@ fetch_events <- function(today = Sys.Date()) {
   }, all_events)
 
   log_info("Events: {length(all_events)} total parsed, {length(filtered)} in next 7 days", namespace = "RStudies")
-  merged <- c(filtered, scheduled_events(today))
-  ev_dates <- vapply(merged, function(ev) as.numeric(as.Date(paste0(ev$date, "-", year), format = "%b-%d-%Y")), 0)
-  merged[order(ev_dates)]
+  sort_events(c(filtered, scheduled_events(today), event_history_rows(today)), today)
+}
+
+#' Order events by date; rows carrying a Date `d` use it (the 28-day rows can cross the year end)
+sort_events <- function(evs, today = Sys.Date()) {
+  if (!length(evs)) return(evs)
+  old_lc <- Sys.getlocale("LC_TIME")
+  Sys.setlocale("LC_TIME", "C")
+  on.exit(Sys.setlocale("LC_TIME", old_lc), add = TRUE)
+  year <- format(today, "%Y")
+  ev_dates <- vapply(evs, function(ev) if (!is.null(ev[["d"]])) as.numeric(ev[["d"]])
+                     else as.numeric(as.Date(paste0(ev$date, "-", year), format = "%b-%d-%Y")), 0)
+  evs[order(ev_dates)]
 }
 
 # ── Fetch events at source time ──────────────────────────────────────────────
