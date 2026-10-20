@@ -211,6 +211,20 @@ state_drivers_html <- function(m, st, st5, d5) {
           short_date(d5), 100 * s0, 100 * s1, paste(rows, collapse = ""))
 }
 
+#' The scenario on top (highest state, in place) 5 sessions ago when it is no longer one of the two cards:
+#' its "what moved the state" table, so a change of top scenario is explained from both sides
+lost_top_html <- function(matches, st, st5, d5) {
+  n <- length(matches[[1]]$hist)
+  if (n < 6) return("")
+  s5 <- vapply(matches, function(m) if (length(m$hist) == n) m$hist[n - 5] else NA_real_, 0)
+  if (all(is.na(s5)) || max(s5, na.rm = TRUE) < STATE_ACTIVE) return("")
+  j <- which.max(s5)
+  if (j <= 2) return("")
+  m <- matches[[j]]
+  sprintf("<div class='im-card'><div class='im-card-h'><span class='im-card-name'>Lost the top place: %s</span><span class='im-score'>%s</span></div><p class='im-age'>%s Top scenario on %s (state %+.0f%%).</p>%s</div>",
+          esc(m$a$name), score_pair(m), age_badge(m$age$status), short_date(d5), 100 * s5[j], state_drivers_html(m, st, st5, d5))
+}
+
 #' Scenario card. compact = Main tab (status, confirms / ends if, BOT table); full = Detail (all texts)
 scenario_card <- function(m, sectors, rank, compact = FALSE, drivers = "") {
   a <- m$a
@@ -303,6 +317,7 @@ movie_detail_html <- function(movie, matches, sectors, z = NULL, carry = NULL, s
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
     "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1, drivers = state_drivers_html(matches[[1]], st, st5, d5)),
     scenario_card(matches[[2]], sectors, 2, drivers = state_drivers_html(matches[[2]], st, st5, d5)), "</div>",
+    lost_top_html(matches, st, st5, d5),
     scenario_list_html(matches),
     chains_html(z), carry_html(carry),
     "<details class='im-details' open><summary>All scenarios: state and move scores</summary><table>",
