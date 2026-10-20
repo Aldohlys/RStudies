@@ -106,7 +106,7 @@ md_carry <- function() {
       c("WATCH", "yen at the watch level and at least 1 confirmation"))),
     "<p>Check on 2019&ndash;2026 daily data: FIRING on 19 sessions in 6 episodes, all yen-up risk-off events: August 2019, February&ndash;March 2020, ",
     "November 2021, December 2022 (Bank of Japan yield-cap change), 25 July&ndash;7 August 2024 (first fire ten days before the 5 August crash), April 2025. WATCH on 31 sessions.</p>",
-    sprintf("<p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p><p><b>BOT.</b> %s</p>", md_esc(ca$analogs), md_esc(ca$after), md_esc(ca$bot)))
+    sprintf("<p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p><p><b>BOT, what followed historically.</b> %s</p>", md_esc(ca$analogs), md_esc(ca$after), md_esc(ca$bot)))
 }
 
 md_scenarios <- function() {
@@ -115,7 +115,7 @@ md_scenarios <- function() {
     rows <- lapply(names(w), function(k) c(md_esc(fp_label(k)), sprintf("%+g", w[[k]]), if (w[[k]] > 0) "up" else "down"))
     chain <- if (!is.null(a$chain)) sprintf("<p><b>Chain &mdash; %s:</b> %s. %s</p>", md_esc(a$chain$name),
       paste(vapply(a$chain$steps, fp_label, ""), collapse = " &rarr; "), md_esc(a$chain$text)) else ""
-    sprintf("<details class='im-panel'><summary class='im-h2'>%s</summary>%s<p><b>Movie.</b> %s</p><p><b>Past episodes.</b> %s</p><p><b>Not this scenario if.</b> %s</p><p><b>Tells (not scored).</b> %s</p>%s<p><b>BOT.</b> %s</p></details>",
+    sprintf("<details class='im-panel'><summary class='im-h2'>%s</summary>%s<p><b>Movie.</b> %s</p><p><b>Past episodes.</b> %s</p><p><b>Not this scenario if.</b> %s</p><p><b>Tells (not scored).</b> %s</p>%s<p><b>BOT, what followed historically.</b> %s</p></details>",
             md_esc(a$name),
             md_table(c("Fingerprint asset", "Weight", "Expected"), rows),
             md_esc(a$movie), md_esc(a$analogs), md_esc(a$invalid), md_esc(a$tells), chain, md_esc(a$bot$note))

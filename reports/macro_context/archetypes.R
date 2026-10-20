@@ -61,7 +61,7 @@ ARCHETYPES <- list(
     tells = "Gold falling together with equities; Treasuries failing as a hedge; VIX in backwardation; Fed swap-line usage; headlines on cross-currency basis or money-market funds.",
     invalid = "Gold rising with the dollar (that is fear, not funding stress), or credit spreads stable.",
     bot = list(long = character(0), short = c("EEM", "XME", "COPX", "KWEB", "FXI", "XLY", "KRE", "IAI"),
-               note = "Shorts work until the backstop, then cover fast: time stop of days, not weeks. No new long breakouts until gold and EM currencies turn up.")
+               note = "7-force analog, 20 sessions ahead: liquidity stress with weak credit: HYG higher in 86% of cases vs 64% for all weeks (14 Fridays, 11 episodes); SPY lower in 29% vs 32% (no edge). Group breakouts: not tested.")
   ),
   list(
     id = "dollar_wrecking_ball", name = "Dollar wrecking ball (global tightening)",
@@ -73,7 +73,7 @@ ARCHETYPES <- list(
     tells = "Interventions by other central banks (Japan, UK, China fixing); MOVE above 120; oil importers' currencies weakest; dollar strength against the yen.",
     invalid = "Dollar rising while US yields fall (that is risk-off flight, see dash for cash) or Bunds and gilts rallying while Treasuries sell.",
     bot = list(long = c("XOP", "OIH", "XLE", "PPH", "XLP"), short = c("EEM", "XME", "COPX", "LIT", "KWEB", "ITB", "VNQ", "IGV"),
-               note = "In 2022 only energy, staples and healthcare made money. Long breakouts outside energy fail; duration (homebuilders, REITs, software) is the cleanest short.")
+               note = "2022 (total return): S&P 500 energy +66% while the S&P 500 fell 18%; utilities, staples and health care finished between -2% and +2%. 7-force analog, 20 sessions ahead: tightening (real yields and dollar up): SPY lower in 36% vs 32%, real yields higher again in 46% vs 47% (84 Fridays, 34 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "bond_rout", name = "Bond rout / term-premium shock",
@@ -85,7 +85,7 @@ ARCHETYPES <- list(
     tells = "30-year leading the move; weak Treasury auctions (tails); rising term premium without rising inflation expectations; MOVE elevated.",
     invalid = "Yields rising with copper/gold and breadth (that is reflation, growth-driven, equity-friendly).",
     bot = list(long = character(0), short = c("ITB", "VNQ", "IGV", "KRE", "XLP"),
-               note = "Few clean longs; the short side is duration. Watch Treasury refunding dates and auctions as event risk.")
+               note = "Treasury refunding announcements and auctions are this scenario's scheduled events. 7-force analog, 20 sessions ahead: tightening with a bear steepener: SPY lower in 33% vs 32%, real yields higher again in 50% vs 47% (30 Fridays, 16 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "stagflation", name = "Stagflation / oil supply shock",
@@ -99,7 +99,7 @@ ARCHETYPES <- list(
     # 2026-10-20: GDX dropped (gold left this fingerprint at the 10-08 calibration; gold falls with rising real yields and
     # dollar, and miners' energy costs rise with oil); XLP and XLV added (staples beating discretionary held in the backtest)
     bot = list(long = c("XOP", "OIH", "FCG", "XLE", "XLP", "XLV", "DBA", "MOO"), short = c("XLY", "XRT", "CARZ", "ITB", "IGV"),
-               note = "Energy and real-asset breakouts work; consumer and long-duration shorts work. Exit energy longs on the first sign of demand destruction (oil down while copper down)."),
+               note = "7-force analog, 20 sessions ahead: stagflation: XLY behind XLP in 75% of cases vs 46% for all weeks (16 Fridays, 19 episodes; p 0.02); XLE ahead of SPY in 38% vs 43% (no edge). Demand destruction shows as oil and copper falling together. Group breakouts: not tested."),
     # Conditional chain, shown under the scenario cards whatever this scenario's rank:
     # each step is a fingerprint asset that must be clearly up (z >= CHAIN_ON); the first one is the trigger.
     chain = list(
@@ -117,7 +117,7 @@ ARCHETYPES <- list(
     tells = "Copper/gold up with yields; equal weight beating cap weight; AUD/JPY up; high yield beating Treasuries.",
     invalid = "Yields up with copper/gold down (term premium, not growth).",
     bot = list(long = c("XME", "COPX", "SLX", "XLB", "EEM", "FXI", "KRE", "OIH", "XOP"), short = character(0),
-               note = "The best environment for long breakouts across many sectors. Shorts in defensives lag but rarely trend down cleanly; prefer longs.")
+               note = "7-force analog, 20 sessions ahead: reflation: cyclicals ahead of defensives in 44% vs 50%, SPY higher in 63% vs 68% (84 Fridays, 39 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "goldilocks", name = "Goldilocks / disinflationary growth",
@@ -129,7 +129,7 @@ ARCHETYPES <- list(
     tells = "VIX below 15 and term structure in steep contango; credit spreads tight; dips bought within days.",
     invalid = "Breadth falling while the index rises (narrow leadership, see below).",
     bot = list(long = c("SMH", "XLK", "IGV", "XLY", "ITB"), short = character(0),
-               note = "Long breakouts work; option premium is cheap, so outright calls rather than spreads. Shorts are fighting the tide.")
+               note = "7-force analog, 20 sessions ahead: goldilocks: QQQ higher in 79% of cases vs 66% for all weeks (61 Fridays, 38 episodes; p 0.03); SPY higher in 74% vs 68% (p 0.20). Group breakouts and option pricing: not tested.")
   ),
   list(
     id = "growth_scare", name = "Growth scare / disinflationary slowdown",
@@ -141,7 +141,7 @@ ARCHETYPES <- list(
     tells = "Copper/gold down with yields; cyclicals vs defensives down; credit spreads widening; the curve steepening because short rates fall (bull steepening).",
     invalid = "Yields falling while credit and breadth improve (goldilocks).",
     bot = list(long = c("GDX", "XLP", "PPH", "XLV", "VNQ"), short = c("XME", "COPX", "XOP", "OIH", "KRE", "XLY", "SLX"),
-               note = "Defensive and gold breakouts work; cyclical breakdowns work. Watch for the policy response: a cut turns the short side quickly.")
+               note = "7-force analog, 20 sessions ahead: growth scare: defensives ahead of cyclicals in 43% vs 50%, SPY lower in 32% vs 32% (37 Fridays, 28 episodes; no edge). Past episodes ended with a rate cut (see the scenario text). Group breakouts: not tested.")
   ),
   list(
     id = "em_china_shock", name = "EM / China devaluation shock",
@@ -152,7 +152,7 @@ ARCHETYPES <- list(
     tells = "Yuan fixing weaker; Hong Kong and KOSPI underperforming; copper down without a US growth signal; AUD weak.",
     invalid = "Yuan stable while EM falls (then it is the dollar, see wrecking ball).",
     bot = list(long = c("XLP", "PPH"), short = c("FXI", "KWEB", "EEM", "XME", "COPX", "LIT", "SLX", "OIH"),
-               note = "Shorts in China and metals work; avoid long metals breakouts until copper and AUD stabilise.")
+               note = "No 7-force analog (EM force dropped in step 1). Not tested.")
   ),
   list(
     id = "debasement", name = "Dollar debasement / fiscal dominance",
@@ -164,7 +164,7 @@ ARCHETYPES <- list(
     tells = "Gold rising with yields (not with falling yields); gold rising in all currencies; central-bank gold buying; weak foreign demand at Treasury auctions.",
     invalid = "Gold rising only because yields fall (growth scare).",
     bot = list(long = c("GDX", "SIL", "COPX", "XME", "EEM", "IAI", "EWL"), short = character(0),
-               note = "Long real-asset and non-US breakouts; USD-based shorts work poorly as everything is lifted in dollar terms.")
+               note = "Prices measured in dollars rise across assets as the dollar falls. 7-force analog, 20 sessions ahead: debasement: GLD higher in 52% vs 56% (44 Fridays, 31 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "narrow_mania", name = "Narrow leadership / late-cycle mania",
@@ -175,7 +175,7 @@ ARCHETYPES <- list(
     tells = "Index new highs with fewer stocks above their 50-day average; leaders gapping on earnings; rising rates.",
     invalid = "Equal weight catching up (healthy broadening).",
     bot = list(long = c("SMH", "XLK"), short = c("ITB", "XRT", "KRE", "VNQ"),
-               note = "Long only the leaders, small size; breakouts in the average stock fail more often. Shorts in laggards work while breadth falls.")
+               note = "7-force analog, 20 sessions ahead: narrow leadership: QQQ still ahead of RSP in 58% vs 58% (232 Fridays, 56 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "leadership_unwind", name = "Leadership unwind / rotation out of the leaders",
@@ -186,7 +186,7 @@ ARCHETYPES <- list(
     tells = "Leaders falling on good earnings; Nasdaq 100 / S&P below its 50-day average; equal weight and the Russell beating the index while it falls; semis / S&P rolling over.",
     invalid = "Everything falling together with equal weight lagging as well (that is liquidity stress, see dash for cash), or the leaders back at new highs.",
     bot = list(long = c("IWM", "XLI", "XLF"), short = c("SMH", "XLK", "IGV"),
-               note = "Exit or tighten long breakouts in the former leaders; their breakdowns are the cleanest shorts. Laggard breakouts start working, small size until absolute breadth confirms.")
+               note = "7-force analog, 20 sessions ahead: leadership unwind: QQQ still behind RSP in 41% vs 42% (144 Fridays, 44 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "policy_pivot", name = "Policy pivot / easing rally",
@@ -199,7 +199,7 @@ ARCHETYPES <- list(
     tells = "10-year and 2-year yields falling, then the 3-month bill once cuts are delivered (bull steepening comes later); dollar breaking down; gold and yen up together with equities; equal weight and the Russell beating the index; high yield beating Treasuries.",
     invalid = "Short rates falling while credit widens and small caps fall (growth scare: the central bank is cutting into weakness).",
     bot = list(long = c("IWM", "KRE", "ITB", "GDX", "EEM", "XME"), short = character(0),
-               note = "Cover duration shorts (homebuilders, REITs, regional banks) left over from a bond rout; those groups lead the first leg. Long breakouts across the average stock start working.")
+               note = "7-force analog, 20 sessions ahead: easing relief (real yields and VIX falling): SPY higher in 62% vs 68%, IWM ahead of SPY in 54% vs 49% (13 Fridays, 10 episodes; no edge). Group breakouts: not tested.")
   ),
   list(
     id = "credit_event", name = "Credit event / recession bear market",
@@ -211,7 +211,7 @@ ARCHETYPES <- list(
     tells = "High yield and leveraged loans falling while Treasuries rally; regional banks and small caps leading the decline; bank funding headlines (deposit flight, repo); earnings estimates being cut; the curve steepening as short rates fall.",
     invalid = "Credit stable while equities fall (growth scare or valuation-driven correction), or Treasuries sold together with everything (dash for cash).",
     bot = list(long = c("GLD", "XLP", "XLV"), short = c("KRE", "XLF", "IWM", "XHB", "XLY"),
-               note = "No new long breakouts while high yield keeps underperforming Treasuries. Short the credit-dependent groups; take profits into backstop announcements, which reverse them violently.")
+               note = "7-force analog, 20 sessions ahead: credit weak (high-yield z <= -1): SPY lower in 42% of cases vs 32% for all weeks (102 Fridays, 35 episodes; p 0.06). Past episodes ended with backstop announcements (see the scenario text). Group breakouts: not tested.")
   )
 )
 
@@ -377,7 +377,7 @@ CARRY_ALERT <- list(
   movie = "Funding currencies (yen, franc) jump as leveraged carry positions are closed. Positions financed in yen are sold everywhere at once: Japanese equities, high-beta tech, crypto, high-yielding currencies. Fast and violent, driven by positioning more than by fundamentals.",
   analogs = "October 1998 (USD/JPY from 136 to 112 within days during LTCM); August 2007 (quant quake); 5 August 2024 (Nikkei -12.4% in one day, VIX intraday 65, after the Bank of Japan hike and a US payroll miss).",
   after = "Usually a one-to-three-week shock: in 2024 the S&P recovered its losses within about two weeks once positions were flushed. It becomes lasting only if it coincides with a real growth scare.",
-  bot = "Do not chase breakdowns after the spike; do not open long breakouts until VIX term structure returns to contango."
+  bot = "Not tested (3 past episodes, too few to measure)."
 )
 CARRY_LOOKBACK <- 5
 

@@ -234,7 +234,7 @@ scenario_card <- function(m, sectors, rank, compact = FALSE, drivers = "") {
                          "<span class='im-score'>%s</span></div><p class='im-age'>%s %s<br>%s</p>"),
                   if (rank == 1) " im-top" else "", esc(a$name), score_pair(m),
                   age_badge(m$age$status), score_spark(m$hist, hm = m$hist_move), m$age$text)
-  bot <- sprintf("<div class='bot-box'><p class='im-compact'><b>BOT.</b> %s</p>%s</div>", a$bot$note, bot_table_html(a, sectors))
+  bot <- sprintf("<div class='bot-box'><p class='im-compact'><b>BOT, what followed historically.</b> %s</p>%s</div>", a$bot$note, bot_table_html(a, sectors))
   if (compact) return(paste0(head,
     sprintf("<p class='im-compact'><b>Confirms:</b> %s</p><p class='im-compact'><b>Ends if:</b> %s</p>", a$tells, a$invalid),
     bot, "</div>"))
@@ -276,7 +276,7 @@ carry_html <- function(carry) {
     esc(ca$name), cls, t$status, ca$window, format(t$date, "%d %b"),
     f(t$yen), ca$yen_fire, ca$yen_watch, ca$confirm_z, f(t$audjpy), f(t$nikkei), f(t$btc), if (t$vix_inverted) "yes" else "no",
     t$n_conf, recent, ca$yen_fire, ca$yen_watch,
-    if (t$status == "QUIET") "" else ca$movie, if (t$status == "QUIET") "" else paste("BOT:", ca$bot))
+    if (t$status == "QUIET") "" else ca$movie, if (t$status == "QUIET") "" else paste("BOT, what followed historically:", ca$bot))
 }
 
 #' Section 00 on the Main tab: top scenario (compact), what the month says, last-session strip
