@@ -105,6 +105,7 @@ run_intermarket <- function(breadth) {
   carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
   list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry,
+       vix_hist = get_close(raw, "^VIX"),   # Risk badge (regime_risk.R)
        stale = stale, bh = bh, hist_dates = sh$state$date,
        ytd = ytd)
 }

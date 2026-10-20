@@ -5,7 +5,7 @@
 # tails, 60-day timeline of the scenario in place), what changed since the previous report
 # (DB tables written by main.R), and the BOT sector verdicts.
 # Heatmap: every panel instrument's 1D / 1W / 1M / 3M move divided by its usual volatility.
-# Nothing here computes a signal: everything comes from run_intermarket() and the regime model.
+# Nothing here computes a signal: everything comes from run_intermarket() and regime_risk.R.
 
 # ── Small helpers ───────────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ tile_html <- function(t, by_sym, z1, breadth = NULL, bh = NULL, vix = NULL) {
 
 # ── Scenario map: state (x) vs 1-month move (y) ─────────────────────────────
 
-STATUS_ORDER <- c("BUILDING", "ESTABLISHED", "MATURE", "FADING", "EMERGING", "FADED", "INACTIVE")
+STATUS_ORDER <- c("BUILDING", "ESTABLISHED", "MATURE", "FADING", "PENDING", "EMERGING", "FADED", "INACTIVE")
 
 scenario_map_svg <- function(matches) {
   W <- 460; H <- 330; L <- 44; R <- 22; T <- 12; B <- 38
@@ -191,44 +191,33 @@ scenario_list_html <- function(matches) {
 TIMELINE_COLORS <- c("#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948", "#b07aa1",
                      "#ff9da7", "#9c755f", "#86bcb6", "#d37295", "#8cd17d", "#a0cbe8")
 
-#' 60-day band: each day coloured by the scenario with the highest state, when it is in place
+#' 60-day band: each session coloured by the top scenario in place, under the 3-session rule of band_runs()
+#' (regime_risk.R); grey cells = no scenario; runs listed newest first, gaps not listed
 scenario_timeline_html <- function(matches, dates) {
   if (!length(matches) || is.null(dates)) return("")
   n <- length(dates)
-  st <- do.call(cbind, lapply(matches, function(m) if (length(m$hist) == n) m$hist else rep(NA_real_, n)))
-  if (is.null(dim(st))) return("")
+  runs <- band_runs(matches, n)
   ids <- vapply(matches, `[[`, "", "id")
-  top <- apply(st, 1, function(r) {
-    if (all(is.na(r))) return(NA_character_)
-    j <- which.max(r)
-    if (r[j] >= STATE_ACTIVE) ids[j] else NA_character_
-  })
   arch_ids <- vapply(ARCHETYPES, `[[`, "", "id")
-  col_of <- function(id) if (is.na(id)) "var(--border)" else TIMELINE_COLORS[(match(id, arch_ids) - 1) %% length(TIMELINE_COLORS) + 1]
-  name_of <- function(id) if (is.na(id)) "none in place" else short_name(matches[[match(id, ids)]]$name)
+  col_of <- function(id) TIMELINE_COLORS[(match(id, arch_ids) - 1) %% length(TIMELINE_COLORS) + 1]
+  name_of <- function(id) short_name(matches[[match(id, ids)]]$name)
+  lab <- rep(NA_character_, n); pend <- rep(FALSE, n)
+  for (k in seq_len(nrow(runs))) { lab[runs$a[k]:runs$b[k]] <- runs$id[k]; pend[runs$a[k]:runs$b[k]] <- runs$pending[k] }
   W <- 460; H <- 16; w <- W / n
-  key <- ifelse(is.na(top), "", top)
   cells <- paste(vapply(seq_len(n), function(i) sprintf(
-    "<rect x='%.2f' y='0' width='%.2f' height='%d' fill='%s'><title>%s: %s</title></rect>",
-    (i - 1) * w, w + 0.3, H, col_of(top[i]), short_date(dates[i]), esc(name_of(top[i]))), ""), collapse = "")
-  r <- rle(key); ends <- cumsum(r$lengths); starts <- ends - r$lengths + 1
-  runs <- vapply(seq_along(r$values), function(k) {
-    id <- if (r$values[k] == "") NA_character_ else r$values[k]
-    sprintf("<span class='ck-run'><i style='background:%s'></i>%s&ndash;%s %s</span>",
-            col_of(id), format(as.Date(dates[starts[k]]), "%d %b"),
-            if (ends[k] == n) "today" else format(as.Date(dates[ends[k]]), "%d %b"), esc(name_of(id)))
+    "<rect x='%.2f' y='0' width='%.2f' height='%d' fill='%s'%s><title>%s: %s%s</title></rect>",
+    (i - 1) * w, w + 0.3, H, if (is.na(lab[i])) "var(--border)" else col_of(lab[i]), if (pend[i]) " fill-opacity='0.45'" else "",
+    short_date(dates[i]), if (is.na(lab[i])) "no scenario" else esc(name_of(lab[i])), if (pend[i]) " (pending)" else ""), ""), collapse = "")
+  items <- vapply(rev(seq_len(nrow(runs))), function(k) {
+    a <- runs$a[k]; b <- runs$b[k]; p <- runs$pending[k]
+    sprintf("<span class='ck-run'><i style='background:%s%s'></i>%s&ndash;%s %s%s</span>",
+            col_of(runs$id[k]), if (p) ";opacity:.45" else "", format(as.Date(dates[a]), "%d %b"),
+            if (b == n) "today" else format(as.Date(dates[b]), "%d %b"), esc(name_of(runs$id[k])),
+            if (p) sprintf(" (pending, %d of %d sessions)", b - a + 1, MIN_IN_PLACE) else "")
   }, "")
   sprintf(paste0("<div class='ck-h'>Scenario in place, last %d sessions</div>",
                  "<svg class='ck-band' viewBox='0 0 %d %d' preserveAspectRatio='none' role='img' aria-label='Scenario in place each day'>%s</svg>",
-                 "<div class='ck-runs'>%s</div>"), n, W, H, cells, paste(rev(runs), collapse = ""))
-}
-
-#' Regime model (section 07) on one line: it sets the daily bias, so it is shown next to the archetypes
-regime_line_html <- function(scenario_scores) {
-  if (is.null(scenario_scores) || !nrow(scenario_scores)) return("")
-  s <- scenario_scores[order(-scenario_scores$probability), ]
-  sprintf("<div class='ck-note'><b>Regime model (section 07, sets the daily bias):</b> %s. A separate model from the archetypes above: it scores VIX, rates, breadth and commodity signals, not the cross-asset fingerprint.</div>",
-          paste(sprintf("%s %.0f%%", esc(s$regime_label), s$probability), collapse = " &middot; "))
+                 "<div class='ck-runs'>%s</div>"), n, W, H, cells, paste(items, collapse = ""))
 }
 
 # ── Changed since the previous report ───────────────────────────────────────
@@ -250,14 +239,16 @@ load_prev_report <- function(today = Sys.Date()) {
 BREADTH_ZONES <- c(20, 35, 50, 75)
 
 #' List of change lines (HTML) between the previous report and today
-report_changes <- function(prev, synthesis, im, vix = NULL, breadth = NULL) {
+report_changes <- function(prev, rg, im, vix = NULL, breadth = NULL) {
   out <- character(0)
   arrow <- function(a, b) sprintf("%s &rarr; <b>%s</b>", esc(a), esc(b))
   r <- prev$results
   if (!is.null(r) && nrow(r)) {
     r <- r[1, ]
-    if (!is.null(synthesis) && !is.na(r$bias) && r$bias != synthesis$bias)
-      out <- c(out, paste("Daily bias:", arrow(r$bias, synthesis$bias)))
+    if (!is.null(rg) && !is.na(r$bias) && r$bias != rg$regime)   # column bias holds the Regime since 2026-10-20
+      out <- c(out, paste("Regime:", arrow(r$bias, rg$regime)))
+    if (!is.null(rg$risk) && "risk" %in% names(r) && !is.na(r$risk) && r$risk != rg$risk)
+      out <- c(out, paste("Risk:", arrow(r$risk, rg$risk)))
     if (!is.null(vix) && !is.null(vix$vix_zone) && !is.na(r$vix_zone) && !is.na(vix$vix_zone) && r$vix_zone != vix$vix_zone)
       out <- c(out, sprintf("VIX zone: %s (VIX %.1f)", arrow(r$vix_zone, vix$vix_zone), vix$vix))
     if (!is.null(breadth) && !is.na(r$s5fi) && !is.na(breadth$pct) &&
@@ -289,34 +280,14 @@ report_changes <- function(prev, synthesis, im, vix = NULL, breadth = NULL) {
   out
 }
 
-changes_html <- function(prev, synthesis, im, vix = NULL, breadth = NULL) {
+changes_html <- function(prev, rg, im, vix = NULL, breadth = NULL) {
   if (is.null(prev)) return("<div class='ck-h'>Changed since the previous report</div><p class='im-sub'>No earlier report in the database.</p>")
-  ch <- report_changes(prev, synthesis, im, vix, breadth)
+  ch <- report_changes(prev, rg, im, vix, breadth)
   body <- if (length(ch)) paste0("<ul class='ck-changes'>", paste(sprintf("<li>%s</li>", ch), collapse = ""), "</ul>")
-          else "<p class='im-sub'>No change in bias, VIX zone, breadth zone, scenario status or sector verdicts.</p>"
+          else "<p class='im-sub'>No change in regime, risk, VIX zone, breadth zone, scenario status or sector verdicts.</p>"
   sprintf("<div class='ck-h'>Changed since %s</div>%s", short_date(prev$date), body)
 }
 
-# ── BOT sector verdicts ─────────────────────────────────────────────────────
-
-bot_chips_html <- function(sx) {
-  if (is.null(sx) || !nrow(sx)) return("")
-  chips <- function(v) {
-    s <- sx[sx$verdict == v, , drop = FALSE]
-    if (!nrow(s)) return("<span class='im-sub'>none</span>")
-    rs <- as.numeric(s$rs_ratio)
-    s <- s[if (v == "SHORT") order(rs) else order(-rs), , drop = FALSE]
-    paste(sprintf("<span class='ck-chip im-v-%s' title='%s, trend %s, RS 3M %+.1f%%, drivers %+.2f'>%s <span class='im-sub'>%s/%s</span></span>",
-                  tolower(v), esc(s$quadrant), s$trend, as.numeric(s$rs_3m), as.numeric(s$driver_score),
-                  esc(s$group), trimws(s$n_bot), trimws(s$n_members)), collapse = " ")
-  }
-  n_w <- sum(sx$verdict == "WATCH"); n_a <- sum(sx$verdict == "AVOID")
-  sprintf(paste0("<div class='ck-h'>BOT sector map (section 10)</div>",
-                 "<div class='ck-chips'><span class='ck-chip-l'>LONG</span>%s</div>",
-                 "<div class='ck-chips'><span class='ck-chip-l'>SHORT</span>%s</div>",
-                 "<p class='im-sub'>%d WATCH, %d AVOID. Chips: group, BOT-eligible / members; LONG strongest relative strength first, SHORT weakest first.</p>"),
-          chips("LONG"), chips("SHORT"), n_w, n_a)
-}
 
 # ── Head line: top scenario and alerts ──────────────────────────────────────
 
@@ -341,23 +312,19 @@ summary_head_html <- function(im) {
 
 # ── Assembly ────────────────────────────────────────────────────────────────
 
-summary_html <- function(im, synthesis = NULL, breadth = NULL, vix = NULL, scenario_scores = NULL, prev = NULL) {
+summary_html <- function(im, rg, rk, breadth = NULL, vix = NULL, prev = NULL) {
   if (is.null(im)) return("")
   by_sym <- panel_by_sym(im$sections)
   tiles <- paste(vapply(SUMMARY_TILES, tile_html, "", by_sym = by_sym, z1 = im$z1,
                         breadth = breadth, bh = im$bh, vix = vix), collapse = "")
+  rg$risk <- rk$level
   paste0(
     "<section class='section ck' aria-label='Summary'><div class='stitle'>Summary &mdash; regime, key markets, what changed</div><div class='ck-body'>",
     summary_head_html(im),
     "<div class='ck-tiles'>", tiles, "</div>",
-    "<div class='ck-two'><div>", scenario_map_svg(im$matches), scenario_timeline_html(im$matches, im$hist_dates), "</div>",
-    "<div>", scenario_list_html(im$matches),
-    "<div class='im-legend'>Numbers match the map. State = where each asset stands in its one-year range against the scenario's fingerprint; ",
-    sprintf("in place from %+.0f%% (vertical line). Move 1M = how far the last month's moves point toward it; strong from %+.0f%% (horizontal line). ",
-            100 * STATE_ACTIVE, 100 * SCEN_ACTIVE),
-    "Tails: the last 5 sessions. Status, cards and the full table: section 00.</div></div></div>",
-    regime_line_html(scenario_scores),
-    "<div class='ck-two'><div>", changes_html(prev, synthesis, im, vix, breadth), "</div><div>", bot_chips_html(im$sectors), "</div></div>",
+    "<div class='ck-three'><div>", scenario_map_svg(im$matches), scenario_timeline_html(im$matches, im$hist_dates),
+    "<div class='proto-link'>Map numbers: ranked table in <a href='#detail' onclick=\"showTab('detail');return false;\">Detail, 00b</a>.</div></div>",
+    "<div>", framework_table_html(rg, rk), changes_html(prev, rg, im, vix, breadth), "</div></div>",
     "</div></section>")
 }
 
@@ -398,9 +365,9 @@ heatmap_html <- function(sections) {
     "<div class='im-h3'>Cross-asset heatmap &mdash; which markets move together</div>",
     "<div class='hz-grid'>", inst, "</div>",
     "<details class='im-details'><summary>Relationships heatmap: ratios and spreads (hover a name for its meaning)</summary><div class='hz-grid'>", rat, "</div></details>",
-    "<div class='im-legend'>Cell text = the change (bp for yields and spreads). Colour = that change divided by the instrument's usual volatility ",
+    leg_note("09 &mdash; cross-asset heatmap", paste0("Cell text = the change (bp for yields and spreads). Colour = that change divided by the instrument's usual volatility ",
     "over the same horizon (standard deviation of daily changes over 120 sessions &times; &radic;days): blue up, red down; ",
     "light 0.5&ndash;1&times;, medium 1&ndash;2&times;, strong 2&times; or more; no colour below 0.5&times;. ",
     "Up is up in price: a rising VIX, yield or USD/JPY is blue. 52w = position in the 52-week range. ",
-    "Arrow = trend (&#9650; UP, &#9660; DOWN, &#9670; MIXED). Full tables with sparklines: the panels below.</div>")
+    "Arrow = trend (&#9650; UP, &#9660; DOWN, &#9670; MIXED). Full tables with sparklines: the panels below.")))
 }

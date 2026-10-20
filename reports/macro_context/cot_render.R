@@ -69,8 +69,8 @@ cot_dashboard_html <- function(d) {
     cot_table(other), "</details>",
     "<details class='im-details'><summary>Legacy large speculators (managed money + other reportables; the COTSignal series)</summary>",
     cot_table(legacy), "</details>",
-    "<div class='im-legend'>Index = 100 &times; (current &minus; lowest) / (highest &minus; lowest) over the last 52, 156 or 260 weekly reports (1y, 3y, 5y). ",
+    leg_note("11 &mdash; COT positioning", paste0("Index = 100 &times; (current &minus; lowest) / (highest &minus; lowest) over the last 52, 156 or 260 weekly reports (1y, 3y, 5y). ",
     "100 = the largest net long, long or short position of the window; 0 = the smallest. Shaded: 90 or more, 10 or less. ",
     "Net, long and short are in contracts; week on week compares with the previous report. ",
-    "Full detail per trader group: Reports/cot_positioning_latest.csv.</div>")
+    "Full detail per trader group: Reports/cot_positioning_latest.csv.")))
 }

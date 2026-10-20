@@ -96,7 +96,9 @@ ARCHETYPES <- list(
     after = "Supply shocks end in demand destruction: oil peaks, then growth slows and the regime hands over to a growth scare or recession. In 1990 and 2008 the oil peak preceded the equity low by months.",
     tells = "Oil up while copper falls; inflation expectations (TIPS vs Treasuries) up; discretionary vs staples down; consumer sentiment down; Treasuries sold with the dollar up as oil importers raise dollars.",
     invalid = "Oil up with copper and breadth up (demand-driven reflation).",
-    bot = list(long = c("XOP", "OIH", "FCG", "XLE", "GDX", "DBA", "MOO"), short = c("XLY", "XRT", "CARZ", "ITB", "IGV"),
+    # 2026-10-20: GDX dropped (gold left this fingerprint at the 10-08 calibration; gold falls with rising real yields and
+    # dollar, and miners' energy costs rise with oil); XLP and XLV added (staples beating discretionary held in the backtest)
+    bot = list(long = c("XOP", "OIH", "FCG", "XLE", "XLP", "XLV", "DBA", "MOO"), short = c("XLY", "XRT", "CARZ", "ITB", "IGV"),
                note = "Energy and real-asset breakouts work; consumer and long-duration shorts work. Exit energy longs on the first sign of demand destruction (oil down while copper down)."),
     # Conditional chain, shown under the scenario cards whatever this scenario's rank:
     # each step is a fingerprint asset that must be clearly up (z >= CHAIN_ON); the first one is the trigger.
@@ -457,6 +459,11 @@ scenario_age <- function(st, mv) {
       text = "In place in recent reports but no longer: markets have moved away from it."))
     return(list(status = "INACTIVE", run = 0, text = ""))
   }
+  # A scenario counts as in place only from MIN_IN_PLACE sessions in a row (regime_risk.R), so a one- or
+  # two-day crossing of the threshold does not change the status, the band or the Regime (2026-10-20)
+  if (run < MIN_IN_PLACE) return(list(status = "PENDING", run = run, text = sprintf(
+    "Pending: state in place for %d session%s (state %+.0f%%); counts as in place from %d sessions in a row.",
+    run, if (run == 1) "" else "s", 100 * s0, MIN_IN_PLACE)))
   if (isTRUE(m0 < 0)) return(list(status = "FADING", run = run, text = sprintf(
     "Fading: in place for %d trading days, but over the last month its assets moved against it (move %+.0f%%). Often the start of its end.",
     run, 100 * m0)))

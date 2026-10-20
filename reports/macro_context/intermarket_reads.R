@@ -6,6 +6,9 @@ find_m <- function(sections, sym) {
   NULL
 }
 tr <- function(m) if (is.null(m) || is.na(m$trend)) "n/a" else m$trend
+#' Interpretive sentence of the movie: tagged so the Main tab can list it under "What the month says"
+rd <- function(x) paste0("<span class='im-read'>", x, "</span>")
+
 pct <- function(m) if (is.null(m) || is.na(m$c1m)) "n/a" else sprintf("%+.1f%%", m$c1m)
 P1M <- "over the last 21 sessions (1 month)"   # window of every pct() and c1m figure below; say it in each sentence
 
@@ -36,16 +39,16 @@ build_movie <- function(sections, breadth, z, matches) {
     sprintf("Dollar index %s %s, %s move. ", pct(dxy), P1M, zword(z["USD"])),
     if (length(weak)) sprintf("Weaker against the dollar %s: %s. ", P1M, paste(vapply(weak, fp_label, ""), collapse = ", ")) else "",
     if (length(strong)) sprintf("Stronger %s: %s. ", P1M, paste(vapply(strong, fp_label, ""), collapse = ", ")) else "",
-    if (length(weak) >= 5 && z["USD"] >= 1) "The dollar is rising against almost everything: a broad dollar bid, not a single-currency story. " else "",
+    if (length(weak) >= 5 && z["USD"] >= 1) rd("The dollar is rising against almost everything: a broad dollar bid, not a single-currency story. ") else "",
     sprintf("AUD/JPY, the carry and risk barometer, is %s.", tr(g("AUDJPY=X"))))
 
   gold <- g("GC=F"); gs <- g("GC=F/SI=F"); mg <- g("GDX/GC=F")
   p$metals <- paste0(
     sprintf("Gold %s %s, %s move, trend %s. ", pct(gold), P1M, zword(z["GOLD"]), tr(gold)),
     if (!is.na(z["GOLD"]) && !is.na(z["USD"]) && z["GOLD"] <= -0.5 && z["USD"] >= 0.5)
-      "Gold falling with a rising dollar: it is being treated as a currency that loses to the dollar, or sold to raise cash. " else "",
+      rd("Gold falling with a rising dollar: it is being treated as a currency that loses to the dollar, or sold to raise cash. ") else "",
     if (!is.na(z["GOLD"]) && !is.na(z["USD"]) && z["GOLD"] >= 0.5 && z["USD"] >= 0.5)
-      "Gold rising together with the dollar: a fear bid, not a currency trade. " else "",
+      rd("Gold rising together with the dollar: a fear bid, not a currency trade. ") else "",
     sprintf("Gold/silver %s, miners vs gold %s.", tr(gs), tr(mg)))
 
   oil <- g("CL=F"); brent <- g("BZ=F"); eo <- g("XLE/CL=F")
@@ -63,7 +66,7 @@ build_movie <- function(sections, breadth, z, matches) {
               else if ((s6$c1m < 0) == (s6$last > 0)) "the curve is flattening, later contracts gaining on the front"
               else "the curve is steepening, the front gaining on later contracts") else "",
     if (!is.na(z["OIL"]) && !is.na(z["USD"]) && z["OIL"] >= 0.5 && z["USD"] >= 0.5)
-      "Oil up while the dollar is up: oil importers pay twice (higher price, dearer dollars), which adds to global dollar demand. " else "",
+      rd("Oil up while the dollar is up: oil importers pay twice (higher price, dearer dollars), which adds to global dollar demand. ") else "",
     sprintf("Energy stocks vs crude %s.", tr(eo)))
 
   cu <- g("HG=F"); cg <- g("HG=F/GC=F")
@@ -78,7 +81,7 @@ build_movie <- function(sections, breadth, z, matches) {
     sprintf("US 10-year at %.2f%%, %+.0f bp %s, %s move; 10y minus 3m %.2f pt, trend %s. ",
             tny$last, tny$c1m, P1M, zword(z["US10Y"]), cur$last, tr(cur)),
     sprintf("German long Bunds %s, UK long gilts %s, both %s (bond prices). ", pct(g("IS0L.DE")), pct(g("GLTL.L")), P1M),
-    if (up_all) "Yields are rising in the US, Germany and the UK together: a global bond move, not a US-specific one. " else "",
+    if (up_all) rd("Yields are rising in the US, Germany and the UK together: a global bond move, not a US-specific one. ") else "",
     sprintf("MOVE %.0f (trend %s); high yield vs Treasuries %s.", mv$last, tr(mv), tr(cr)))
 
   wl <- sections[[which(vapply(sections, `[[`, "", "id") == "world")]]$instruments
@@ -87,7 +90,7 @@ build_movie <- function(sections, breadth, z, matches) {
   p$world <- paste0(
     "Over the last 21 sessions (1 month), local currency. Europe: ", w(c("^STOXX50E", "^GDAXI", "^SSMI", "^FCHI", "^IBEX", "FTSEMIB.MI")), ". ",
     "Latin America: ", w(c("^BVSP", "^MXX")), ". ",
-    "Asia: ", w(c("^N225", "^KS11", "^HSCE", "000001.SS")), ". Last-session changes: see the strip at the top of this section.")
+    "Asia: ", w(c("^N225", "^KS11", "^HSCE", "000001.SS")), ". Last-session changes: the strip in section 00 of the Main tab.")
 
   # How it fits together
   top <- matches[[1]]

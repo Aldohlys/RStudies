@@ -1,7 +1,6 @@
-# methodology.R — "Methodology" tab: every computation in the report, built from the live config
+# methodology.R — sections M1-M9 of the Legend tab: every computation in the report, built from the live config
 #
-# Scenario fingerprints (archetypes.R), regime signals and weights (scenarios.R), mismatch rules
-# (analyze.R) and thresholds are read from the objects the report uses, so this tab cannot drift
+# Scenario fingerprints (archetypes.R) and thresholds are read from the objects the report uses, so this tab cannot drift
 # from the code. Zone thresholds of sections 01-04 live in render_html.R tooltips and are restated here.
 
 md_esc <- function(x) {
@@ -47,7 +46,7 @@ md_scenario_method <- function() {
             "(at least %d): 2 &times; (last &minus; min) / (max &minus; min) &minus; 1, so the bottom of the range is &minus;1 and the top +1, with the same sign inversions as the move. ",
             "Absolute breadth uses its capped level. State score = &Sigma; (weight &times; state) / &Sigma; |weight|, same weights as the move.</p>"),
             STATE_WINDOW, STATE_MIN_ROWS),
-    sprintf(paste0("<p><b>Status.</b> The state decides whether a scenario is in place (state &ge; %.0f%%); the 1-month move gives the direction (strong at &ge; %.0f%%). ",
+    sprintf(paste0("<p><b>Status.</b> The state decides whether a scenario is in place (state &ge; %.0f%% for at least 3 sessions in a row; before that it is PENDING); the 1-month move gives the direction (strong at &ge; %.0f%%). ",
             "Both are recomputed for each of the last %d trading days from price history. Scenarios are ranked by state.</p>"),
             100 * STATE_ACTIVE, 100 * SCEN_ACTIVE, HIST_DAYS),
     md_table(c("Status", "State", "Move (1 month)", "Reading"), list(
@@ -55,6 +54,7 @@ md_scenario_method <- function() {
       c("ESTABLISHED", "in place, under 40 days", sprintf("0 to %.0f%%", 100 * SCEN_ACTIVE), "In place; moves no longer add much"),
       c("MATURE", "in place, 40 days or more", sprintf("0 to %.0f%%", 100 * SCEN_ACTIVE), "Nearer its end than its start"),
       c("FADING", "in place", "below 0", "Its assets now move against it; often the start of its end"),
+      c("PENDING", sprintf("state &ge; %.0f%% for fewer than %d sessions in a row", 100 * STATE_ACTIVE, MIN_IN_PLACE), "any", "Not yet counted as in place: the band, the status and the Regime wait for 3 sessions"),
       c("EMERGING", "not in place", sprintf("&ge; %.0f%%", 100 * SCEN_ACTIVE), "Moving toward it from elsewhere; watch whether the state follows"),
       c("FADED", "not in place, in place in one of the previous five reports", "any", "Markets have moved away from it"),
       c("INACTIVE", "not in place", sprintf("below %.0f%%", 100 * SCEN_ACTIVE), ""))),
@@ -120,63 +120,6 @@ md_scenarios <- function() {
             md_table(c("Fingerprint asset", "Weight", "Expected"), rows),
             md_esc(a$movie), md_esc(a$analogs), md_esc(a$invalid), md_esc(a$tells), chain, md_esc(a$bot$note))
   }, ""), collapse = "")
-}
-
-# ── Regime model (sections 06-07) ───────────────────────────────────────────
-md_regimes <- function() {
-  sig_rows <- lapply(names(SIGNAL_TOOLTIPS), function(s) {
-    p <- strsplit(SIGNAL_TOOLTIPS[[s]], " | ", fixed = TRUE)[[1]]
-    c(s, md_esc(p[1]), md_esc(if (length(p) > 1) p[2] else ""), md_esc(if (length(p) > 2) paste(p[-(1:2)], collapse = "; ") else ""))
-  })
-  regs <- Filter(function(r) length(REGIME_WEIGHTS[[r]]$weights) > 0, names(REGIME_WEIGHTS))
-  sigs <- unique(unlist(lapply(regs, function(r) names(REGIME_WEIGHTS[[r]]$weights))))
-  w_rows <- lapply(sigs, function(s) c(s, vapply(regs, function(r) {
-    v <- REGIME_WEIGHTS[[r]]$weights[[s]]; if (is.null(v)) "" else sprintf("%+.2f", v) }, "")))
-  paste0(
-    "<p>Three regimes from continuous signals. Each signal maps a market measure to [0, 1] with a sigmoid ",
-    "sig(x, center, scale) = 1 / (1 + e<sup>&minus;(x &minus; center)/scale</sup>): 0.5 at the center, about 0.12 / 0.88 at center &plusmn; 2 scales. ",
-    "Centers and scales are 10-year medians and standard deviations (calibrate_from_history.R, 2026-03-26), except breadth (manual).</p>",
-    md_table(c("Signal", "Measure", "Formula", "Reading"), sig_rows),
-    "<p>credit_stress uses the 20-day return of the high yield / Treasuries ratio (HYG/IEF, adjusted closes), the same series as the CREDIT asset in the scenarios. ",
-    "Until 2026-10-08 it used HYG's own price, which also falls when Treasury yields rise (June 2022: HYG &minus;3.1%, ratio &minus;0.2%); the ratio isolates the spread. ",
-    "Center and scale recalibrated on 2016&ndash;2026 data.</p>",
-    "<p><b>Raw score</b> of a regime = &Sigma; weight &times; signal. Weights (set by hand, see comments in scenarios.R):</p>",
-    md_table(c("Signal", vapply(regs, function(r) REGIME_WEIGHTS[[r]]$label, "")), w_rows),
-    "<p><b>Neutral</b> = 0.5 &times; (1 &minus; max(other raw scores) / 0.5) + 0.3 &times; vix_calm + 0.2 &times; breadth_mid, ",
-    "where breadth_mid = 1 &minus; |breadth_bull &minus; 0.5| / 0.5 (peaks when 50% of stocks are above their MA50).</p>",
-    "<p><b>Modifiers</b>, applied in this order:</p>",
-    md_table(c("Modifier", "Rule"), list(
-      c("Positioning stress", "crowding = 0.5 &times; share of COT markets at a 5-year extreme (net percentile &ge; 90 or &le; 10). If crowding &gt; 0.3, Liquidity Stress raw score + 0.10 &times; crowding"),
-      c("Event catalyst", "Second-ranked regime + boost from the nearest event within 5 days: CRITICAL +0.15 (&le; 2 days) / +0.08; HIGH +0.08 / +0.04; MODERATE +0.04 (&le; 1 day). Events with boost = FALSE are ignored"),
-      c("Inertia", sprintf("Previous run's dominant regime + %.2f", REGIME_INERTIA)),
-      c("Probabilities", sprintf("softmax(raw scores / %.1f); lower temperature = more decisive", REGIME_TEMPERATURE)))),
-    sprintf("<p><b>Daily Bias.</b> The dominant regime sets the bias only when its probability is &ge; %d%% and &ge; %d points above the second; ",
-            BIAS_MIN_PROB, BIAS_MIN_MARGIN),
-    "Liquidity Stress &rarr; DEFENSIVE, Directional Flow &rarr; LONG BIAS, otherwise NEUTRAL. ",
-    "The For / Against drivers rank the dominant regime's signals by pull = weight &times; (signal &minus; 0.5).</p>"
-  )
-}
-
-# ── Mismatches (section 05) ─────────────────────────────────────────────────
-md_mismatches <- function() {
-  flags <- list(
-    c("vix_stress", "VIX &gt; 25"), c("backwardation", "VIX9D &gt; VIX3M"), c("rates_high", "10Y &gt; 4.5%"),
-    c("curve_inv", "10Y &minus; 3M bill (^TNX &minus; ^IRX) &lt; 0"), c("dxy_strong", "DXY 20-day return &gt; +2%"), c("dxy_weak", "DXY 20-day return &lt; &minus;2%"),
-    c("oil_surging", "USO 20-day return &gt; +10%"), c("gold_rising", "GLD 20-day return &gt; +5%"),
-    c("s5fi_bear", "breadth &lt; 35%"), c("s5fi_bull", "breadth &gt; 50%"))
-  rule_rows <- lapply(names(SECTOR_RULES), function(s) c(s, SECTOR_ETFS_MAP[[s]],
-    paste(SECTOR_RULES[[s]]$tw, collapse = ", "), paste(SECTOR_RULES[[s]]$hw, collapse = ", ")))
-  paste0(
-    "<p>Macro flags (true / false):</p>", md_table(c("Flag", "Condition"), flags),
-    "<p>Each sector ETF has tailwind and headwind flags:</p>",
-    md_table(c("Sector", "ETF", "Tailwinds", "Headwinds"), rule_rows),
-    "<p>ETF trend: UP = close above MA20 and MA20 rising over 5 days; DOWN = mirror; else FLAT. RS = 20-day return minus SPY's. Classification (first match):</p>",
-    md_table(c("Type", "Rule"), list(
-      c("UNUSUAL STRENGTH", "UP, &ge; 2 headwinds, 0 tailwinds"),
-      c("FRAGILE RALLY", "UP, &ge; 2 headwinds, &ge; 1 tailwind"),
-      c("UNUSUAL WEAKNESS", "DOWN, &ge; 2 tailwinds, 0 headwinds"),
-      c("LAGGING vs MACRO", "FLAT, &ge; 2 tailwinds, 0 headwinds, RS &lt; &minus;3%"),
-      c("CONFIRMED SHORT", "DOWN, &ge; 2 headwinds, RS &lt; &minus;4%"))))
 }
 
 # ── Static sections ─────────────────────────────────────────────────────────
@@ -251,17 +194,16 @@ md_limits <- function() {
     "</ul>")
 }
 
-#' Full Methodology tab
-methodology_html <- function() {
+#' Methodology sections M1-M9 of the Legend tab (legend.R adds the glossary and table notes in front).
+#' M6 (mismatches) and the regime model behind the old M7 were dropped with sections 05-07 on 2026-10-20.
+methodology_sections_html <- function() {
   paste0(
-    "<p class='md-intro'>How every number in the report is computed. Scenario fingerprints, regime weights and mismatch rules are read from the code at each run.</p>",
-    md_section("M1", "Scenario match &mdash; section 00", md_scenario_method(), open = TRUE),
+    md_section("M1", "Scenario match &mdash; section 00", md_scenario_method()),
     md_section("M2", "Fingerprint assets", md_fp_assets()),
     md_section("M3", sprintf("Scenario rules (%d scenarios)", length(ARCHETYPES)), md_scenarios()),
     md_section("M4", "Yen carry-unwind alert (short window)", md_carry()),
     md_section("M5", "Sections 01&ndash;04 &mdash; zone thresholds", md_basic_sections()),
-    md_section("M6", "Section 05 &mdash; mismatches", md_mismatches()),
-    md_section("M7", "Sections 06&ndash;07 &mdash; regime model and Daily Bias", md_regimes()),
+    md_section("M7", "Regime &times; risk &mdash; what followed historically in each cell", md_framework_history()),
     md_section("M8", "Sections 09&ndash;11 &mdash; panels, sector map, COT", md_panels()),
     md_section("M9", "Known limitations", md_limits())
   )

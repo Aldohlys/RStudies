@@ -260,6 +260,32 @@ td.ytd-up{color:var(--green-bg)}td.ytd-dn{color:var(--red-bg)}.ytd-dim{color:var
 .hz-n1{background:rgba(217,83,79,.14)}.hz-n2{background:rgba(217,83,79,.34)}.hz-n3{background:#D9534F;color:#fff;font-weight:700}
 .hz-table .im-bar{width:50px}.hz-t{text-align:center}
 @media (max-width:800px){.ck-two{grid-template-columns:1fr}.hz-grid{grid-template-columns:1fr}}
+
+/* Main / Detail / Legend layout (2026-10-20) */
+.bias-bar{flex-wrap:wrap}.bias-read{flex-basis:100%;margin-top:4px;font-size:13px}
+.im-age-pending{background:var(--orange-light);color:#222}
+.ck-s-pending circle,.ck-s-pending span{background:var(--orange-bg);fill:var(--orange-bg);opacity:.6}
+.ck-three{display:grid;grid-template-columns:minmax(340px,520px) minmax(300px,1fr);gap:18px;margin-bottom:12px;align-items:start}
+@media(max-width:800px){.ck-three{grid-template-columns:1fr}}
+.rr{border-collapse:collapse;width:100%;font-size:12px;margin-bottom:4px}
+.rr th{font-size:11px;color:var(--dim);text-align:left;padding:4px 6px;vertical-align:top;font-weight:700}
+.rr th span{font-weight:400;font-size:10.5px}
+.rr td{border:1px solid var(--border);padding:5px 7px;vertical-align:top;color:var(--dim)}
+.rr td.rr-on{border:2px solid var(--fg,#111);color:var(--fg,#111);font-weight:600;background:var(--bg2)}
+.rr-foot{font-size:11px;color:var(--dim);margin:2px 0 10px}
+.principles-box{border:1px solid var(--border);border-radius:4px;padding:8px 14px 4px;margin:0 0 16px;background:var(--bg)}
+.principles-box ol{margin:0 0 6px 18px;padding:0;font-size:13px;line-height:1.45}.principles-box li{margin-bottom:4px}
+.im-compact{margin:3px 0;font-size:13px}.im-reads{font-size:13px;margin:8px 0}.im-reads ul{margin:2px 0 0 18px;padding:0}
+.bot-box{margin:8px 0}
+.bt{border-collapse:collapse;width:100%;font-size:12.5px;margin:4px 0}
+.bt th{text-align:left;font-size:11px;color:var(--dim);padding:4px 6px;vertical-align:top;width:170px}
+.bt td{border:1px solid var(--border);padding:5px 8px;vertical-align:top;line-height:1.8}
+.bt td.bt-agree{border-left:3px solid var(--fg,#111)}.bt td.bt-conflict{border-left:3px solid var(--red-bg)}
+.proto-link{margin:6px 0 10px;font-size:.9em}
+.lg-body{padding:6px 14px}.lg-dl{display:grid;grid-template-columns:minmax(160px,260px) 1fr;gap:4px 14px;margin:0 0 12px;font-size:13px}
+.lg-dl dt{font-weight:700}.lg-dl dd{margin:0}.lg-note{margin:0 0 10px}
+.lg-where{font-size:11px;font-weight:700;color:var(--dim);text-transform:uppercase;letter-spacing:.04em}.lg-text{font-size:13px}
+@media(max-width:700px){.lg-dl{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -267,95 +293,53 @@ td.ytd-up{color:var(--green-bg)}td.ytd-dn{color:var(--red-bg)}.ytd-dim{color:var
 <div>
   <span class="run-date">{{RUN_DATE}}</span>
   <h1>Macro Context</h1>
-  <div class="subtitle">Summary &middot; Global movie &middot; VIX Complex &middot; Rates &middot; Breadth &middot; Mismatches &middot; Synthesis &middot; Intermarket &middot; BOT sector map &middot; COT positioning</div>
+  <div class="subtitle">Summary &middot; Global movie &middot; BOT sector map &middot; Events &middot; Intermarket &middot; COT positioning (Detail: scenarios, VIX Complex, Rates, Breadth, Dollar + Commodities)</div>
 </div>
 
 <div class="tabs" role="tablist">
-  <button class="tab-btn active" data-tab="report" role="tab">Report</button>
-  <button class="tab-btn" data-tab="methodology" role="tab">Methodology</button>
+  <button class="tab-btn active" data-tab="report" role="tab">Main</button>
+  <button class="tab-btn" data-tab="detail" role="tab">Detail</button>
+  <button class="tab-btn" data-tab="legend" role="tab">Legend</button>
 </div>
 
 <div class="tab-pane active" id="tab-report">
 
-<div class="bias-bar">
-  <span class="bias-label">Daily Bias</span>
-  <span class="bias-badge {{BIAS_CSS}}">{{BIAS}}</span>
-  <span class="bias-explain">{{BIAS_EXPLAIN}}</span>
-</div>
+{{REGIME_BAR}}
 
 {{STRESS_BANNER}}
 {{DATA_BANNER}}
 
-{{SUMMARY}}
-
-<details class="section principles" style="margin-bottom:20px">
-  <summary class="stitle">Reading principles</summary>
+<div class="principles-box">
+  <div class="ck-h">Reading principles</div>
   <ol>
-    <li><b>Understand the present to evaluate possible scenarios.</b> Read 00 (global movie) and 09 (panels) first; the scenario matches in 00 and 07 are only as good as that picture.</li>
+    <li><b>Understand the present to evaluate possible scenarios.</b> Read 00 (global movie) and 09 (panels) first; the scenario matches in 00 are only as good as that picture.</li>
     <li><b>Markets can diverge from fundamental value for long periods, but over a long enough horizon they revert to it.</b> A warning, not a signal: over a BOT holding period, "overvalued" or "cheap" is no reason to fade a breakout or exit early. Stretched markets stay stretched until liquidity turns; watch principle 3, not valuation.</li>
-    <li><b>Over short to intermediate horizons, prices follow liquidity rather than fundamental value, in both directions.</b> When liquidity tightens (rising dollar, long yields, MOVE, wider credit: 02, 07, 09), the weakest go first (small caps, equal weight, breadth) and what money remains crowds into a few leaders, until everything gets sold together. When it loosens (falling dollar and real yields, tighter credit), participation broadens: equal weight and the Russell outperform and breadth widens (00).</li>
-    <li><b>When everyone is in consensus, something different almost always happens.</b> COT indices (11) and positioning stress (07) mark crowded trades; a crowded trade whose price stops following through is where the surprise comes from.</li>
+    <li><b>Over short to intermediate horizons, prices follow liquidity rather than fundamental value, in both directions.</b> When liquidity tightens (rising dollar, long yields, MOVE, wider credit: 02, 09 and the Risk badge), the weakest go first (small caps, equal weight, breadth) and what money remains crowds into a few leaders, until everything gets sold together. When it loosens (falling dollar and real yields, tighter credit), participation broadens: equal weight and the Russell outperform and breadth widens (00).</li>
+    <li><b>When everyone is in consensus, something different almost always happens.</b> COT indices (11) mark crowded trades; a crowded trade whose price stops following through is where the surprise comes from.</li>
     <li><b>Markets are not made of currencies, commodities, stocks and bonds, but of investors, traders and bankers who decide to buy or sell them.</b> Ask who holds a position and who is forced to sell it (11, COT positioning by trader group), not only what the price did.</li>
   </ol>
-</details>
+</div>
+
+{{SUMMARY}}
 
 <details class="section" style="margin-bottom:20px" open>
   <summary class="stitle"><span class="snum">00</span>The global movie &mdash; how markets fit together</summary>
-  <div class="im-body">{{MOVIE}}</div>
+  <div class="im-body">{{MAIN_00}}</div>
 </details>
 
-<div class="grid">
-
-<details class="section">
-  <summary class="stitle"><span class="snum">01</span>VIX Complex</summary>
-  <table>{{SEC1}}</table>
+<details class="section" style="margin-bottom:20px" open>
+  <summary class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</summary>
+  <div class="im-body">{{SECTOR_MAP}}</div>
 </details>
 
-<details class="section">
-  <summary class="stitle"><span class="snum">02</span>Rates</summary>
-  <table>{{SEC2}}</table>
-</details>
-
-<details class="section">
-  <summary class="stitle"><span class="snum">03</span>Breadth &mdash; % S&amp;P 500 stocks &gt; MA50</summary>
-  <table>{{SEC3}}</table>
-</details>
-
-<details class="section">
-  <summary class="stitle"><span class="snum">04</span>Dollar + Commodities</summary>
-  <table>{{SEC4}}</table>
-</details>
-
-<details class="section grid-full">
-  <summary class="stitle"><span class="snum">05</span>Mismatches &mdash; Sector vs Macro</summary>
-  <table>{{SEC5}}</table>
-</details>
-
-<details class="section">
-  <summary class="stitle"><span class="snum">06</span>Synthesis</summary>
-  <ul class="synth-list">{{SEC6}}</ul>
-</details>
-
-<details class="section grid-full">
-  <summary class="stitle"><span class="snum">07</span>Market Scenarios</summary>
-  <div class="sc-container">{{SEC8}}</div>
-</details>
-
-<details class="section">
-  <summary class="stitle"><span class="snum">08</span>Events &mdash; <span style="color:var(--orange-bg)">Edit every Monday</span></summary>
+<details class="section" style="margin-bottom:20px">
+  <summary class="stitle"><span class="snum">08</span>Events</summary>
   <table>{{SEC7}}</table>
 </details>
-
-</div>
 
 <details class="section" style="margin-bottom:20px" open>
   <summary class="stitle"><span class="snum">09</span>Intermarket &mdash; cross-asset heatmap, then panels by asset class</summary>
   <div class="im-body">{{HEATMAP}}<div class="im-h3" style="margin-top:14px">Panels &mdash; click to open</div>{{PANELS}}</div>
-</details>
-
-<details class="section" style="margin-bottom:20px">
-  <summary class="stitle"><span class="snum">10</span>BOT sector map &mdash; where breakouts have support</summary>
-  <div class="im-body">{{SECTOR_MAP}}</div>
 </details>
 
 <details class="section" style="margin-bottom:20px">
@@ -365,25 +349,55 @@ td.ytd-up{color:var(--green-bg)}td.ytd-dn{color:var(--red-bg)}.ytd-dim{color:var
 
 </div>
 
-<div class="tab-pane" id="tab-methodology">
-{{METHODOLOGY}}
+<div class="tab-pane" id="tab-detail">
+
+<details class="section" style="margin-bottom:20px" open>
+  <summary class="stitle"><span class="snum">00b</span>Global movie and scenarios &mdash; full text, cards, scenario tables, chains, yen carry</summary>
+  <div class="im-body">{{DETAIL_00}}</div>
+</details>
+
+<div class="grid">
+
+<details class="section" open>
+  <summary class="stitle"><span class="snum">01</span>VIX Complex</summary>
+  <table>{{SEC1}}</table>
+</details>
+
+<details class="section" open>
+  <summary class="stitle"><span class="snum">02</span>Rates</summary>
+  <table>{{SEC2}}</table>
+</details>
+
+<details class="section" open>
+  <summary class="stitle"><span class="snum">03</span>Breadth &mdash; % S&amp;P 500 stocks &gt; MA50</summary>
+  <table>{{SEC3}}</table>
+</details>
+
+<details class="section" open>
+  <summary class="stitle"><span class="snum">04</span>Dollar + Commodities</summary>
+  <table>{{SEC4}}</table>
+</details>
+
+</div>
+</div>
+
+<div class="tab-pane" id="tab-legend">
+{{LEGEND}}
 </div>
 
 <script>
+function showTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
+  document.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
+  history.replaceState(null, '', '#' + name);
+  window.scrollTo(0, 0);
+}
 (function () {
-  var btns = document.querySelectorAll('.tab-btn');
-  function show(name) {
-    btns.forEach(function (b) { b.classList.toggle('active', b.dataset.tab === name); });
-    document.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.toggle('active', p.id === 'tab-' + name); });
-  }
-  btns.forEach(function (b) { b.addEventListener('click', function () { show(b.dataset.tab); history.replaceState(null, '', '#' + b.dataset.tab); }); });
-  if (location.hash === '#methodology') show('methodology');
+  document.querySelectorAll('.tab-btn').forEach(function (b) { b.addEventListener('click', function () { showTab(b.dataset.tab); }); });
+  var h = location.hash.replace('#', '');
+  if (h === 'methodology') h = 'legend';
+  if (h === 'detail' || h === 'legend') showTab(h);
 })();
 </script>
-
-<div class="footer">
-  <span>{{FOOTER_BREADTH}}</span>
-  <span>macro_context &mdash; run swing_scanner next</span>
-</div>
 
 </body></html>

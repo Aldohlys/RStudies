@@ -3,7 +3,8 @@
 source(file.path(SCRIPT_DIR, "..", "shared", "html_helpers.R"))
 
 # ── Build all sections ──────────────────────────────────────────────────────
-build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, synthesis, events, scenario_scores = NULL) {
+# Sections 05 (mismatches), 06 (synthesis) and 07 (regime model) were dropped on 2026-10-20
+build_sections <- function(vix, rates, breadth, spy, commodities, events, scenario_scores = NULL) {
   zc <- zone_class
 
   # Section 1: VIX Complex
@@ -74,35 +75,6 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
     if (is.na(r$cur)) html_sub_tip(r$tk, "NO DATA", "ORANGE", "", comm_tips[r$tk])
     else html_row_tip(r$tk, r$cur, r$z, r$note, comm_tips[r$tk])))
 
-  # Section 5: Mismatches
-  mm_css <- c("UNUSUAL WEAKNESS" = "zone-darkred", "UNUSUAL STRENGTH" = "zone-orange",
-    "CONFIRMED SHORT" = "zone-red", "FRAGILE RALLY" = "zone-orange", "LAGGING vs MACRO" = "zone-green")
-  priority_order <- c("UNUSUAL WEAKNESS","UNUSUAL STRENGTH","CONFIRMED SHORT","FRAGILE RALLY","LAGGING vs MACRO")
-
-  sec5 <- if (length(mismatches) == 0) {
-    '<tr><td colspan="3" class="no-data">No significant mismatches detected.</td></tr>'
-  } else {
-    sorted_mm <- mismatches[order(match(sapply(mismatches, function(x) x$type), priority_order))]
-    paste0(lapply(sorted_mm, function(m) sprintf(
-      '<tr class="mm-header %s">
-        <td colspan="3"><span class="mm-type">%s</span>
-          <span class="mm-etf">%s \u2014 %s</span>
-          <span class="mm-meta">Trend:%s | 20d:%+.1f%% | RS vs. SPY 20d:%+.1f%%</span></td></tr>
-      <tr class="mm-detail"><td colspan="3">
-          <span class="mm-winds">TW(%d):%s &nbsp;|&nbsp; HW(%d):%s</span><br>
-          <span class="mm-note">%s</span><br>
-          <span class="mm-signal">&#10230; %s</span></td></tr>',
-      mm_css[m$type], m$type, m$sector, m$etf,
-      m$trend, m$r20, ifelse(is.na(m$rs), 0, m$rs),
-      m$n_tw, ifelse(m$n_tw > 0, paste(m$tw_names, collapse = ", "), "none"),
-      m$n_hw, ifelse(m$n_hw > 0, paste(m$hw_names, collapse = ", "), "none"),
-      m$note, m$signal)))
-  }
-
-  # Section 6: Synthesis
-  sec6 <- paste0(lapply(synthesis$synth_notes, function(n)
-    sprintf('<li class="%s">%s</li>', zc(n$z), n$t)))
-
   # Section 7: Events
   ev_row_css <- c(CRITICAL = "zone-darkred", HIGH = "zone-red", MODERATE = "zone-orange")
   ev_badge_css <- c(CRITICAL = "ev-critical", HIGH = "ev-high", MODERATE = "ev-moderate")
@@ -114,72 +86,8 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
       <td class="ev-action">%s</td></tr>',
     ev_row_css[ev$impact], ev$date, ev$event, ev_badge_css[ev$impact], ev$impact, ev$action)))
 
-  # Section 8: Regime Detection
-  sec8 <- ""
-  positioning <- NULL
-  if (!is.null(scenario_scores) && nrow(scenario_scores) > 0) {
-    sorted <- scenario_scores[order(-scenario_scores$probability), ]
-    signals <- attr(scenario_scores, "signals")
-    positioning <- attr(scenario_scores, "positioning")
-    sig_tips <- attr(scenario_scores, "signal_tooltips")
-
-    # Regime cards
-    regime_cards <- paste0(vapply(seq_len(nrow(sorted)), function(i) {
-      s <- sorted[i, ]
-      is_dom <- isTRUE(s$is_dominant)
-      prob_css <- if (s$probability > 40) "sc-high" else if (s$probability > 30) "sc-mid" else "sc-low"
-      delta_str <- if (!is.na(s$delta)) sprintf(" (%+.1f%%)", s$delta) else ""
-      dom_mark <- if (is_dom) '<span class="sc-dominant">DOMINANT</span> ' else ""
-      catalyst_mark <- if (s$catalyst_boost > 0) sprintf(' <span class="sc-catalyst" title="Event catalyst boost: +%.2f">&#9889;</span>', s$catalyst_boost) else ""
-      tooltip <- REGIME_WEIGHTS[[s$regime]]$tooltip
-      sprintf(
-        '<div class="sc-card %s" title="%s">
-          <div class="sc-header">%s<span class="sc-name">%s</span>%s
-            <span class="sc-prob %s">%.1f%%%s</span></div>
-          <div class="sc-details">Raw: %.3f | %s</div>
-        </div>',
-        ifelse(is_dom, "sc-active", ""), tooltip, dom_mark, s$regime_label, catalyst_mark,
-        prob_css, s$probability, delta_str,
-        s$raw_score, s$details
-      )
-    }, character(1)), collapse = "\n")
-
-    # Signal gauges
-    signal_html <- ""
-    if (!is.null(signals)) {
-      sig_bars <- paste0(vapply(names(signals), function(sn) {
-        v <- signals[[sn]]
-        if (is.null(v) || is.na(v)) v <- 0
-        pct <- round(v * 100)
-        tip <- if (!is.null(sig_tips[[sn]])) sig_tips[[sn]] else sn
-        bar_css <- if (v > 0.65) "sig-bar-high" else if (v > 0.35) "sig-bar-mid" else "sig-bar-low"
-        sprintf('<div class="sig-gauge" title="%s"><span class="sig-label">%s</span><div class="sig-track"><div class="sig-fill %s" style="width:%d%%"></div></div><span class="sig-val">%.2f</span></div>',
-          tip, sn, bar_css, pct, v)
-      }, character(1)), collapse = "\n")
-      signal_html <- sprintf('<div class="sig-grid">%s</div>', sig_bars)
-    }
-
-    # Positioning stress
-    pos_html <- ""
-    if (!is.null(positioning)) {
-      pos_css <- if (positioning$crowding_score > 0.5) "sc-high" else if (positioning$crowding_score > 0.3) "sc-mid" else "sc-low"
-      cot_str <- if (length(positioning$cot_extremes) > 0) paste("COT extremes:", paste(positioning$cot_extremes, collapse = ", ")) else "No COT extremes"
-      age_str <- if (!is.null(positioning$cot_as_of) && !is.na(positioning$cot_age_days))
-        sprintf(' <span class="pos-age%s">COT as of %s (%dd)</span>',
-                ifelse(isTRUE(positioning$cot_stale), " pos-age-stale", ""),
-                positioning$cot_as_of, round(positioning$cot_age_days)) else ""
-      pos_html <- sprintf('<div class="pos-bar"><span class="pos-label" title="Positioning stress from sector RS extremes + COT data. >0.3 = fragile, boosts liquidation probability.">Positioning stress:</span> <span class="sc-prob %s">%.2f</span> <span class="pos-detail">%s</span>%s</div>',
-        pos_css, positioning$crowding_score, cot_str, age_str)
-    }
-
-    sec8 <- paste0(
-      '<div class="sc-container">', regime_cards, '</div>',
-      signal_html,
-      pos_html
-    )
-  } else {
-    sec8 <- '<div class="sc-card"><div class="sc-header">No regime data</div></div>'
-  }
+  # Positioning (COT age) from the regime model's attributes: still used by the stale-data banner
+  positioning <- if (!is.null(scenario_scores)) attr(scenario_scores, "positioning") else NULL
 
   # Stress banner: simple VIX > 25 warning (backtested — regime signals don't predict BOT outcomes,
   # but VIX > 25 + credit stress marks the rare liquidity events worth avoiding)
@@ -204,10 +112,7 @@ build_sections <- function(vix, rates, breadth, spy, commodities, mismatches, sy
 
   list(sec1 = sec1, sec2 = sec2, sec3 = sec3,
        sec4 = paste0(sec4, collapse = ""),
-       sec5 = paste0(sec5, collapse = ""),
-       sec6 = paste0(sec6, collapse = ""),
        sec7 = paste0(sec7, collapse = ""),
-       sec8 = sec8,
        stress_banner = stress_banner,
        data_banner = data_banner)
 }
@@ -243,36 +148,40 @@ rates_fred_rows <- function(rates) {
 }
 
 # ── Render final HTML ───────────────────────────────────────────────────────
-render_macro_html <- function(sections, synthesis, breadth, out_dir, im = NULL, cot = NULL,
-                              vix = NULL, scenario_scores = NULL, prev = NULL) {
+render_macro_html <- function(sections, rg, rk, breadth, out_dir, im = NULL, cot = NULL, vix = NULL, prev = NULL) {
   template_file <- file.path(SCRIPT_DIR, "template.html")
-  template <- paste(readLines(template_file, encoding = "UTF-8"), collapse = "\n")
+  template <- paste(readLines(template_file, encoding = "UTF-8"), collapse = "
+")
+  leg_reset()
+  # Rendered in page order, so the Legend's table notes (L2) follow the page; the Legend itself last
+  main_00 <- if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else
+    paste0(stale_html(im$sections, im$stale), movie_main_html(im$movie, im$matches, im$sectors, im$sections))
+  summary <- summary_html(im, rg, rk, breadth, vix, prev)
+  sector_map <- if (is.null(im)) "" else sectors_html(im$sectors)
+  heatmap <- if (is.null(im)) "" else paste0(ytd_band_html(im$ytd), heatmap_html(im$sections))
+  panels <- if (is.null(im)) "" else panels_html(im$sections)
+  cot_html <- cot_dashboard_html(cot)
+  detail_00 <- if (is.null(im)) "" else movie_detail_html(im$movie, im$matches, im$sectors, im$z1, im$carry)
 
   replacements <- list(
     "{{RUN_DATE}}"    = format(Sys.time(), "%d %B %Y — %H:%M"),
-    "{{BIAS_CSS}}"    = badge_class(synthesis$bias_zone),
-    "{{BIAS}}"        = synthesis$bias,
-    "{{BIAS_EXPLAIN}}" = synthesis$bias_explain,
-    "{{MOVIE}}"       = if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else paste0(daily_strip_html(im$sections), stale_html(im$sections, im$stale), movie_html(im$movie, im$matches, im$sectors, im$z1, im$carry)),
-    "{{SUMMARY}}"     = summary_html(im, synthesis, breadth, vix, scenario_scores, prev),
-    "{{HEATMAP}}"     = if (is.null(im)) "" else paste0(ytd_band_html(im$ytd), heatmap_html(im$sections)),
-    "{{PANELS}}"      = if (is.null(im)) "" else panels_html(im$sections),
-    "{{SECTOR_MAP}}"  = if (is.null(im)) "" else sectors_html(im$sectors),
-    "{{COT_DASHBOARD}}" = cot_dashboard_html(cot),
-    "{{METHODOLOGY}}" = methodology_html(),
+    "{{REGIME_BAR}}"  = regime_bar_html(rg, rk),
+    "{{SUMMARY}}"     = summary,
+    "{{MAIN_00}}"     = main_00,
+    "{{SECTOR_MAP}}"  = sector_map,
+    "{{HEATMAP}}"     = heatmap,
+    "{{PANELS}}"      = panels,
+    "{{COT_DASHBOARD}}" = cot_html,
+    "{{DETAIL_00}}"   = detail_00,
     "{{SEC1}}"        = sections$sec1,
     "{{SEC2}}"        = sections$sec2,
     "{{SEC3}}"        = sections$sec3,
     "{{SEC4}}"        = sections$sec4,
-    "{{SEC5}}"        = sections$sec5,
-    "{{SEC6}}"        = sections$sec6,
     "{{SEC7}}"        = sections$sec7,
-    "{{SEC8}}"        = sections$sec8,
     "{{STRESS_BANNER}}" = sections$stress_banner,
-    "{{DATA_BANNER}}"   = if (is.null(sections$data_banner)) "" else sections$data_banner,
-    "{{FOOTER_BREADTH}}" = sprintf("Breadth: %.1f%% (%d/%d stocks &gt; MA50) &mdash; computed in %.1fs",
-                                    breadth$pct, breadth$n_above, breadth$n_valid, breadth$elapsed)
+    "{{DATA_BANNER}}"   = if (is.null(sections$data_banner)) "" else sections$data_banner
   )
+  replacements[["{{LEGEND}}"]] <- legend_html()
 
   html <- render_template(template, replacements)
 

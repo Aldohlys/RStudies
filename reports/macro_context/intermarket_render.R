@@ -111,6 +111,9 @@ stale_html <- function(sections, stale) {
 daily_strip_html <- function(sections) {
   all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
   by_sym <- setNames(all_m, vapply(all_m, `[[`, "", "sym"))
+  shown <- by_sym[intersect(unlist(DAILY_STRIP), names(by_sym))]
+  dts <- vapply(shown, function(m) as.character(m$date), "")
+  common <- names(sort(table(dts), decreasing = TRUE))[1]
   rows <- vapply(names(DAILY_STRIP), function(region) {
     ms <- by_sym[intersect(DAILY_STRIP[[region]], names(by_sym))]
     if (!length(ms)) return("")
@@ -118,28 +121,49 @@ daily_strip_html <- function(sections) {
       cls <- if (is.na(m$c1d)) "" else if (m$c1d > 0) "im-pos" else if (m$c1d < 0) "im-neg" else ""
       txt <- if (is.na(m$c1d)) "&ndash;" else sprintf("%+.2f%%", m$c1d)
       if (!is.null(m$stale_missing)) cls <- paste(cls, "im-stale")
-      sprintf("<span class='im-day'>%s <b class='%s'>%s</b> <span class='im-sub'>%s</span></span>",
-              esc(m$label), cls, txt, short_date(m$date))
+      own <- if (as.character(m$date) != common) sprintf(" <span class='im-sub'>(%s)</span>", short_date(m$date)) else ""
+      sprintf("<span class='im-day'>%s <b class='%s'>%s</b>%s</span>", esc(m$label), cls, txt, own)
     }, "")
     sprintf("<div class='im-day-row'><span class='im-day-reg'>%s</span>%s</div>", region, paste(items, collapse = ""))
   }, "")
-  paste0("<div class='im-daily'><div class='im-h3'>Last session &mdash; change from previous close, local currency</div>",
-         paste(rows, collapse = ""),
-         "<div class='im-legend'>Date = day of the last bar. A bar dated on the report day can be intraday ",
-         "if that market was still open when the report ran.</div></div>")
+  paste0("<div class='im-daily'><div class='im-h3'>Last session (", short_date(common), "), change from previous close, local currency</div>",
+         paste(rows, collapse = ""), "</div>")
 }
 
 MOVIE_TITLES <- c(stocks = "Stock markets", fx = "Currencies", metals = "Precious metals", oil = "Oil",
                   commod = "Other commodities", rates = "Rates and credit", world = "World markets")
 
-#' Scenario ETF -> verdicts of the map groups tagged with it (anchor, or the benchmark
-#' most members carried before the groups existed), one badge per group, name on hover
-verdict_tag <- function(etf, sectors) {
-  hit <- vapply(strsplit(sectors$tags, " ", fixed = TRUE), function(t) etf %in% t, logical(1))
-  if (!any(hit)) return(etf)
-  paste0(etf, " ", paste(sprintf("<span class='im-badge im-v-%s' title='%s'>%s</span>",
-                                 tolower(sectors$verdict[hit]), esc(sectors$group[hit]), sectors$verdict[hit]),
-                         collapse = " "))
+#' Sector-map groups behind a list of scenario ETFs: each group once, whichever ETF tags it (tags = the group's
+#' anchor and the benchmark most members carried before the groups existed). Returns verdict -> group names.
+scenario_groups <- function(etfs, sectors) {
+  if (!length(etfs) || is.null(sectors) || !nrow(sectors)) return(list())
+  tags <- strsplit(sectors$tags, " ", fixed = TRUE)
+  hit <- which(vapply(tags, function(tg) any(etfs %in% tg), logical(1)))
+  split(sub("^[^-]+ - ", "", sectors$group[hit]), sectors$verdict[hit])
+}
+
+#' Scenario x sector map table: the scenario's expected direction against today's section-10 verdict.
+#' Rows only when they hold a group; WATCH / AVOID = price has not confirmed either way.
+bot_table_html <- function(a, sectors) {
+  up <- scenario_groups(a$bot$long, sectors); dn <- scenario_groups(a$bot$short, sectors)
+  g <- function(x, v) if (is.null(x[[v]])) character(0) else x[[v]]
+  ln <- function(v, grp) if (length(grp)) sprintf("<span class='im-badge im-v-%s'>%s</span> %s", tolower(v), v, esc(paste(grp, collapse = ", "))) else ""
+  rows <- list(
+    list("Scenario LONG, Sector map LONG", esc(paste(g(up, "LONG"), collapse = ", ")), "bt-agree"),
+    list("Scenario SHORT, Sector map SHORT", esc(paste(g(dn, "SHORT"), collapse = ", ")), "bt-agree"),
+    list("Scenario LONG, Sector map SHORT", esc(paste(g(up, "SHORT"), collapse = ", ")), "bt-conflict"),
+    list("Scenario SHORT, Sector map LONG", esc(paste(g(dn, "LONG"), collapse = ", ")), "bt-conflict"),
+    list("Sector map WATCH / AVOID", paste(Filter(nzchar, c(ln("WATCH", c(g(up, "WATCH"), g(dn, "WATCH"))),
+                                                          ln("AVOID", c(g(up, "AVOID"), g(dn, "AVOID"))))), collapse = "<br>"), "bt-plain"))
+  rows <- Filter(function(r) nzchar(r[[2]]), rows)
+  if (!length(rows)) return("")
+  leg_note("00 &mdash; scenario vs sector map table", paste0(
+    "Scenario LONG / SHORT = groups the scenario expects to rise / fall: the sector-map groups tagged with the ETFs listed for the scenario in archetypes.R (bot$long, bot$short). ",
+    "Sector map = today's section-10 verdict, one per group. Rows with no group are not shown. ",
+    "Sector map WATCH / AVOID = neither agrees nor conflicts: price has not confirmed the scenario's direction ",
+    "(WATCH = trend and rotation disagree; AVOID = trend mixed, or drivers against the trend)."))
+  paste0("<table class='bt'>", paste(vapply(rows, function(r) sprintf("<tr><th>%s</th><td class='%s'>%s</td></tr>", r[[1]], r[[3]], r[[2]]), ""), collapse = ""),
+         "</table>")
 }
 
 #' 60-day lines: state solid, move dotted, the state "in place" threshold dashed
@@ -161,20 +185,25 @@ score_pair <- function(m) sprintf(
 
 age_badge <- function(st) sprintf("<span class='im-badge im-age-%s'>%s</span>", tolower(st), st)
 
-scenario_card <- function(m, sectors, rank) {
+#' Scenario card. compact = Main tab (status, confirms / ends if, BOT table); full = Detail (all texts)
+scenario_card <- function(m, sectors, rank, compact = FALSE) {
   a <- m$a
-  impl <- function(etfs) if (length(etfs)) paste(vapply(etfs, verdict_tag, "", sectors = sectors), collapse = " ") else "none"
-  sprintf(paste0(
-    "<div class='im-card%s'><div class='im-card-h'><span class='im-card-name'>%s</span>",
-    "<span class='im-score'>%s</span></div>",
-    "<p class='im-age'>%s %s <span class='im-sub'>last 60 trading days: solid = state, dotted = move, dashed = in place (state %.0f%%)</span><br>%s</p>",
-    "<p>%s</p><p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p>",
-    "<p><b>Signs to watch.</b> %s</p><p><b>Not this scenario if.</b> %s</p>",
-    "<p><b>BOT.</b> %s<br>Long side: %s<br>Short side: %s</p></div>"),
-    if (rank == 1) " im-top" else "", esc(a$name), score_pair(m),
-    age_badge(m$age$status), score_spark(m$hist, hm = m$hist_move), 100 * STATE_ACTIVE, m$age$text,
-    a$movie, a$analogs, a$after, a$tells, a$invalid, a$bot$note, impl(a$bot$long), impl(a$bot$short))
+  leg_note("00 &mdash; scenario cards", sprintf(
+    "Line next to the status: last 60 trading days; solid = state, dotted = move, dashed = in place (state %.0f%%).", 100 * STATE_ACTIVE))
+  head <- sprintf(paste0("<div class='im-card%s'><div class='im-card-h'><span class='im-card-name'>%s</span>",
+                         "<span class='im-score'>%s</span></div><p class='im-age'>%s %s<br>%s</p>"),
+                  if (rank == 1) " im-top" else "", esc(a$name), score_pair(m),
+                  age_badge(m$age$status), score_spark(m$hist, hm = m$hist_move), m$age$text)
+  bot <- sprintf("<div class='bot-box'><p class='im-compact'><b>BOT.</b> %s</p>%s</div>", a$bot$note, bot_table_html(a, sectors))
+  if (compact) return(paste0(head,
+    sprintf("<p class='im-compact'><b>Confirms:</b> %s</p><p class='im-compact'><b>Ends if:</b> %s</p>", a$tells, a$invalid),
+    bot, "</div>"))
+  paste0(head,
+         sprintf("<p>%s</p><p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p><p><b>Signs to watch.</b> %s</p><p><b>Not this scenario if.</b> %s</p>",
+                 a$movie, a$analogs, a$after, a$tells, a$invalid),
+         bot, "</div>")
 }
+
 
 #' Conditional chains (archetypes with a `chain`), shown whatever the scenario's rank
 chains_html <- function(z) {
@@ -210,7 +239,21 @@ carry_html <- function(carry) {
     if (t$status == "QUIET") "" else ca$movie, if (t$status == "QUIET") "" else paste("BOT:", ca$bot))
 }
 
-movie_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
+#' Section 00 on the Main tab: top scenario (compact), what the month says, last-session strip
+movie_main_html <- function(movie, matches, sectors, sections) {
+  txt <- paste(unlist(movie), collapse = " ")
+  reads <- regmatches(txt, gregexpr("<span class='im-read'>[^<]*</span>", txt))[[1]]
+  reads <- trimws(gsub("<[^>]+>", "", reads))
+  paste0(
+    scenario_card(matches[[1]], sectors, 1, compact = TRUE),
+    if (length(reads)) paste0("<div class='im-reads'><b>What the month says:</b><ul>", paste(sprintf("<li>%s</li>", reads), collapse = ""), "</ul></div>") else "",
+    daily_strip_html(sections),
+    "<div class='proto-link'>Full movie, scenario description and history, other candidates, scenario table, chains, yen carry: ",
+    "<a href='#detail' onclick=\"showTab('detail');return false;\">Detail tab, 00b</a></div>")
+}
+
+#' Section 00b on the Detail tab: the full movie, both cards, ranked and full scenario tables, chains, yen carry
+movie_detail_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
   paras <- paste(vapply(names(MOVIE_TITLES), function(k)
     sprintf("<p><b>%s.</b> %s</p>", MOVIE_TITLES[[k]], movie[[k]]), ""), collapse = "\n")
   all_scores <- paste(vapply(matches, function(m) sprintf(
@@ -218,21 +261,25 @@ movie_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
     esc(m$name), if (is.na(m$state)) "n/a" else sprintf("%+.0f%%", 100 * m$state), 100 * m$score, 100 * m$score3m,
     age_badge(m$age$status), if (m$age$run > 0) m$age$run else "&ndash;",
     paste(sprintf("%+.0f", 100 * m$prev5), collapse = " "), score_spark(m$hist, 120, 26, m$hist_move)), ""), collapse = "")
+  leg_note("Detail 00b &mdash; ranked scenario table", sprintf(paste0(
+    "Numbers match the map. State = where each asset stands in its one-year range against the scenario's fingerprint; ",
+    "in place from %+.0f%% for %d sessions in a row. Move 1M = how far the last month's moves point toward it; strong from %+.0f%%. Tails on the map: the last 5 sessions."),
+    100 * STATE_ACTIVE, MIN_IN_PLACE, 100 * SCEN_ACTIVE))
+  leg_note("Detail 00b &mdash; all scenarios: state and move scores", paste0(
+    "Both scores are weighted agreements with the scenario's fingerprint, &minus;100% (opposite) to +100% (identical). ",
+    sprintf("State = where each asset stands in its range of the last %d sessions (bottom &minus;1, top +1): it decides whether the scenario is in place (state &ge; %.0f%%, %d sessions in a row). ",
+            STATE_WINDOW, 100 * STATE_ACTIVE, MIN_IN_PLACE),
+    "Move = each asset's change over the last 21 sessions (Move 1M) or 63 sessions (Move 3M), divided by its usual volatility over that horizon: it gives the direction. ",
+    sprintf("Status is recomputed for each of the last %d trading days (glossary L1, M1). ", HIST_DAYS),
+    "Ranked by state. Thresholds calibrated on dated 2004-2026 episodes (M1)."))
   paste0(
     "<div class='im-movie'>", paras,
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
-    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>", chains_html(z), carry_html(carry),
-    "<details class='im-details'><summary>All scenarios: state and move scores</summary><table>",
-    "<tr class='im-head'><td>Scenario</td><td>State</td><td>Move 1M</td><td>Move 3M</td><td>Status</td><td>Days in place</td><td>State, previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table>",
-    "<div class='im-legend'>Both scores are weighted agreements with the scenario's fingerprint, &minus;100% (opposite) to +100% (identical). ",
-    sprintf("State = where each asset stands in its range of the last %d sessions (bottom &minus;1, top +1): it decides whether the scenario is in place (state &ge; %.0f%%). ",
-            STATE_WINDOW, 100 * STATE_ACTIVE),
-    "Move = each asset's change over the last 21 sessions (Move 1M) or 63 sessions (Move 3M), divided by its usual volatility over that horizon: it gives the direction. ",
-    sprintf("Status (recomputed for each of the last %d trading days): BUILDING = in place and move &ge; %.0f%%; ESTABLISHED = in place, move between 0 and %.0f%%, under 40 days; ",
-            HIST_DAYS, 100 * SCEN_ACTIVE, 100 * SCEN_ACTIVE),
-    "MATURE = the same after 40 days or more; FADING = in place but move below 0 (assets moving against it); ",
-    sprintf("EMERGING = not in place but move &ge; %.0f%%; FADED = in place in one of the previous five reports but not today. ", 100 * SCEN_ACTIVE),
-    "Ranked by state. Thresholds calibrated on dated 2004-2026 episodes (Methodology tab, M1).</div></details>")
+    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>",
+    scenario_list_html(matches),
+    chains_html(z), carry_html(carry),
+    "<details class='im-details' open><summary>All scenarios: state and move scores</summary><table>",
+    "<tr class='im-head'><td>Scenario</td><td>State</td><td>Move 1M</td><td>Move 3M</td><td>Status</td><td>Days in place</td><td>State, previous 5 reports (oldest first)</td><td>Last 60 days</td></tr>", all_scores, "</table></details>")
 }
 
 sectors_html <- function(sx) {
@@ -258,7 +305,7 @@ sectors_html <- function(sx) {
   paste0("<div class='im-tw'><table><tr class='im-head'><td>Verdict</td><td>Group</td><td>BOT / members</td><td>Trend</td><td>Rotation</td>",
          "<td>RS ratio</td><td>RS mom</td><td>RS 3M</td><td>1M</td><td>Drivers</td><td>Driver detail</td></tr>",
          paste(rows, collapse = "\n"), "</table></div>", ug_html,
-         "<div class='im-legend'>Rows = correlation groups (ScannerUniverse, cluster review) holding at least one BOT-eligible name. ",
+         leg_note("10 &mdash; BOT sector map", paste0("Rows = correlation groups (ScannerUniverse, cluster review) holding at least one BOT-eligible name. ",
          "Each group is read as the equal-weight index of all its members (mean daily dividend-adjusted return, compounded; ",
          "a day counts when at least half the members trade), never through an anchor ETF; BOT's S3 compares a name with the same members. ",
          "BOT / members = BOT-eligible names / all names in the group. ",
@@ -267,7 +314,7 @@ sectors_html <- function(sx) {
          "Rotation: Leading = RS ratio &ge; 100 and RS mom &ge; 0; Weakening = &ge; 100, mom &lt; 0; Improving = &lt; 100, mom &ge; 0; Lagging = &lt; 100, mom &lt; 0. ",
          "RS 3M = 63-day change of group index / S&amp;P 500. Drivers = mean of (sensitivity sign &times; driver trend, UP +1 / DOWN &minus;1 / MIXED 0), &minus;1 to +1. ",
          "Verdict: LONG = trend UP, rotation Leading or Improving, drivers &ge; 0. SHORT = trend DOWN, rotation Lagging or Weakening, drivers &le; 0. ",
-         "AVOID = trend MIXED, or drivers &le; &minus;0.5 against an UP trend (&ge; +0.5 against a DOWN trend). WATCH = all other cases.</div>")
+         "AVOID = trend MIXED, or drivers &le; &minus;0.5 against an UP trend (&ge; +0.5 against a DOWN trend). WATCH = all other cases.")))
 }
 
 #' Year-to-date band per asset: grey bar = lowest to highest return since 31 Dec, dot = today
@@ -289,7 +336,7 @@ ytd_band_html <- function(y) {
   paste0("<div class='im-h3'>Year to date &mdash; range since 31 Dec and where each asset stands now</div>",
          "<table class='ytd-table'><tr class='im-head'><td></td><td></td><td>YTD</td><td>Low / high</td></tr>",
          paste(rows, collapse = ""), "</table>",
-         "<div class='im-legend'>Grey bar = lowest to highest return reached since the last close of last year; dot = today; ",
+         leg_note("09 &mdash; year to date band", paste0("Grey bar = lowest to highest return reached since the last close of last year; dot = today; ",
          "vertical line = 0. Price returns in each asset's own currency (EEM, LQD, HYG in USD); gold and Brent on the front-month future (not roll-adjusted); bond ETFs fall when yields rise. ",
-         "A dot near the left end of its bar = the asset gave back the year's gains.</div>")
+         "A dot near the left end of its bar = the asset gave back the year's gains.")))
 }

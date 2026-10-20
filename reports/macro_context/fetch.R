@@ -109,9 +109,10 @@ FRED_SERIES <- c(DGS2 = "2Y yield", DGS10 = "10Y yield", DFII10 = "10Y real yiel
 #' Rows are kept from the last business days of the previous year on, for the
 #' year-to-date changes. Holidays come back empty and are dropped.
 #' @return data.frame(ticker, date, Close) with ticker = FRED series id; NULL if nothing came back
-fetch_fred <- function(ids = names(FRED_SERIES), from = as.Date(sprintf("%d-12-01", as.integer(format(Sys.Date(), "%Y")) - 1))) {
+fetch_fred <- function(ids = names(FRED_SERIES), from = as.Date(sprintf("%d-12-01", as.integer(format(Sys.Date(), "%Y")) - 1)),
+                       cache = FRED_CACHE) {
   today <- as.character(Sys.Date())
-  cached <- cache_read(FRED_CACHE, today)
+  cached <- cache_read(cache, today)
   if (!is.null(cached)) {
     cached$cache_date <- NULL
     cached$date <- as.Date(cached$date)
@@ -126,6 +127,15 @@ fetch_fred <- function(ids = names(FRED_SERIES), from = as.Date(sprintf("%d-12-0
   })
   d <- do.call(rbind, out)
   if (is.null(d) || nrow(d) == 0) return(NULL)
-  cache_write(FRED_CACHE, d, today)
+  cache_write(cache, d, today)
   d
+}
+
+#' US high-yield spread (ICE BofA OAS) for the Risk badge: 20-session z on 252 sessions of history, so
+#' about two years are fetched (FRED keeps three). Own cache table, so the rates cache keeps its short window.
+fetch_hy_spread <- function() {
+  d <- tryCatch(fetch_fred("BAMLH0A0HYM2", from = Sys.Date() - 760, cache = "macro_fred_hy_cache"),
+                error = function(e) { message("FRED high-yield spread failed: ", conditionMessage(e)); NULL })
+  if (is.null(d)) return(NULL)
+  d[d$ticker == "BAMLH0A0HYM2", c("date", "Close")]
 }
