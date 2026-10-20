@@ -148,6 +148,16 @@ rates_fred_rows <- function(rates) {
 }
 
 # ── Render final HTML ───────────────────────────────────────────────────────
+
+#' Header stamp: when the report ran and the last US session its data covers (S&P 500 last bar).
+#' A same-day re-run reuses the morning cache, so the run time alone does not say how fresh the data is.
+run_stamp <- function(im) {
+  now <- as.POSIXlt(Sys.time())
+  run <- sprintf("Run %d %s %d %02d:%02d", now$mday, month.abb[now$mon + 1], now$year + 1900, now$hour, now$min)
+  spx <- if (is.null(im)) NULL else Filter(function(m) identical(m$sym, "^GSPC"), unlist(lapply(im$sections, `[[`, "instruments"), recursive = FALSE))
+  if (!length(spx) || is.null(spx[[1]]$date)) return(run)
+  sprintf("%s &middot; data to %s close", run, short_date(spx[[1]]$date))
+}
 render_macro_html <- function(sections, rg, rk, breadth, out_dir, im = NULL, cot = NULL, vix = NULL, prev = NULL) {
   template_file <- file.path(SCRIPT_DIR, "template.html")
   template <- paste(readLines(template_file, encoding = "UTF-8"), collapse = "
@@ -164,7 +174,7 @@ render_macro_html <- function(sections, rg, rk, breadth, out_dir, im = NULL, cot
   detail_00 <- if (is.null(im)) "" else movie_detail_html(im$movie, im$matches, im$sectors, im$z1, im$carry)
 
   replacements <- list(
-    "{{RUN_DATE}}"    = format(Sys.time(), "%d %B %Y — %H:%M"),
+    "{{RUN_DATE}}"    = run_stamp(im),
     "{{REGIME_BAR}}"  = regime_bar_html(rg, rk),
     "{{SUMMARY}}"     = summary,
     "{{MAIN_00}}"     = main_00,
