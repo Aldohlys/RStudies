@@ -171,7 +171,7 @@ render_macro_html <- function(sections, rg, rk, breadth, out_dir, im = NULL, cot
   heatmap <- if (is.null(im)) "" else paste0(ytd_band_html(im$ytd), heatmap_html(im$sections))
   panels <- if (is.null(im)) "" else panels_html(im$sections)
   cot_html <- cot_dashboard_html(cot)
-  detail_00 <- if (is.null(im)) "" else movie_detail_html(im$movie, im$matches, im$sectors, im$z1, im$carry)
+  detail_00 <- if (is.null(im)) "" else movie_detail_html(im$movie, im$matches, im$sectors, im$z1, im$carry, im$st, im$st5, im$st5_date)
 
   replacements <- list(
     "{{RUN_DATE}}"    = run_stamp(im),

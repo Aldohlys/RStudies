@@ -185,8 +185,34 @@ score_pair <- function(m) sprintf(
 
 age_badge <- function(st) sprintf("<span class='im-badge im-age-%s'>%s</span>", tolower(st), st)
 
+#' What moved a scenario's state between two sessions: per fingerprint asset, its position in its one-year range
+#' (signed as in FP_ASSETS) then and now, and its contribution change = weight x (state now - state then) / sum |weight|.
+#' The contributions add up to the state score, so the column sums to the state change.
+state_drivers_html <- function(m, st, st5, d5) {
+  if (is.null(st) || is.null(st5)) return("")
+  fp <- m$a$fp
+  k <- intersect(names(fp), names(st)[!is.na(st) & !is.na(st5[names(st)])])
+  if (!length(k)) return("")
+  den <- sum(abs(fp[k]))
+  ch <- fp[k] * (st[k] - st5[k]) / den
+  o <- order(-abs(ch))
+  rows <- vapply(o, function(i) {
+    a <- k[i]
+    sprintf("<tr><td>%s</td><td class='im-num'>%+g</td><td class='im-num'>%+.0f</td><td class='im-num'>%+.0f</td><td class='im-num %s'>%+.1f</td></tr>",
+            esc(fp_label(a)), fp[[a]], 100 * st5[[a]], 100 * st[[a]], if (ch[i] > 0) "im-pos" else if (ch[i] < 0) "im-neg" else "", 100 * ch[i])
+  }, "")
+  s0 <- sum(fp[k] * st5[k]) / den; s1 <- sum(fp[k] * st[k]) / den
+  leg_note("Detail 00b &mdash; what moved the state", paste0(
+    "Per fingerprint asset: weight in the scenario, position in its one-year range (&minus;100 bottom, +100 top, signed so that + means toward the scenario's expected direction) ",
+    "5 sessions ago and now, and the change in its contribution to the state score = weight &times; (position now &minus; position then) / &Sigma; |weight|, in points. ",
+    "The column adds up to the state change. Sorted by size of the change."))
+  sprintf(paste0("<details class='im-details' open><summary>What moved the state since %s: %+.0f%% &rarr; %+.0f%%</summary>",
+                 "<table class='im-drv'><tr class='im-head'><td>Asset</td><td>Weight</td><td>Then</td><td>Now</td><td>Change (pts)</td></tr>%s</table></details>"),
+          short_date(d5), 100 * s0, 100 * s1, paste(rows, collapse = ""))
+}
+
 #' Scenario card. compact = Main tab (status, confirms / ends if, BOT table); full = Detail (all texts)
-scenario_card <- function(m, sectors, rank, compact = FALSE) {
+scenario_card <- function(m, sectors, rank, compact = FALSE, drivers = "") {
   a <- m$a
   leg_note("00 &mdash; scenario cards", sprintf(
     "Line next to the status: last 60 trading days; solid = state, dotted = move, dashed = in place (state %.0f%%).", 100 * STATE_ACTIVE))
@@ -201,7 +227,7 @@ scenario_card <- function(m, sectors, rank, compact = FALSE) {
   paste0(head,
          sprintf("<p>%s</p><p><b>Past episodes.</b> %s</p><p><b>What came next.</b> %s</p><p><b>Signs to watch.</b> %s</p><p><b>Not this scenario if.</b> %s</p>",
                  a$movie, a$analogs, a$after, a$tells, a$invalid),
-         bot, "</div>")
+         drivers, bot, "</div>")
 }
 
 
@@ -253,7 +279,7 @@ movie_main_html <- function(movie, matches, sectors, sections) {
 }
 
 #' Section 00b on the Detail tab: the full movie, both cards, ranked and full scenario tables, chains, yen carry
-movie_detail_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
+movie_detail_html <- function(movie, matches, sectors, z = NULL, carry = NULL, st = NULL, st5 = NULL, d5 = NULL) {
   paras <- paste(vapply(names(MOVIE_TITLES), function(k)
     sprintf("<p><b>%s.</b> %s</p>", MOVIE_TITLES[[k]], movie[[k]]), ""), collapse = "\n")
   all_scores <- paste(vapply(matches, function(m) sprintf(
@@ -275,7 +301,8 @@ movie_detail_html <- function(movie, matches, sectors, z = NULL, carry = NULL) {
   paste0(
     "<div class='im-movie'>", paras,
     "<p class='im-fit'><b>How it fits together.</b> ", movie$fit, "</p></div>",
-    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1), scenario_card(matches[[2]], sectors, 2), "</div>",
+    "<div class='im-cards'>", scenario_card(matches[[1]], sectors, 1, drivers = state_drivers_html(matches[[1]], st, st5, d5)),
+    scenario_card(matches[[2]], sectors, 2, drivers = state_drivers_html(matches[[2]], st, st5, d5)), "</div>",
     scenario_list_html(matches),
     chains_html(z), carry_html(carry),
     "<details class='im-details' open><summary>All scenarios: state and move scores</summary><table>",

@@ -101,11 +101,15 @@ run_intermarket <- function(breadth) {
   bh <- load_breadth_history(raw, if (is.null(breadth)) NA_real_ else breadth$pct)
   z1 <- asset_moves(raw, 21, bh); z3 <- asset_moves(raw, 63, bh); st <- asset_states(raw, bh)
   sh <- scenario_history(raw, bh = bh)
+  # Asset states 5 sessions back: Detail 00b shows which assets moved each top scenario's state since then
+  d5 <- sh$state$date[max(1, nrow(sh$state) - 5)]
+  st5 <- asset_states(raw, bh, d5)
   matches <- add_persistence(match_archetypes(z1, z3, st), sh)
   carry <- tryCatch(carry_alert(raw), error = function(e) { message("Carry alert failed: ", conditionMessage(e)); NULL })
   movie <- build_movie(sections, breadth, z1, matches)
   list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry,
        vix_hist = get_close(raw, "^VIX"),   # Risk badge (regime_risk.R)
+       st5 = st5, st5_date = d5,
        stale = stale, bh = bh, hist_dates = sh$state$date,
        ytd = ytd)
 }

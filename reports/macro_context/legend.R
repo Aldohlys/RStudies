@@ -41,6 +41,7 @@ LEGEND_GLOSSARY <- list(
     c("EMERGING", "Not in place but move &ge; 40%: markets moving toward it."),
     c("FADED", "Not in place today but in place in one of the previous five reports."),
     c("INACTIVE", "Not in place and move below 40%."),
+    c("What moved the state", "Detail 00b, under each of the top two scenario cards: which fingerprint assets changed the state score over the last 5 sessions, in points; the column adds up to the state change."),
     c("Scenario map", "Scatter of all scenarios: x = state, y = 1-month move; tails = the last 5 sessions. Numbered dots match the ranked table in Detail 00b."),
     c("Scenario in place band", "One cell per session over the last 60 sessions, coloured by the top scenario in place. A scenario counts only from 3 sessions in a row; a gap of up to 4 sessions between two runs of the same scenario is bridged; a run of 1&ndash;2 sessions still going today is shown pale as pending. Grey = no scenario."),
     c("Confirms / Ends if", "The scenario's own tells and invalidation condition, as written in M3 ('Signs to watch', 'Not this scenario if')."),
