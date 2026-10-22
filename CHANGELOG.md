@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-22] - bot_monthly: trade-record override of the ADV floor
+
+### Added
+- **Trade-record override** (`reports/bot_monthly/main.R`): a name that fails `ADV_FLOOR` (85 CHF m/day) stays BOT-eligible when it has at least `RECORD_MIN_TRADES` (1) closed BOT trade with net P&L above `RECORD_MIN_PNL` (0), read from `Trades` (`Strategy = 'BOT'`, grouped by `Ssjacent`). `BOT_Reason = 'record_override'`. Only the ADV floor is waived; `no_data` and `no_atr` still exclude. Brings back STNG (ADV 74.6, one trade +362), which the playbook rates APPROVED.
+
 ## [2026-10-22] - macro_context: COT methodology wording
 
 ### Fixed

@@ -39,6 +39,11 @@ EM_DAYS      <- 10
 FETCH_YEARS  <- 5
 ADV_FLOOR    <- 85     # CHF m/day; reproduces today's book exactly (min of book_BOT=Y is 89)
 BIDASK_STOCK <- 8      # above this the option vehicles are unavailable
+# Trade-record override: a name with at least this many closed BOT trades and a
+# net P&L above the floor stays eligible when it fails ADV_FLOOR (STNG: one trade,
+# +362, ADV 74.6). It waives the ADV floor only; no_data and no_atr still exclude.
+RECORD_MIN_TRADES <- 1
+RECORD_MIN_PNL    <- 0
 OUT_DIR      <- "C:/Users/aldoh/Documents/NewTrading/reports"
 
 args    <- commandArgs(trailingOnly = TRUE)
@@ -210,7 +215,15 @@ migrate(conn)
 tickers <- DBI::dbGetQuery(conn,
   "SELECT Name, YahooName, Type, Currency, Multiplier, OptExchange, IV, AtmBidAskPct, AtmBidAsk_AsOf FROM Tickers
     WHERE Type IN ('STK','ETF','FUT') OR IV = 'YES'")
+# Closed BOT trades per underlying: a trade counts once it has a realised PnL leg.
+record <- DBI::dbGetQuery(conn,
+  "SELECT name, COUNT(*) AS n, SUM(pnl) AS pnl FROM (
+     SELECT TradeNr, Ssjacent AS name, SUM(PnL) AS pnl FROM Trades
+      WHERE Strategy = 'BOT' GROUP BY TradeNr, Ssjacent HAVING COUNT(PnL) > 0)
+    GROUP BY name")
 DBI::dbDisconnect(conn)
+record <- record[record$n >= RECORD_MIN_TRADES & record$pnl > RECORD_MIN_PNL, , drop = FALSE]
+message(sprintf("Trade-record override available for %d names", nrow(record)))
 
 if (length(syms_arg)) tickers <- tickers[tickers$Name %in% syms_arg, , drop = FALSE]
 if (!is.na(lim) && lim > 0) tickers <- utils::head(tickers, lim)
@@ -312,9 +325,10 @@ rows <- lapply(res, function(r) {
   # count is still computed and written, as a reported attribute.
   reason <- if (identical(r$status, "FAILED")) "no_data"
             else if (is.na(.s(r$atr_band))) "no_atr"
-            else if (identical(adv_pass, 0L)) "adv"
+            else if (identical(adv_pass, 0L))
+              (if (.s(r$name) %in% record$name) "record_override" else "adv")
             else "eligible"
-  elig <- as.integer(identical(reason, "eligible"))
+  elig <- as.integer(reason %in% c("eligible", "record_override"))
 
   list(name = .s(r$name), yahoo = .s(r$yahoo), type = .s(r$type), currency = .s(r$currency),
        bot_eligible = .i(elig), bot_reason = .s(reason), vehicle_hint = .s(hint),
