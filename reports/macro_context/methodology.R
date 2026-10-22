@@ -177,7 +177,9 @@ md_panels <- function() {
     "AVOID = trend MIXED, or drivers &le; &minus;0.5 against an UP trend (&ge; +0.5 against DOWN); WATCH = the rest.</p>",
     "<p><b>11 COT.</b> CFTC weekly report (Tuesday positions). Index = 100 &times; (current &minus; lowest) / (highest &minus; lowest) over 52, 156 or 260 reports. ",
     "Speculative group: managed money (commodities), leveraged funds (financials); other side: commercials, asset managers; ",
-    "legacy large speculators for comparison with COTSignal. Extreme = 5-year net percentile &ge; 90 or &le; 10.</p>")
+    "legacy large speculators for comparison with COTSignal. The index is a position in the range, not a percentile; shaded cells: index &ge; 90 or &le; 10 in any window. ",
+    "Separately, the positioning-stress extreme flag (positioning.R: WTI, gold, copper, grains, USD) uses the 5-year percentile rank of the net ",
+    "(share of weekly reports below the current one) &ge; 90 or &le; 10.</p>")
 }
 
 md_limits <- function() {

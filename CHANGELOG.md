@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-22] - macro_context: COT methodology wording
+
+### Fixed
+- **Section 11 methodology no longer calls the COT index a percentile** (`methodology.R`). The shaded cells use the min-max index (>= 90 or <= 10 in any window), which COTSignal also states is not a percentile. The 5-year percentile rank applies only to the positioning-stress extreme flag in `positioning.R`, now described separately.
+
 ## [2026-10-16] - macro_context: 10-year yield decomposition, 2Y, policy pricing, year-to-date band
 
 ### Added
