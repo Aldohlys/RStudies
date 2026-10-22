@@ -68,10 +68,150 @@ refetch_empty_closes <- function(raw, today) {
         cache_replace_recent(INTERMARKET_CACHE, fr, today)
       }
     }
-    st <- empty_last_closes(raw)
-    if (nrow(st)) message("Still no close after re-fetch: ", paste(st$ticker, collapse = ", "))
   }
+  raw <- fill_stock_closes(fill_futures_closes(raw))
+  filled <- attr(raw, "filled")
+  st <- empty_last_closes(raw)
+  if (nrow(st)) message("Still no close after re-fetch: ", paste(st$ticker, collapse = ", "))
   attr(raw, "stale") <- st[!st$ticker %in% roll_standins(), , drop = FALSE]
+  attr(raw, "filled") <- filled
+  raw
+}
+
+#' Futures panels (FILL_ROOTS) without a close for a completed session take it from the
+#' contract the =F series tracked that day (fut_front_ym()): Yahoo's own contract series
+#' first, fetched with the report, else IBKR daily bars when TWS answers. Yahoo can leave
+#' =F empty for a completed session, or drop the row, while its contracts carry the
+#' settlement: on 2026-10-22 BZ=F, CL=F, HO=F, PL=F, KC=F and LBR=F had no 21 Oct close
+#' and BZZ26.NYM had 108.82. Never IBKR's continuous future: it had rolled PL to Jan
+#' while PL=F was still on Oct (1635.9 against 1625.5).
+#' @return raw with the closes added; attr(raw, "filled") = data.frame(ticker, date, contract, source)
+fill_futures_closes <- function(raw) {
+  gaps <- list()
+  for (key in intersect(names(FILL_ROOTS), unique(raw$ticker))) {
+    # Completed sessions only: today's in-progress bar can carry a close while yesterday's is empty
+    ok <- raw$ticker == key & !is.na(raw$Close) & raw$date < Sys.Date()
+    if (!any(ok) || max(raw$date[ok]) >= Sys.Date() - 1) next
+    days <- seq(max(raw$date[ok]) + 1, Sys.Date() - 1, by = "day")
+    days <- days[bday(days)]
+    if (!length(days)) next
+    root <- FILL_ROOTS[[key]]
+    ym <- vapply(seq_along(days), function(i) fut_front_ym(root, days[i]), 0)
+    gaps[[key]] <- data.frame(ticker = key, root = root, date = days, ym = ym, stringsAsFactors = FALSE)
+  }
+  if (!length(gaps)) return(raw)
+  g <- do.call(rbind, gaps)
+  g$contract <- vapply(seq_len(nrow(g)), function(k) fut_contract(g$root[k], g$ym[k])$sym, "")
+  g$source <- NA_character_
+  g$Open <- g$High <- g$Low <- g$Close <- g$Volume <- NA_real_
+
+  y <- raw[raw$ticker %in% g$contract & !is.na(raw$Close), ]
+  j <- match(paste(g$contract, g$date), paste(y$ticker, y$date))
+  hit <- !is.na(j)
+  g[hit, c("Open", "High", "Low", "Close", "Volume")] <- y[j[hit], c("Open", "High", "Low", "Close", "Volume")]
+  g$source[hit] <- "Yahoo contract"
+
+  if (any(!hit)) {
+    need <- unique(g[!hit, c("root", "ym")])
+    reqs <- lapply(seq_len(nrow(need)), function(k) list(
+      root = need$root[k], exchange = FUT_IB_EXCH[[need$root[k]]],
+      month = sprintf("%d%02d", need$ym[k] %/% 12, need$ym[k] %% 12 + 1)))
+    ib <- tryCatch({
+      mod <- reticulate::import_from_path("ibkr_bars", path = file.path(SCRIPT_DIR))
+      mod$fut_daily_bars(reqs)
+    }, error = function(e) { message("IBKR futures fallback failed: ", conditionMessage(e)); NULL })
+    if (length(ib)) {
+      b <- do.call(rbind, lapply(ib, as.data.frame, stringsAsFactors = FALSE))
+      b$ym <- as.integer(substr(b$month, 1, 4)) * 12 + as.integer(substr(b$month, 5, 6)) - 1
+      k <- which(!hit)
+      j <- match(paste(g$root[k], g$ym[k], g$date[k]), paste(b$root, b$ym, as.Date(b$date)))
+      k <- k[!is.na(j)]; j <- j[!is.na(j)]
+      g[k, c("Open", "High", "Low", "Close", "Volume")] <- b[j, c("open", "high", "low", "close", "volume")]
+      g$source[k] <- paste0("IBKR ", b$local[j])
+    } else if (is.null(ib)) message("IBKR futures fallback: TWS not reachable")
+  }
+
+  g <- g[!is.na(g$Close), ]
+  if (!nrow(g)) return(raw)
+  message("Futures closes from the contract series: ",
+          paste(sprintf("%s %s = %s (%s)", g$ticker, g$date, g$Close, g$source), collapse = ", "))
+  add_filled_rows(raw, g)
+}
+
+#' Stocks and ETFs still without a close for a completed session (after the Yahoo
+#' re-fetch) take it from IBKR's all-session daily bar, when TWS answers. Yahoo left
+#' 24 European listings empty for 21 Oct 2026, still at 10:28 the next day. Contracts
+#' come from Tickers.YahooName (else IBKR_STK_EXTRA). A close is used only when IBKR's
+#' close of the session before agrees with Yahoo's within 0.25%: on 20 Oct 23 of 24
+#' names agreed within 0.05%, TotalEnergies differed by 0.55% (a late off-exchange
+#' print), and a contract or quote-unit mismatch (pence vs pounds) fails the same test.
+#' @return raw with the closes added to it and to attr(raw, "filled")
+fill_stock_closes <- function(raw) {
+  st <- empty_last_closes(raw)
+  st <- st[!grepl("=F$|=X$|^\\^|-USD$", st$ticker) & !is.na(st$last_close), , drop = FALSE]
+  if (!nrow(st)) return(raw)
+  conn <- Tdata::safe_db_connect()
+  tk <- tryCatch(DBI::dbGetQuery(conn, sprintf(
+    "SELECT YahooName, Name, Currency, ConId, Exchange FROM Tickers WHERE Type = 'STK' AND YahooName IN (%s)",
+    paste(DBI::dbQuoteString(conn, st$ticker), collapse = ","))), error = function(e) NULL)
+  DBI::dbDisconnect(conn)
+  reqs <- lapply(st$ticker, function(y) {
+    j <- if (is.null(tk)) NA else match(y, tk$YahooName)
+    if (!is.na(j)) {
+      r <- list(key = y, symbol = tk$Name[j], currency = tk$Currency[j])
+      if (!is.na(tk$ConId[j])) r$conid <- as.integer(tk$ConId[j])
+      if (!is.na(tk$Exchange[j]) && tk$Exchange[j] != "SMART") r$exchange <- tk$Exchange[j]
+      r
+    } else if (!is.null(IBKR_STK_EXTRA[[y]]))
+      list(key = y, symbol = IBKR_STK_EXTRA[[y]][["symbol"]], currency = IBKR_STK_EXTRA[[y]][["currency"]])
+  })
+  reqs <- Filter(Negate(is.null), reqs)
+  if (!length(reqs)) return(raw)
+  ib <- tryCatch({
+    mod <- reticulate::import_from_path("ibkr_bars", path = file.path(SCRIPT_DIR))
+    mod$stk_daily_bars(reqs)
+  }, error = function(e) { message("IBKR stock fallback failed: ", conditionMessage(e)); NULL })
+  if (is.null(ib)) { message("IBKR stock fallback: TWS not reachable"); return(raw) }
+  if (!length(ib)) return(raw)
+  b <- do.call(rbind, lapply(ib, as.data.frame, stringsAsFactors = FALSE))
+  b$date <- as.Date(b$date)
+
+  out <- list(); rejected <- character()
+  for (k in seq_len(nrow(st))) {
+    y <- st$ticker[k]; bk <- b[b$key == y, ]
+    if (!nrow(bk)) next
+    prev_y <- raw$Close[raw$ticker == y & raw$date == st$last_close[k]][1]
+    prev_i <- bk$close[bk$date == st$last_close[k]][1]
+    if (is.na(prev_y) || is.na(prev_i) || abs(prev_i / prev_y - 1) > 0.0025) {
+      rejected <- c(rejected, sprintf("%s (%s: IBKR %s, Yahoo %s)", y, st$last_close[k], prev_i, prev_y))
+      next
+    }
+    days <- raw$date[raw$ticker == y & is.na(raw$Close) & raw$date > st$last_close[k] & raw$date < Sys.Date()]
+    bk <- bk[bk$date %in% days, ]
+    if (nrow(bk)) out[[y]] <- data.frame(ticker = y, date = bk$date, Open = bk$open, High = bk$high,
+                                         Low = bk$low, Close = bk$close, Volume = bk$volume,
+                                         contract = bk$local, source = "IBKR", stringsAsFactors = FALSE)
+  }
+  if (length(rejected)) message("IBKR stock fallback, previous close disagrees (not used): ",
+                                paste(rejected, collapse = ", "))
+  if (!length(out)) return(raw)
+  g <- do.call(rbind, out)
+  message("Stock closes from IBKR: ", paste(sprintf("%s %s = %s", g$ticker, g$date, g$Close), collapse = ", "))
+  add_filled_rows(raw, g)
+}
+
+#' Put filled closes into raw, replacing the empty rows of the same day, and append
+#' them to attr(raw, "filled") = data.frame(ticker, date, contract, source)
+add_filled_rows <- function(raw, g) {
+  prev <- attr(raw, "filled")
+  new <- raw[match(g$ticker, raw$ticker), , drop = FALSE]
+  new$date <- g$date
+  new[, c("Open", "High", "Low", "Close", "Volume")] <- g[, c("Open", "High", "Low", "Close", "Volume")]
+  if ("Adjusted" %in% names(new)) new$Adjusted <- g$Close
+  raw <- raw[!paste(raw$ticker, raw$date) %in% paste(g$ticker, g$date), ]
+  raw <- rbind(raw, new)
+  raw <- raw[order(raw$ticker, raw$date), ]
+  attr(raw, "filled") <- rbind(prev, g[, c("ticker", "date", "contract", "source")])
   raw
 }
 
@@ -81,6 +221,9 @@ refetch_empty_closes <- function(raw, today) {
 roll_standins <- function() {
   s <- unlist(lapply(ROLL_ADJUSTED, function(root)
     vapply(fut_chain(root, Sys.Date() - 1)[-1], function(ym) fut_contract(root, ym)$sym, "")))
+  # Fronts fetched only to fill an empty =F close (coffee, lumber)
+  s <- c(s, vapply(setdiff(FILL_ROOTS, ROLL_ADJUSTED), function(root)
+    fut_contract(root, fut_front_ym(root, Sys.Date() - 1))$sym, ""))
   panel <- unlist(lapply(SECTIONS, function(sec) c(vapply(sec$instruments, `[`, "", 1),
                                                    unlist(lapply(sec$spreads %||% list(), `[`, 1:2)))))
   setdiff(s, panel)
@@ -91,6 +234,7 @@ run_intermarket <- function(breadth) {
   raw <- fetch_intermarket_data()
   if (is.null(raw) || nrow(raw) == 0) return(NULL)
   stale <- attr(raw, "stale")
+  filled <- attr(raw, "filled")
   # Year to date on front-month prices: the roll-adjusted series adds the roll yield (Brent 2026: +123% vs spot +74%)
   ytd <- tryCatch(ytd_ranges(raw), error = function(e) { message("YTD ranges failed: ", conditionMessage(e)); NULL })
   raw <- roll_adjust(raw)
@@ -110,7 +254,7 @@ run_intermarket <- function(breadth) {
   list(sections = sections, sectors = sectors, z1 = z1, z3 = z3, st = st, matches = matches, movie = movie, carry = carry,
        vix_hist = get_close(raw, "^VIX"),   # Risk badge (regime_risk.R)
        st5 = st5, st5_date = d5,
-       stale = stale, bh = bh, hist_dates = sh$state$date,
+       stale = stale, filled = filled, bh = bh, hist_dates = sh$state$date,
        ytd = ytd)
 }
 
@@ -424,8 +568,13 @@ report_symbols <- function() {
          unlist(lapply(GROUP_DRIVERS, function(d) split_keys(names(d)))))
   f <- unlist(lapply(FP_ASSETS[names(FP_ASSETS) != "ABS_BREADTH"],   # breadth comes from the daily runs, not Yahoo
                      function(a) unlist(strsplit(a[[1]], "/|-(?=\\^)", perl = TRUE))))
-  fronts <- unlist(lapply(ROLL_ADJUSTED, function(root)
-    vapply(fut_chain(root, Sys.Date() - 1), function(ym) fut_contract(root, ym)$sym, "")))
+  # Roll-adjusted roots need the next months as roll-day stand-ins; the others only the
+  # front, for fill_futures_closes()
+  fronts <- unlist(lapply(names(FILL_ROOTS), function(key) {
+    root <- FILL_ROOTS[[key]]
+    n <- if (key %in% names(ROLL_ADJUSTED)) 3 else 0
+    vapply(fut_chain(root, Sys.Date() - 1, n), function(ym) fut_contract(root, ym)$sym, "")
+  }))
   unique(stats::na.omit(c(BENCHMARK, s, g, f, fronts)))
 }
 

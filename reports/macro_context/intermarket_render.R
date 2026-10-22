@@ -108,6 +108,31 @@ stale_html <- function(sections, stale) {
          "</span></div>")
 }
 
+#' Note under the strip: closes Yahoo left empty and the report took elsewhere —
+#' futures from the contract their =F series tracked (fill_futures_closes()), stocks
+#' and ETFs from IBKR (fill_stock_closes()) — with the source of each
+filled_html <- function(sections, filled) {
+  if (is.null(filled) || !nrow(filled)) return("")
+  all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
+  lab <- setNames(vapply(all_m, `[[`, "", "label"), vapply(all_m, `[[`, "", "sym"))
+  days <- paste(unique(vapply(sort(unique(filled$date)), short_date, "")), collapse = ", ")
+  fut <- filled[grepl("=F$", filled$ticker), , drop = FALSE]
+  stk <- filled[!grepl("=F$", filled$ticker), , drop = FALSE]
+  fut_txt <- if (nrow(fut)) paste0(
+    "Futures, the close of the contract the =F series tracked that day: ",
+    esc(paste(sprintf("%s (%s, %s)", ifelse(fut$ticker %in% names(lab), lab[fut$ticker], fut$ticker),
+                      sub("[.].*$", "", fut$contract), fut$source), collapse = "; ")), ". ") else ""
+  shown <- unique(intersect(stk$ticker, names(lab)))
+  n_other <- length(setdiff(unique(stk$ticker), shown))
+  stk_txt <- if (nrow(stk)) paste0(
+    "Stocks and ETFs, the IBKR close over all sessions (used only where IBKR's previous close agrees with Yahoo's within 0.25%): ",
+    if (length(shown)) paste0("Panels: ", esc(paste(lab[shown], collapse = ", ")), ". ") else "",
+    if (n_other) sprintf("Also %d other symbols (sector-map members or ratio legs).", n_other) else "") else ""
+  paste0("<div class='stale-banner'>CLOSES FROM OTHER SOURCES FOR ", days, " &mdash; ",
+         length(unique(filled$ticker)), " symbols",
+         "<span class='stale-sub'>Yahoo had no close for these. ", fut_txt, stk_txt, "</span></div>")
+}
+
 daily_strip_html <- function(sections) {
   all_m <- unlist(lapply(sections, `[[`, "instruments"), recursive = FALSE)
   by_sym <- setNames(all_m, vapply(all_m, `[[`, "", "sym"))

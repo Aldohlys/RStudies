@@ -275,13 +275,23 @@ FUT_LTD <- list(
   PA = function(ym) back_bdays(last_bday(ym), 2),
   # Corn, wheat: business day before the 15th of the delivery month (rolled 2026-09-15)
   ZC = function(ym) back_bdays(ym_date(ym, 15), 1),
-  ZW = function(ym) back_bdays(ym_date(ym, 15), 1)
+  ZW = function(ym) back_bdays(ym_date(ym, 15), 1),
+  # ICE coffee: first notice day, seven business days before the first business day of
+  # the delivery month. Yahoo's KC=F was on Dec on 2026-10-21; its roll day is not yet observed.
+  KC = function(ym) { d <- ym_date(ym); while (!bday(d)) d <- d + 1; back_bdays(d, 7) },
+  # CME lumber: business day before the 16th of the delivery month
+  LBR = function(ym) back_bdays(ym_date(ym, 16), 1)
 )
 
 # Delivery months the continuous series steps through (default: every month)
-FUT_MONTHS <- list(GC = c(2, 4, 6, 8, 12), ZC = c(3, 5, 7, 9, 12), ZW = c(3, 5, 7, 9, 12))
+FUT_MONTHS <- list(GC = c(2, 4, 6, 8, 12), ZC = c(3, 5, 7, 9, 12), ZW = c(3, 5, 7, 9, 12),
+                   KC = c(3, 5, 7, 9, 12), LBR = c(1, 3, 5, 7, 9, 11))
 # Yahoo exchange suffix (default .NYM)
-FUT_EXCH <- c(GC = ".CMX", SI = ".CMX", HG = ".CMX", ZC = ".CBT", ZW = ".CBT")
+FUT_EXCH <- c(GC = ".CMX", SI = ".CMX", HG = ".CMX", ZC = ".CBT", ZW = ".CBT", KC = ".NYB", LBR = ".CME")
+# IBKR exchange of each root, for the empty-close fallback (fill_futures_closes())
+FUT_IB_EXCH <- c(CL = "NYMEX", BZ = "NYMEX", NG = "NYMEX", HO = "NYMEX", RB = "NYMEX", GC = "COMEX",
+                 SI = "COMEX", HG = "COMEX", PL = "NYMEX", PA = "NYMEX", ZC = "CBOT", ZW = "CBOT",
+                 KC = "NYBOT", LBR = "CME")
 
 #' Contract of `root` for delivery month `ym`
 fut_contract <- function(root, ym) {
@@ -315,6 +325,14 @@ fut_chain <- function(root, d, n = 3) {
 ROLL_ADJUSTED <- c("CL=F" = "CL", "BZ=F" = "BZ", "NG=F" = "NG", "HO=F" = "HO", "RB=F" = "RB",
                    "GC=F" = "GC", "SI=F" = "SI", "HG=F" = "HG", "PL=F" = "PL", "PA=F" = "PA",
                    "ZC=F" = "ZC", "ZW=F" = "ZW")
+# Every =F panel whose empty last close is taken from the contract it tracks
+# (fill_futures_closes() in intermarket.R); coffee and lumber are not roll-adjusted
+FILL_ROOTS <- c(ROLL_ADJUSTED, "KC=F" = "KC", "LBR=F" = "LBR")
+
+# IBKR contract of report symbols without a Tickers row, for the stock empty-close
+# fallback (fill_stock_closes() in intermarket.R); the rest resolve through Tickers.YahooName
+IBKR_STK_EXTRA <- list("GLTL.L" = c(symbol = "GLTL", currency = "GBP"),
+                       "IS0L.DE" = c(symbol = "IS0L", currency = "EUR"))
 
 # WTI curve: the contracts 3 and 6 months after the front, read as fixed contracts
 # so changes are never roll gaps. CL=F tracks the front.

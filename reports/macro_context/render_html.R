@@ -165,7 +165,7 @@ render_macro_html <- function(sections, rg, rk, breadth, out_dir, im = NULL, cot
   leg_reset()
   # Rendered in page order, so the Legend's table notes (L2) follow the page; the Legend itself last
   main_00 <- if (is.null(im)) "<div class='no-data'>Intermarket data unavailable</div>" else
-    paste0(stale_html(im$sections, im$stale), movie_main_html(im$movie, im$matches, im$sectors, im$sections))
+    paste0(stale_html(im$sections, im$stale), filled_html(im$sections, im$filled), movie_main_html(im$movie, im$matches, im$sectors, im$sections))
   summary <- summary_html(im, rg, rk, breadth, vix, prev)
   sector_map <- if (is.null(im)) "" else sectors_html(im$sectors)
   heatmap <- if (is.null(im)) "" else paste0(ytd_band_html(im$ytd), heatmap_html(im$sections))
