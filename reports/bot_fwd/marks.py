@@ -10,8 +10,11 @@ with an underlying bar and no option bar gets a Black-Scholes mark from the
 underlying close and the last IV (source = model).
 """
 import datetime as dt
+import time
 
 import common as C
+
+BATCH = 20   # contracts per qualify / request / commit round
 
 
 def _complete_through():
@@ -51,30 +54,39 @@ def run(conn, ib, log=print):
             c["days"] = min(max((dt.date.today() - start).days + 2, 2), 60)
             c["con"] = Contract(conId=c["conid"], exchange="SMART")
             jobs.append(c)
-    if jobs:
-        ib.qualifyContracts(*[c["con"] for c in jobs])
     n_rows = n_fail = 0
+    t0 = time.monotonic()
     for kind, whats, size in (("STK", ("TRADES", "BID", "ASK"), "1 day"),
                               ("OPT", ("BID", "ASK"), "1 hour")):
         group = [c for c in jobs if c["kind"] == kind]
-        reqs = [(c["con"], "", f"{c['days']} D", size, w) for c in group for w in whats]
-        res = C.hist_many(ib, reqs)
-        for i, c in enumerate(group):
-            got = dict(zip(whats, res[i * len(whats):(i + 1) * len(whats)]))
-            if any(v is None for v in got.values()):
-                n_fail += 1          # timed out: retried next run, last_mark unchanged
-                continue
-            rows = _stk_rows(c, got) if kind == "STK" else _opt_rows(c, got)
-            for r in rows.values():
-                _upsert(conn, r)
-            if kind == "OPT":
-                _greeks_and_model(conn, c, c["start"], c["end"])
-            # An answered request with no bars (no quotes that day) still
-            # advances last_mark; model marks cover the gap.
-            conn.execute("UPDATE bot_fwd_contract SET last_mark = ? WHERE conid = ?",
-                         (C.ymd(c["end"]), c["conid"]))
+        # Every live option needs a mark each session, so a day's load runs to
+        # an hour or more. Batches are committed as they complete: a run that
+        # is cut off keeps its work and the next one resumes from last_mark.
+        # Qualifying per batch also avoids a burst of hundreds of contract
+        # lookups, whose late answers (2026-10-21) ended in a socket disconnect.
+        for b0 in range(0, len(group), BATCH):
+            batch = group[b0:b0 + BATCH]
+            ib.qualifyContracts(*[c["con"] for c in batch])
+            reqs = [(c["con"], "", f"{c['days']} D", size, w) for c in batch for w in whats]
+            res = C.hist_many(ib, reqs)
+            for i, c in enumerate(batch):
+                got = dict(zip(whats, res[i * len(whats):(i + 1) * len(whats)]))
+                if any(v is None for v in got.values()):
+                    n_fail += 1          # timed out: retried next run, last_mark unchanged
+                    continue
+                rows = _stk_rows(c, got) if kind == "STK" else _opt_rows(c, got)
+                for r in rows.values():
+                    _upsert(conn, r)
+                if kind == "OPT":
+                    _greeks_and_model(conn, c, c["start"], c["end"])
+                # An answered request with no bars (no quotes that day) still
+                # advances last_mark; model marks cover the gap.
+                conn.execute("UPDATE bot_fwd_contract SET last_mark = ? WHERE conid = ?",
+                             (C.ymd(c["end"]), c["conid"]))
+                n_rows += len(rows)
             conn.commit()
-            n_rows += len(rows)
+            log(f"  {kind} {min(b0 + BATCH, len(group))}/{len(group)} "
+                f"({time.monotonic() - t0:.0f} s, {n_fail} timed out)")
     log(f"Marks: {len(jobs)} contracts due, {n_rows} session rows written, "
         f"{n_fail} timed out (retried next run)")
 
