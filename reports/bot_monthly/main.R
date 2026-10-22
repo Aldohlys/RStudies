@@ -393,6 +393,21 @@ if (dry_run) {
     Name = df$name, stringsAsFactors = FALSE)
   DBI::dbExecute(conn, sql, params = as.list(params))
   message(sprintf("Tickers updated for %d names", nrow(params)))
+
+  # A BOT_Eligible = 1 that this run did not compute was set by hand or left
+  # from a ticker outside the selection (FRO, 2026-10): demote it, so BOT_daily
+  # only sees gated names. Only on a full run; a SYM or --limit run is partial.
+  if (!length(syms_arg) && (is.na(lim) || lim <= 0)) {
+    stray <- setdiff(DBI::dbGetQuery(conn, "SELECT Name FROM Tickers WHERE BOT_Eligible = 1")$Name,
+                     df$name)
+    if (length(stray)) {
+      DBI::dbExecute(conn, "UPDATE Tickers SET BOT_Eligible = 0, BOT_Reason = 'not_gated',
+                              BOT_LastUpdate = :d WHERE Name = :n",
+                     params = list(d = rep(today, length(stray)), n = stray))
+      message(sprintf("Demoted %d name(s) eligible without gating: %s",
+                      length(stray), paste(stray, collapse = ", ")))
+    }
+  }
 }
 
 message(sprintf("eligible %d / %d", sum(df$bot_eligible == 1L, na.rm = TRUE), nrow(df)))
