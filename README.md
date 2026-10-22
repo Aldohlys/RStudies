@@ -14,6 +14,11 @@ Collection of standalone research and analysis applications for trading studies.
 - **Features**: Implied volatility metrics, sector analysis, interactive charts
 - **Run**: `shiny::runApp("volatility-dashboard")`
 
+### 3. ATR & Gap Volatility (`atr-gap-volatility/`)
+- **Purpose**: Distribution of true range, high − low and close-to-close moves in ATR(14) multiples; overnight-gap vs regular-session variance decomposition (Rogers-Satchell, Yang-Zhang, rolling 63-session share)
+- **Run**: `Rscript atr-gap-volatility/atr_gap_study.R AAPL 2` → `output/atr_gap/AAPL/`
+- **Findings**: `atr-gap-volatility/FINDINGS.md`
+
 ## Usage
 
 Each application is self-contained and can be run independently:
