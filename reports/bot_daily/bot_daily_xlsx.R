@@ -249,7 +249,9 @@ BOT_DAILY_LEGEND <- data.frame(stringsAsFactors = FALSE, check.names = FALSE, ma
   "rs_bench", "text",
   "Benchmark of rs20. peers:<group> = the median 20-session return of the other members of the name's correlation group (a member moving more than 50% is left out). Otherwise a fixed benchmark symbol for a name without a group. Empty when none applies.",
   "group", "text",
-  "The name's correlation group: a set of names whose daily returns move together. Empty when the name has no group.",
+  "The name's sector: its correlation group, a set of names whose daily returns move together. The same groups as the macro_context sector map. Empty when the name has no group.",
+  "sector_verdict", "LONG / SHORT / WATCH / AVOID",
+  "Verdict of the name's group in the latest macro_context sector map (date in the header above), read on the group's equal-weight index. LONG = trend UP and rotation vs the S&P 500 Leading or Improving; SHORT = trend DOWN and rotation Lagging or Weakening; AVOID = trend mixed, or the group's macro drivers clearly against the trend; WATCH = trend and rotation disagree. Empty when the name has no group or the map has no row for it.",
   "grp_rs", "percentage points",
   "20-session return of the name's group (median of the members) minus that of SPY (S&P 500 ETF).",
   "grp_rank", "1 to n",
@@ -289,7 +291,9 @@ BOT_DAILY_NUM_FMT <- c(px = "#,##0.00", atr = "#,##0.00", target = "#,##0.00", s
 #' @param path output .xlsx path
 #' @param data_cols columns of the Data sheet (tier is added first)
 #' @param run_time time shown in the legend header
-write_bot_daily_xlsx <- function(df, path, data_cols = BOT_READ_DEFAULT, run_time = Sys.time()) {
+#' @param sector_date date of the macro_context sector map behind sector_verdict, shown in the legend header
+write_bot_daily_xlsx <- function(df, path, data_cols = BOT_READ_DEFAULT, run_time = Sys.time(),
+                                 sector_date = NA) {
   df <- as.data.frame(df, stringsAsFactors = FALSE)
   df <- cbind(tier = bot_tier(df), df, stringsAsFactors = FALSE)
   undefined <- setdiff(names(df), BOT_DAILY_LEGEND$Column)
@@ -327,8 +331,9 @@ write_bot_daily_xlsx <- function(df, path, data_cols = BOT_READ_DEFAULT, run_tim
 
   openxlsx::addWorksheet(wb, "Legend")
   session <- if (nrow(df) && "date" %in% names(df)) paste0(", session ", df$date[1]) else ""
-  openxlsx::writeData(wb, "Legend", sprintf("BOT daily - run %s%s - column definitions",
-                                            format(run_time, "%Y-%m-%d %H:%M"), session), startRow = 1)
+  sector <- if (!is.na(sector_date)) paste0(", sector map ", sector_date) else ""
+  openxlsx::writeData(wb, "Legend", sprintf("BOT daily - run %s%s%s - column definitions",
+                                            format(run_time, "%Y-%m-%d %H:%M"), session, sector), startRow = 1)
   openxlsx::addStyle(wb, "Legend", openxlsx::createStyle(textDecoration = "bold", fontSize = 12), rows = 1, cols = 1)
   openxlsx::writeData(wb, "Legend", paste(
     "One row per name and direction from the BOT breakout scan, on daily prices (price and volume only, no option data).",

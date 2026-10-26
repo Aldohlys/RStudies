@@ -9,8 +9,9 @@
 #   Rscript reports/bot_daily/main.R [--detail] [--direction long|short|both]
 #                                    [--out PATH.xlsx] [SYM ...]
 #
-# Sheet Data holds the 14 columns read daily (BOT_READ_DEFAULT); --detail puts
-# every field there too. Sheet Detail always holds every field.
+# Sheet Data holds the columns read daily (BOT_READ_DEFAULT plus the group and
+# its sector-map verdict from macro_context, without direction unless both are
+# run); --detail puts every field there too. Sheet Detail always holds every field.
 # The per-name read itself lives in shared/bot_read.R, shared with /analyze.
 # Naming an explicit symbol list bypasses universe membership.
 
@@ -137,6 +138,27 @@ if (!length(rows)) { message("No rows produced."); quit(status = 1) }
 df <- do.call(rbind, lapply(rows, function(r) as.data.frame(r, stringsAsFactors = FALSE)))
 df <- df[, BOT_READ_COLS, drop = FALSE]
 
+# Sector map verdict (LONG / SHORT / WATCH / AVOID) of the name's group, from the
+# latest macro_context run: macro_intermarket_sectors is read on the same
+# correlation groups as bot_read's S3 peers. Empty for a name without a group.
+read_sector_map <- function() {
+  conn <- Tdata::safe_db_connect()
+  on.exit(DBI::dbDisconnect(conn), add = TRUE)
+  DBI::dbGetQuery(conn, 'SELECT cache_date, "group", verdict FROM macro_intermarket_sectors
+                          WHERE cache_date = (SELECT MAX(cache_date) FROM macro_intermarket_sectors)')
+}
+sector_map <- tryCatch(read_sector_map(), error = function(e) NULL)
+sector_date <- if (length(sector_map$cache_date)) sector_map$cache_date[1] else NA_character_
+df$sector_verdict <- if (is.na(sector_date)) NA_character_ else sector_map$verdict[match(df$group, sector_map$group)]
+message(if (is.na(sector_date)) "Sector map: unavailable (run macro_context) - sector_verdict empty"
+        else sprintf("Sector map of %s: verdict for %d of %d rows", sector_date,
+                     sum(!is.na(df$sector_verdict)), nrow(df)))
+cols <- setdiff(names(df), c("group", "sector_verdict"))
+df <- df[, append(cols, c("group", "sector_verdict"), after = match("name", cols)), drop = FALSE]
+# Data sheet: sector next to the name; direction only when both are run.
+DAILY_COLS <- append(setdiff(BOT_READ_DEFAULT, if (length(DIRECTIONS) == 1) "direction"),
+                     c("group", "sector_verdict"), after = match("name", BOT_READ_DEFAULT))
+
 # Reading order: tradable rows first, then asym desc, then sess_target_p75
 # asc (the target a good trade touches soonest). Not a ranking. Vetoed rows keep their level read below the block that
 # can be traded today. The edge is asymmetry over many bets, so asymmetry is
@@ -154,8 +176,8 @@ if (is.na(out_path))
 dir.create(dirname(out_path), showWarnings = FALSE, recursive = TRUE)
 # Data sheet: the daily columns (every field with --detail); Detail sheet: every
 # field, read by the BOT forward test (reports/bot_fwd) at entry.
-tiers <- write_bot_daily_xlsx(df, out_path, data_cols = if (detail) BOT_READ_COLS else BOT_READ_DEFAULT,
-                              run_time = run_time)
+tiers <- write_bot_daily_xlsx(df, out_path, data_cols = if (detail) names(df) else DAILY_COLS,
+                              run_time = run_time, sector_date = sector_date)
 
 message(sprintf("Wrote %d rows -> %s (%s)", nrow(df), out_path,
                 paste(sprintf("%s %d", names(tiers), tiers), collapse = ", ")))
@@ -170,4 +192,4 @@ if (length(stale))
 message(sprintf("Tradable: %d of %d  (vetoed: %s)", sum(df$tradable == 1L), nrow(df),
                 paste(sprintf("%s %d", names(table(df$veto_reason[df$tradable == 0L])),
                               table(df$veto_reason[df$tradable == 0L])), collapse = ", ")))
-print(utils::head(df[, BOT_READ_DEFAULT], 12))
+print(utils::head(df[, DAILY_COLS], 12))
