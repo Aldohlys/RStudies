@@ -39,10 +39,19 @@ ZONE_DEFAULTS <- list(
                       # max_stop x ATR
   min_stop  = 1.00,   # nor nearer than this: one ATR is a typical day's range,
                       # so a nearer stop is taken out by an ordinary session
-  polarity  = TRUE    # a zone wholly beyond spot plays the role its side gives
+  polarity  = TRUE,   # a zone wholly beyond spot plays the role its side gives
                       # it, whatever pivots built it: a broken support above
                       # spot is resistance (TDG 2026-09-25: the 1119-1161 band
                       # of lows was skipped for a 1244 band of highs)
+  bar_order = TRUE,   # ZigZag reads a bar's direction from Open/Close: on an up
+                      # bar the low printed first, so the bar's own low cannot
+                      # reverse its own new high (MMM 2026-10-20: the breakout
+                      # bar 162.13 -> 172.95 was booked as a failed high)
+  breakout_n = 2L     # a zone containing spot whose last n closes all lie
+                      # beyond its pivot range is cleared: it moves to the
+                      # side it was broken through (0 = off). Replay
+                      # 2026-10-26 (324 names, 2y): R-neutral, paired dR
+                      # +0.002 [-0.012, +0.017]; adopted for correctness
 )
 
 #' ZigZag reversal threshold for a name, as a fraction.
@@ -63,26 +72,38 @@ zz_threshold <- function(atr, price, cfg = ZONE_DEFAULTS) {
 #'
 #' @param d data.frame with date, High, Low, Close (chronological)
 #' @param th reversal threshold as a fraction, from zz_threshold()
+#' @param bar_order logical; when TRUE and d has Open, a bar whose range spans
+#'   the threshold is read in the order its Open/Close imply. Without it the
+#'   new extreme is always taken before the reversal test, so a wide up bar
+#'   reverses its own high
 #' @return data.frame(idx, price, type "H"/"L", date), or NULL
-zigzag_pivots <- function(d, th) {
+zigzag_pivots <- function(d, th, bar_order = FALSE) {
   n <- nrow(d)
   if (n < 5 || !is.finite(th) || th <= 0) return(NULL)
+  oc <- isTRUE(bar_order) && "Open" %in% names(d)
   piv <- list(); dir <- 0L; ext_i <- 1L; ext_p <- d$Close[1]
   for (i in 2:n) {
     if (dir >= 0) {
-      if (d$High[i] >= ext_p) { ext_p <- d$High[i]; ext_i <- i }
+      # Up bar: the low came first, so test it against the PRIOR high and only
+      # then extend the high.
+      low_first <- oc && isTRUE(d$Close[i] > d$Open[i])
+      if (!low_first && d$High[i] >= ext_p) { ext_p <- d$High[i]; ext_i <- i }
       if (d$Low[i] <= ext_p * (1 - th)) {
         piv[[length(piv) + 1]] <- list(idx = ext_i, price = ext_p, type = "H")
         dir <- -1L; ext_p <- d$Low[i]; ext_i <- i
         next
       }
+      if (low_first && d$High[i] >= ext_p) { ext_p <- d$High[i]; ext_i <- i }
     }
     if (dir <= 0) {
-      if (d$Low[i] <= ext_p) { ext_p <- d$Low[i]; ext_i <- i }
+      high_first <- oc && isTRUE(d$Close[i] < d$Open[i])
+      if (!high_first && d$Low[i] <= ext_p) { ext_p <- d$Low[i]; ext_i <- i }
       if (d$High[i] >= ext_p * (1 + th)) {
         piv[[length(piv) + 1]] <- list(idx = ext_i, price = ext_p, type = "L")
         dir <- 1L; ext_p <- d$High[i]; ext_i <- i
+        next
       }
+      if (high_first && d$Low[i] <= ext_p) { ext_p <- d$Low[i]; ext_i <- i }
     }
   }
   if (!length(piv)) return(NULL)
@@ -97,7 +118,8 @@ zigzag_pivots <- function(d, th) {
 #' @param type "H" for resistance, "L" for support
 #' @param atr numeric ATR(14) in price
 #' @param cfg list of tuning constants
-#' @return data.frame(lo, hi, mid, touches, first, last), or NULL
+#' @return data.frame(lo, hi, mid, touches, first, last, p_lo, p_hi), or NULL;
+#'   p_lo / p_hi are the unpadded pivot range
 build_zones <- function(piv, type, atr, cfg = ZONE_DEFAULTS) {
   if (is.null(piv) || !is.finite(atr) || atr <= 0) return(NULL)
   p <- piv[piv$type == type, , drop = FALSE]
@@ -120,6 +142,8 @@ build_zones <- function(piv, type, atr, cfg = ZONE_DEFAULTS) {
       touches = nrow(g),
       first = as.character(min(g$date)),
       last = as.character(max(g$date)),
+      p_lo = min(g$price),
+      p_hi = max(g$price),
       stringsAsFactors = FALSE)
   }
   if (!length(zones)) NULL else do.call(rbind, zones)
@@ -268,7 +292,7 @@ level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
   sgn <- if (long) 1 else -1            # +1: target above spot; -1: below
   price <- tail(d$Close, 1)
   th <- zz_threshold(atr, price, cfg)
-  piv <- zigzag_pivots(d, th)
+  piv <- zigzag_pivots(d, th, isTRUE(cfg$bar_order))
   zones_h <- build_zones(piv, "H", atr, cfg)
   zones_l <- build_zones(piv, "L", atr, cfg)
   # Target-side zones (tz) and stop-side zones (sz), and the side names
@@ -285,6 +309,27 @@ level_read <- function(d, atr, em_target = NA_real_, cfg = ZONE_DEFAULTS,
     up <- rbind(zh, l_above); dn <- rbind(zl, h_below)
   } else {
     up <- zh; dn <- zl
+  }
+  # Breakout: a zone that contains spot only through its padding, with the last
+  # breakout_n closes all beyond its pivot range, has been cleared. Price stands
+  # on it, so it plays the role of the side it was broken through (MMM
+  # 2026-10-23: three closes above a 6-touch band of highs still read as
+  # "in_resistance", target 0.06 ATR away).
+  bn <- as.integer(cfg$breakout_n %||% 0L)
+  if (bn > 0 && length(d$Close) >= bn) {
+    cl <- tail(d$Close, bn)
+    clear <- function(z) {
+      if (is.null(z) || !nrow(z)) return(list(stay = z, up = NULL, dn = NULL))
+      inz <- z$lo <= price & z$hi >= price
+      above <- inz & vapply(z$p_hi, function(h) all(cl > h), logical(1))
+      below <- inz & vapply(z$p_lo, function(l) all(cl < l), logical(1))
+      mv <- function(m) if (any(m)) { r <- z[m, , drop = FALSE]; r$flip <- TRUE; r } else NULL
+      list(stay = z[!(above | below), , drop = FALSE], dn = mv(above), up = mv(below))
+    }
+    cu <- clear(up); cd <- clear(dn)
+    up <- rbind(cu$stay, cu$up, cd$up); dn <- rbind(cd$stay, cd$dn, cu$dn)
+    if (!is.null(up) && !nrow(up)) up <- NULL
+    if (!is.null(dn) && !nrow(dn)) dn <- NULL
   }
   tz <- if (long) up else dn
   sz <- if (long) dn else up

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-26] - bot_daily: ZigZag bar order and broken-through zones
+
+### Fixed
+- **`reports/shared/zones.R::zigzag_pivots()`** — new `bar_order` argument (`ZONE_DEFAULTS$bar_order = TRUE`). A bar whose range spans the reversal threshold is read in the order its Open/Close imply: on an up bar the low is tested against the prior high before the bar's High extends it. Before, the new extreme was always taken first, so a wide breakout bar reversed its own high. MMM 2026-10-20 (163.00 → 172.95, close 171.37) was booked as a pivot high at 172.95. That pivot seeded a 5-touch zone at 169.22–176.38 and put the target 0.7 ATR away.
+- **`level_read()` breakout rule** (`ZONE_DEFAULTS$breakout_n = 2L`): a zone that contains spot, where the last 2 closes all lie beyond its pivot range, has been cleared. It moves to the side it was broken through (`flip = TRUE`). Before, the `zone_k` padding kept a broken band of highs "containing" spot, so the band stayed resistance with `target_source = in_zone`. `build_zones()` now also returns the unpadded pivot range `p_lo` / `p_hi`.
+- MMM 2026-10-23: target 176.38 → 182.45 (`zone`), stop 166.55 → 167.58 (`in_zone_stop`), `asym` 0.42 → 1.53. Neither fix alone changes it: `bar_order` alone gives 0.03, `breakout_n` alone 0.42.
+
+### Added
+- **`bot_zones_breakout_trial.R`** — paired replay of the engine with and without the two flags. 324 names, every 10 sessions over ~2y, long and short, 20-session first touch: levels differ on 28% of setups, paired ΔR +0.002 (name-bootstrap CI −0.012 … +0.017). The change is R-neutral and is adopted for correctness. Setups with `asym ≥ 1` averaged −0.07 R against −0.04 R overall under both engines (TODO #82 B.7). Outputs go to the git-ignored `output/`.
+
 ## [2026-10-26] - macro_context: backtest_regimes reads Trades.Symbol
 
 ### Fixed
