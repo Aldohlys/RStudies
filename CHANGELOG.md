@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-26] - macro_context: backtest_regimes reads Trades.Symbol
+
+### Fixed
+- **backtest_regimes.R** (`extract_bot_trades()`, line 68): `GROUP_CONCAT(DISTINCT Ssjacent)` → `Symbol`. `Trades` no longer has a `Ssjacent` column, so the query errored. `Symbol` is the ticker column; `Underlying` is NULL on nearly all BOT rows.
+
 ## [2026-10-22] - bot_monthly: trade-record override of the ADV floor
 
 ### Added

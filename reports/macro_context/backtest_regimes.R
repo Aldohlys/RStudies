@@ -65,7 +65,7 @@ extract_bot_trades <- function(conn) {
       MIN(TradeDate) as entry_date,
       MAX(TradeDate) as exit_date,
       SUM(PnL) as total_pnl,
-      GROUP_CONCAT(DISTINCT Ssjacent) as underlying
+      GROUP_CONCAT(DISTINCT Symbol) as underlying
     FROM Trades
     WHERE Strategy = ?
     GROUP BY TradeNr
