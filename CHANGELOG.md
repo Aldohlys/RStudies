@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [2026-10-22] - bot_monthly: trade-record override of the ADV floor
 
 ### Added
-- **Trade-record override** (`reports/bot_monthly/main.R`): a name that fails `ADV_FLOOR` (85 CHF m/day) stays BOT-eligible when it has at least `RECORD_MIN_TRADES` (1) closed BOT trade with net P&L above `RECORD_MIN_PNL` (0), read from `Trades` (`Strategy = 'BOT'`, grouped by `Ssjacent`). `BOT_Reason = 'record_override'`. Only the ADV floor is waived; `no_data` and `no_atr` still exclude. Brings back STNG (ADV 74.6, one trade +362), which the playbook rates APPROVED.
+- **Trade-record override** (`reports/bot_monthly/main.R`): a name that fails `ADV_FLOOR` (85 CHF m/day) stays BOT-eligible when it has at least `RECORD_MIN_TRADES` (1) closed BOT trade with net P&L above `RECORD_MIN_PNL` (0), read from `Trades` (`Strategy = 'BOT'`, grouped by `Symbol`; `Underlying` is NULL on nearly all BOT rows). `BOT_Reason = 'record_override'`. Only the ADV floor is waived; `no_data` and `no_atr` still exclude. Brings back STNG (ADV 74.6, one trade +362), which the playbook rates APPROVED, and KNIN (ADV 76.8, one trade +464).
 - **Ungated names are demoted** on a full run: any `Tickers` row with `BOT_Eligible = 1` that the run did not compute (set by hand, or outside the `Type`/`IV` selection, e.g. FRO) gets `BOT_Eligible = 0`, `BOT_Reason = 'not_gated'`, and is listed in the log. Skipped on `SYM` and `--limit` runs.
 
 ## [2026-10-22] - macro_context: COT methodology wording

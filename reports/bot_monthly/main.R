@@ -216,10 +216,12 @@ tickers <- DBI::dbGetQuery(conn,
   "SELECT Name, YahooName, Type, Currency, Multiplier, OptExchange, IV, AtmBidAskPct, AtmBidAsk_AsOf FROM Tickers
     WHERE Type IN ('STK','ETF','FUT') OR IV = 'YES'")
 # Closed BOT trades per underlying: a trade counts once it has a realised PnL leg.
+# Keyed on Symbol, not Underlying: Underlying is NULL on all but 4 BOT rows
+# (2026-10), and on those it holds the futures contract (GCM5), not Tickers.Name.
 record <- DBI::dbGetQuery(conn,
   "SELECT name, COUNT(*) AS n, SUM(pnl) AS pnl FROM (
-     SELECT TradeNr, Ssjacent AS name, SUM(PnL) AS pnl FROM Trades
-      WHERE Strategy = 'BOT' GROUP BY TradeNr, Ssjacent HAVING COUNT(PnL) > 0)
+     SELECT TradeNr, Symbol AS name, SUM(PnL) AS pnl FROM Trades
+      WHERE Strategy = 'BOT' GROUP BY TradeNr, Symbol HAVING COUNT(PnL) > 0)
     GROUP BY name")
 DBI::dbDisconnect(conn)
 record <- record[record$n >= RECORD_MIN_TRADES & record$pnl > RECORD_MIN_PNL, , drop = FALSE]
