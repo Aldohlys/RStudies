@@ -118,21 +118,24 @@ cot_hover <- function(dates, L, R, series) {
           paste(as.integer(dates - dates[1]), collapse = ","), paste(s, collapse = ","))
 }
 
-#' Row chart: net contracts of the speculators (blue) and the other side (black)
-cot_spark <- function(sp, ot, w = 560, h = 90) {
+#' Row chart: speculators' longs (above zero), shorts (below zero) and net; the hover
+#' box adds the other side's net
+cot_spark <- function(sp, ot, w = 480, h = 90) {
   if (nrow(sp) < 2) return("")
   dn <- as.numeric(sp$date)
   sx <- cot_scale(min(dn), max(dn), 1, w - 1)
-  vals <- c(sp$net, ot$net, 0)
+  vals <- c(sp$long, -sp$short, 0)
   sy <- cot_scale(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), h - 12, 3)
   z <- sy(0)
-  oth <- ot$net[match(sp$date, ot$date)]
-  hv <- cot_hover(sp$date, 1, w - 1, list(list(label = "Specs net", col = "#0072B2", v = sp$net),
-                                         list(label = "Other side net", col = "#333", v = oth)))
-  sprintf("<svg class='cot-spark' viewBox='0 0 %d %d' width='%d' height='%d'%s>%s<line class='cot-zero' x1='0' x2='%d' y1='%.1f' y2='%.1f'/>%s%s</svg>",
-          w, h, w, h, hv, cot_years(sp$date, sx, 0, h - 10, h - 1), w, z, z,
-          cot_poly(sx(as.numeric(ot$date)), sy(ot$net), "cot-l-oth"),
-          cot_poly(sx(dn), sy(sp$net), "cot-l-spec"))
+  hv <- cot_hover(sp$date, 1, w - 1, list(list(label = "Longs", col = "#0072B2", v = sp$long),
+                                         list(label = "Shorts", col = "#D9534F", v = -sp$short),
+                                         list(label = "Net", col = "#333", v = sp$net),
+                                         list(label = "Other side net", col = "#888", v = ot$net[match(sp$date, ot$date)])))
+  sprintf("<svg class='cot-spark' viewBox='0 0 %d %d' width='%d' height='%d'%s>%s%s%s<line class='cot-zero' x1='0' x2='%d' y1='%.1f' y2='%.1f'/>%s%s%s</svg>",
+          w, h, w, h, hv, cot_years(sp$date, sx, 0, h - 10, h - 1),
+          cot_area(sx(dn), sy(sp$long), z, "cot-a-long"), cot_area(sx(dn), sy(-sp$short), z, "cot-a-short"), w, z, z,
+          cot_poly(sx(dn), sy(sp$long), "cot-l-long"), cot_poly(sx(dn), sy(-sp$short), "cot-l-short"),
+          cot_poly(sx(dn), sy(sp$net), "cot-l-net"))
 }
 
 cot_kax <- function(v) if (abs(v) >= 1e6) sprintf("%.1fM", v / 1e6) else sprintf("%.0fk", v / 1000)
@@ -177,27 +180,59 @@ cot_score_td <- function(x, tip) {
   sprintf("<td class='hz cot-score %s' title='%s'>%.0f</td>", cls, esc(tip), x)
 }
 
-#' Overview: one row per market, the three groups' 3y scores and the 5-year net chart
+#' Change in a leg over the last n reports; rising longs are blue, rising shorts red
+cot_chg_td <- function(x, short = FALSE) {
+  if (is.na(x)) return("<td class='im-num'>&ndash;</td>")
+  cls <- if (x == 0) "" else if ((x > 0) != short) "im-pos" else "im-neg"
+  sprintf("<td class='im-num %s'>%s</td>", cls, cot_k(x, TRUE))
+}
+
+#' Which leg moved the net more: buying / long selling (longs) or short selling / short covering (shorts)
+cot_driver_td <- function(dl, ds, tip) {
+  if (is.na(dl) || is.na(ds) || (dl == 0 && ds == 0)) return("<td>&ndash;</td>")
+  lab <- if (abs(dl) >= abs(ds)) { if (dl > 0) c("buying", "im-pos") else c("long selling", "im-neg") }
+         else if (ds < 0) c("short covering", "im-pos") else c("short selling", "im-neg")
+  sprintf("<td class='cot-drv %s' title='%s'>%s</td>", lab[2], esc(tip), lab[1])
+}
+
+COT_CHG_WEEKS <- 4
+
+#' Overview: one row per market. Scores of the three groups, then the specs' longs and shorts,
+#' their change over 4 reports, the leg that drove it, and the 5-year longs / shorts / net chart
 cot_overview <- function(d, h) {
   pick <- function(m, f) d[d$market == m & f, , drop = FALSE]
   secs <- intersect(c(COT_SECTOR_ORDER, unique(d$sector)), unique(d$sector))
-  head <- paste0("<tr class='im-head'><td>Market</td><td class='cot-score'>Specs</td><td class='cot-score'>Other side</td>",
-                 "<td class='cot-score'>Small</td><td class='im-num'>Specs net</td><td class='im-num'>WoW</td>",
-                 "<td>Net contracts, 5 years: <span class='cot-key-spec'>specs</span> vs <span class='cot-key-oth'>other side</span></td></tr>")
+  head <- paste0("<tr class='im-head'><td rowspan='2'>Market</td><td colspan='3' class='cot-score'>3y score</td>",
+                 "<td colspan='3' class='im-num'>Specs, contracts</td><td colspan='3' class='im-num'>Specs, change over 4 weeks</td>",
+                 "<td rowspan='2'>Specs, 5 years: <span class='cot-key-long'>longs</span> / <span class='cot-key-short'>shorts</span> / <span class='cot-key-oth'>net</span></td></tr>",
+                 "<tr class='im-head'><td class='cot-score'>Specs</td><td class='cot-score'>Other side</td><td class='cot-score'>Small</td>",
+                 "<td class='im-num'>Long</td><td class='im-num'>Short</td><td class='im-num'>Net</td>",
+                 "<td class='im-num'>Long</td><td class='im-num'>Short</td><td>Driven by</td></tr>")
   body <- vapply(secs, function(s) {
     mk <- unique(d$market[d$sector == s])
     rows <- vapply(mk, function(m) {
       sp <- pick(m, d$spec %in% c(TRUE, "TRUE")); ot <- pick(m, d$group %in% COT_OTHER_SIDE)
       rt <- pick(m, d$group == "retail")
-      spark <- if (is.null(h)) "" else cot_spark(cot_hist_rows(h, m, sp$group), cot_hist_rows(h, m, ot$group))
+      hs <- if (is.null(h)) NULL else cot_hist_rows(h, m, sp$group)
+      n <- if (is.null(hs)) 0 else nrow(hs)
+      dl <- ds <- NA_real_
+      if (n > COT_CHG_WEEKS) {
+        dl <- hs$long[n] - hs$long[n - COT_CHG_WEEKS]; ds <- hs$short[n] - hs$short[n - COT_CHG_WEEKS]
+      }
+      tip <- sprintf("%s, 4 weeks: longs %s, shorts %s, net %s. 1 week: longs %s, shorts %s, net %s",
+                     sp$group, cot_k(dl, TRUE), cot_k(ds, TRUE), cot_k(dl - ds, TRUE),
+                     cot_k(sp$long_wow, TRUE), cot_k(sp$short_wow, TRUE), cot_k(sp$net_wow, TRUE))
+      spark <- if (is.null(hs)) "" else cot_spark(hs, cot_hist_rows(h, m, ot$group))
       paste0("<tr><td class='hz-l'>", esc(m), "</td>",
              cot_score_td(sp$net_idx_3y, paste0(sp$group, ": 1y ", sp$net_idx_1y, ", 3y ", sp$net_idx_3y, ", 5y ", sp$net_idx_5y)),
              cot_score_td(ot$net_idx_3y, paste0(ot$group, ": 1y ", ot$net_idx_1y, ", 3y ", ot$net_idx_3y, ", 5y ", ot$net_idx_5y)),
              cot_score_td(rt$net_idx_3y, paste0("retail: 1y ", rt$net_idx_1y, ", 3y ", rt$net_idx_3y, ", 5y ", rt$net_idx_5y)),
-             "<td class='im-num'>", cot_k(sp$net, TRUE), "</td>", cot_wow_td(sp$net_wow),
+             "<td class='im-num'>", cot_k(sp$long), "</td><td class='im-num'>", cot_k(sp$short), "</td>",
+             "<td class='im-num'>", cot_k(sp$net, TRUE), "</td>",
+             cot_chg_td(dl), cot_chg_td(ds, short = TRUE), cot_driver_td(dl, ds, tip),
              "<td class='cot-spark-td'>", spark, "</td></tr>")
     }, "")
-    paste0("<tr><td colspan='7' class='im-h3'>", esc(s), "</td></tr>", paste(rows, collapse = ""))
+    paste0("<tr><td colspan='11' class='im-h3'>", esc(s), "</td></tr>", paste(rows, collapse = ""))
   }, "")
   sprintf("<div class='im-tw'><table class='hz-table cot-ov'>%s%s</table></div>", head, paste(body, collapse = ""))
 }
@@ -239,7 +274,11 @@ cot_dashboard_html <- function(d, h = load_cot_history()) {
     leg_note("11 &mdash; COT positioning", paste0("Score = 3y net index = 100 &times; (current net &minus; lowest net) / (highest &minus; lowest) over the last 156 weekly reports. ",
     "100 = the group's largest net long of the window, 0 = its largest net short (or smallest net long). Same meaning in every column: ",
     "blue = more long than usual for that group (60&ndash;70 light, 70&ndash;85 medium, 85 or more strong), red = less long (40&ndash;30, 30&ndash;15, 15 or less); hover a cell for 1y / 3y / 5y. ",
-    "Row chart: net contracts (long minus short) of specs (blue) and the other side (black) over the last 260 reports, one scale per row, dashed line = zero, vertical lines = 1 January. ",
+    "Specs contracts: long, short and net (long minus short) in the latest report. Change over 4 weeks: latest report minus the report 4 weeks earlier, per leg; ",
+    "blue = the change raises the net (more longs, fewer shorts), red = it lowers the net. ",
+    "Driven by = the leg with the larger 4-week change: buying (longs up), long selling (longs down), short selling (shorts up), short covering (shorts down); hover it for both legs over 4 weeks and 1 week. ",
+    "Row chart: specs' long contracts (blue, above zero), short contracts (red, drawn below zero) and net (black) over the last 260 reports, one scale per row, dashed line = zero, vertical lines = 1 January; the hover box adds the other side's net. ",
+    "Specs = managed money (commodities) and leveraged funds (financials). In Treasury futures most leveraged-fund shorts are the cash-futures basis trade (long bonds, short futures), not a directional position. ",
     "Sector charts: specs' long contracts (blue, above zero), short contracts (red, drawn below zero) and net (black), then their 3y index week by week (shaded 85&ndash;100 and 0&ndash;15). ",
     "Hover any chart for that week's values. ",
     "Tables: Index = the same formula over 52, 156 or 260 reports for net, long and short; shaded 90 or more, 10 or less; week on week compares with the previous report. ",
