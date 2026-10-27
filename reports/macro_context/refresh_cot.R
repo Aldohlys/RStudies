@@ -27,6 +27,10 @@
 # macro_context report (cot_render.R). Its "[legacy] large spec" rows match
 # cotsignal.com exactly (checked 2026-10-02 on 14 markets: net, OI, indices).
 #
+# Side-output: output/cot_history.csv -- the weekly long / short / net of the
+# same 38 markets x 5 groups since YEARS[1], with the 3y net index of each
+# week. Drawn as the section 11 charts.
+#
 # Run: Rscript RStudies/reports/macro_context/refresh_cot.R [--dry-run]
 # Scheduled Saturday 08:00 via RApplication/scripts/RefreshCOT.xml — the CFTC
 # releases Friday 15:30 ET (21:30 CET), so Saturday morning is clear of it.
@@ -50,8 +54,9 @@ TARGET     <- file.path(SCRIPT_DIR, "positioning.R")
 CACHE_DIR  <- file.path(SCRIPT_DIR, "output", "cot_cache")
 dir.create(CACHE_DIR, recursive = TRUE, showWarnings = FALSE)
 
-# Six past years: the dashboard's 5-year index needs 260 weekly rows even in January.
-YEARS <- (as.integer(format(Sys.Date(), "%Y")) - 6):as.integer(format(Sys.Date(), "%Y"))
+# Eight past years: the dashboard's 5-year index needs 260 weekly rows even in January,
+# and the history chart's 3y index needs 156 rows before its first (5 years back) week.
+YEARS <- (as.integer(format(Sys.Date(), "%Y")) - 8):as.integer(format(Sys.Date(), "%Y"))
 
 # Contract codes are matched with leading zeros stripped — fread types the
 # column as integer whenever a year's file happens to hold only numeric codes.
@@ -441,28 +446,39 @@ cot_index <- function(x, n) {
   round(100 * (w[length(w)] - min(w)) / rng, 1)
 }
 
+# Weekly long / short / net of every dashboard group for one market, oldest first.
+dash_series <- function(k) {
+  spec <- SOURCES[[k$src]]
+  d <- unique(DATA[[k$src]][code == .norm_code(k$code)], by = "date")[order(date)]
+  if (nrow(d) < 2) {
+    message(sprintf("dashboard: no data for %s (%s)", k$label, k$code))
+    return(NULL)
+  }
+  col <- function(cn, i) {
+    c <- spec$cats[[cn]][i]
+    if (is.na(c)) rep(0, nrow(d)) else as.numeric(d[[c]])
+  }
+  groups <- lapply(DASH_GROUPS[[k$src]], function(g) {
+    sp <- if (isTRUE(g$fold)) Reduce(`+`, lapply(g$cats, col, 3)) else 0
+    lg <- Reduce(`+`, lapply(g$cats, col, 1)) + sp
+    sh <- Reduce(`+`, lapply(g$cats, col, 2)) + sp
+    list(group = g$group, spec = isTRUE(g$spec), long = lg, short = sh, net = lg - sh)
+  })
+  list(d = d, groups = groups)
+}
+
 build_dashboard <- function() {
   rows <- lapply(DASH_CONTRACTS, function(k) {
-    spec <- SOURCES[[k$src]]
-    d <- unique(DATA[[k$src]][code == .norm_code(k$code)], by = "date")[order(date)]
-    if (nrow(d) < 2) {
-      message(sprintf("dashboard: no data for %s (%s)", k$label, k$code))
-      return(NULL)
-    }
-    col <- function(cn, i) {
-      c <- spec$cats[[cn]][i]
-      if (is.na(c)) rep(0, nrow(d)) else as.numeric(d[[c]])
-    }
-    per_group <- lapply(DASH_GROUPS[[k$src]], function(g) {
-      sp <- if (isTRUE(g$fold)) Reduce(`+`, lapply(g$cats, col, 3)) else 0
-      lg <- Reduce(`+`, lapply(g$cats, col, 1)) + sp
-      sh <- Reduce(`+`, lapply(g$cats, col, 2)) + sp
-      nt <- lg - sh
+    s <- dash_series(k)
+    if (is.null(s)) return(NULL)
+    d <- s$d
+    per_group <- lapply(s$groups, function(g) {
+      lg <- g$long; sh <- g$short; nt <- g$net
       n <- length(nt)
       idx <- function(x) setNames(vapply(DASH_WINDOWS, function(w) cot_index(x, w), 0),
                                   names(DASH_WINDOWS))
       il <- idx(lg); is <- idx(sh); inet <- idx(nt)
-      data.frame(group = g$group, spec = isTRUE(g$spec),
+      data.frame(group = g$group, spec = g$spec,
                  long = lg[n], short = sh[n], net = nt[n],
                  long_wow = lg[n] - lg[n - 1], short_wow = sh[n] - sh[n - 1],
                  net_wow = nt[n] - nt[n - 1],
@@ -480,7 +496,29 @@ build_dashboard <- function() {
   do.call(rbind, rows)
 }
 
+# ── Positioning history: the weekly series behind the section 11 charts ───────
+# One row per market x group x weekly report, with the 3y net index as it read
+# that week (NA until 156 reports exist). Kept in output/ (not tracked).
+HIST_OUT <- file.path(SCRIPT_DIR, "output", "cot_history.csv")
+HIST_WINDOW <- DASH_WINDOWS[["3y"]]
+
+build_history <- function() {
+  rows <- lapply(DASH_CONTRACTS, function(k) {
+    s <- dash_series(k)
+    if (is.null(s)) return(NULL)
+    do.call(rbind, lapply(s$groups, function(g) {
+      idx <- vapply(seq_along(g$net), function(i)
+        if (i < HIST_WINDOW) NA_real_ else cot_index(g$net[seq_len(i)], HIST_WINDOW), 0)
+      data.frame(date = as.character(s$d$date), market = k$label, sector = k$sector,
+                 group = g$group, spec = g$spec, long = g$long, short = g$short, net = g$net,
+                 net_idx_3y = idx, stringsAsFactors = FALSE)
+    }))
+  })
+  do.call(rbind, rows)
+}
+
 dashboard <- build_dashboard()
+history <- build_history()
 if (!is.null(dashboard)) {
   short_hist <- unique(dashboard$market[dashboard$weeks < max(DASH_WINDOWS)])
   if (length(short_hist)) message("dashboard: fewer than ", max(DASH_WINDOWS),
@@ -534,6 +572,12 @@ if (!DRY_RUN && !is.null(dashboard)) {
   file.rename(tmp, DASH_OUT)
   cat(sprintf("Positioning dashboard: %s (%d markets x %d groups)\n",
               DASH_OUT, length(unique(dashboard$market)), 5L))
+}
+if (!DRY_RUN && !is.null(history)) {
+  tmp <- paste0(HIST_OUT, ".tmp")
+  utils::write.csv(history, tmp, row.names = FALSE, na = "")
+  file.rename(tmp, HIST_OUT)
+  cat(sprintf("Positioning history: %s (%d rows)\n", HIST_OUT, nrow(history)))
 }
 
 if (DRY_RUN) {
