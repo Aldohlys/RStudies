@@ -100,39 +100,66 @@ cot_years <- function(dates, sx, y0, y1, ylab) {
   }, ""), collapse = "")
 }
 
+#' Filled area between a series and the zero line
+cot_area <- function(x, y, z, cls) {
+  ok <- !is.na(x) & !is.na(y)
+  if (sum(ok) < 2) return("")
+  x <- x[ok]; y <- y[ok]
+  sprintf("<polygon class='%s' points='%.1f,%.1f %s %.1f,%.1f'/>", cls, x[1], z,
+          paste(sprintf("%.1f,%.1f", x, y), collapse = " "), x[length(x)], z)
+}
+
+#' Hover data read by the chart script in template.html: day offsets from the first
+#' report, the plot's left / right edges in viewBox units, and [label, colour, values] per series
+cot_hover <- function(dates, L, R, series) {
+  num <- function(v) paste(ifelse(is.na(v), "null", format(round(v), scientific = FALSE, trim = TRUE)), collapse = ",")
+  s <- vapply(series, function(x) sprintf("[\"%s\",\"%s\",[%s]]", x$label, x$col, num(x$v)), "")
+  sprintf(" data-cot='{\"t0\":\"%s\",\"L\":%s,\"R\":%s,\"d\":[%s],\"s\":[%s]}'", format(dates[1]), L, R,
+          paste(as.integer(dates - dates[1]), collapse = ","), paste(s, collapse = ","))
+}
+
 #' Row chart: net contracts of the speculators (blue) and the other side (black)
-cot_spark <- function(sp, ot, w = 560, h = 58) {
+cot_spark <- function(sp, ot, w = 560, h = 90) {
   if (nrow(sp) < 2) return("")
   dn <- as.numeric(sp$date)
   sx <- cot_scale(min(dn), max(dn), 1, w - 1)
   vals <- c(sp$net, ot$net, 0)
   sy <- cot_scale(min(vals, na.rm = TRUE), max(vals, na.rm = TRUE), h - 12, 3)
   z <- sy(0)
-  sprintf("<svg class='cot-spark' viewBox='0 0 %d %d' width='%d' height='%d' aria-hidden='true'>%s<line class='cot-zero' x1='0' x2='%d' y1='%.1f' y2='%.1f'/>%s%s</svg>",
-          w, h, w, h, cot_years(sp$date, sx, 0, h - 10, h - 1), w, z, z,
+  oth <- ot$net[match(sp$date, ot$date)]
+  hv <- cot_hover(sp$date, 1, w - 1, list(list(label = "Specs net", col = "#0072B2", v = sp$net),
+                                         list(label = "Other side net", col = "#333", v = oth)))
+  sprintf("<svg class='cot-spark' viewBox='0 0 %d %d' width='%d' height='%d'%s>%s<line class='cot-zero' x1='0' x2='%d' y1='%.1f' y2='%.1f'/>%s%s</svg>",
+          w, h, w, h, hv, cot_years(sp$date, sx, 0, h - 10, h - 1), w, z, z,
           cot_poly(sx(as.numeric(ot$date)), sy(ot$net), "cot-l-oth"),
           cot_poly(sx(dn), sy(sp$net), "cot-l-spec"))
 }
 
 cot_kax <- function(v) if (abs(v) >= 1e6) sprintf("%.1fM", v / 1e6) else sprintf("%.0fk", v / 1000)
 
-#' Market card: speculators' longs / shorts / net, then their 3y net index with the 15 / 85 bands
+#' Market card: speculators' longs (above zero), shorts (below zero) and net, then their
+#' 3y net index with the 15 / 85 bands
 cot_detail_svg <- function(sp, w = 560) {
   if (nrow(sp) < 2) return("")
-  L <- 40; R <- w - 6; t1 <- 6; b1 <- 120; t2 <- 140; b2 <- 196; h <- 210
+  L <- 40; R <- w - 6; t1 <- 6; b1 <- 220; t2 <- 242; b2 <- 322; h <- 336
   dn <- as.numeric(sp$date)
   sx <- cot_scale(min(dn), max(dn), L, R)
-  vals <- c(sp$long, sp$short, sp$net, 0)
+  vals <- c(sp$long, -sp$short, sp$net, 0)
   lo <- min(vals, na.rm = TRUE); hi <- max(vals, na.rm = TRUE)
   sy <- cot_scale(lo, hi, b1, t1)
   si <- cot_scale(0, 100, b2, t2)
   ax <- function(v, y) sprintf("<text class='cot-ax' x='%d' y='%.1f' text-anchor='end'>%s</text>", L - 4, y + 3, v)
+  hv <- cot_hover(sp$date, L, R, list(list(label = "Longs", col = "#0072B2", v = sp$long),
+                                      list(label = "Shorts", col = "#D9534F", v = -sp$short),
+                                      list(label = "Net", col = "#333", v = sp$net),
+                                      list(label = "3y index", col = "#888", v = sp$net_idx_3y)))
   paste0(
-    sprintf("<svg class='cot-chart' viewBox='0 0 %d %d' aria-hidden='true'>", w, h),
+    sprintf("<svg class='cot-chart' viewBox='0 0 %d %d'%s>", w, h, hv),
     cot_years(sp$date, sx, t1, b2, h - 2),
+    cot_area(sx(dn), sy(sp$long), sy(0), "cot-a-long"), cot_area(sx(dn), sy(-sp$short), sy(0), "cot-a-short"),
     sprintf("<line class='cot-zero' x1='%d' x2='%.1f' y1='%.1f' y2='%.1f'/>", L, R, sy(0), sy(0)),
     ax(cot_kax(hi), sy(hi)), ax(cot_kax(lo), sy(lo)), if (lo < 0 && hi > 0) ax("0", sy(0)) else "",
-    cot_poly(sx(dn), sy(sp$long), "cot-l-long"), cot_poly(sx(dn), sy(sp$short), "cot-l-short"),
+    cot_poly(sx(dn), sy(sp$long), "cot-l-long"), cot_poly(sx(dn), sy(-sp$short), "cot-l-short"),
     cot_poly(sx(dn), sy(sp$net), "cot-l-net"),
     sprintf("<rect class='cot-band-hi' x='%d' y='%.1f' width='%.1f' height='%.1f'/>", L, si(100), R - L, si(85) - si(100)),
     sprintf("<rect class='cot-band-lo' x='%d' y='%.1f' width='%.1f' height='%.1f'/>", L, si(15), R - L, si(0) - si(15)),
@@ -183,7 +210,7 @@ cot_cards <- function(d, h) {
     ds <- sp_all[sp_all$sector == s, ]
     cards <- vapply(seq_len(nrow(ds)), function(i) {
       r <- ds[i, ]
-      sprintf("<div class='cot-card'><div class='cot-card-h'><b>%s</b> <span class='im-sub'>%s: long %s, short %s, net %s; 3y index %.0f</span></div>%s</div>",
+      sprintf("<div class='cot-card'><div class='cot-card-h'><b>%s</b> <span class='im-sub'>%s: <span class='cot-key-long'>long</span> %s, <span class='cot-key-short'>short</span> %s, <span class='cot-key-oth'>net</span> %s; 3y index %.0f</span></div>%s</div>",
               esc(r$market), esc(r$group), cot_k(r$long), cot_k(r$short), cot_k(r$net, TRUE), r$net_idx_3y,
               cot_detail_svg(cot_hist_rows(h, r$market, r$group)))
     }, "")
@@ -213,7 +240,8 @@ cot_dashboard_html <- function(d, h = load_cot_history()) {
     "100 = the group's largest net long of the window, 0 = its largest net short (or smallest net long). Same meaning in every column: ",
     "blue = more long than usual for that group (60&ndash;70 light, 70&ndash;85 medium, 85 or more strong), red = less long (40&ndash;30, 30&ndash;15, 15 or less); hover a cell for 1y / 3y / 5y. ",
     "Row chart: net contracts (long minus short) of specs (blue) and the other side (black) over the last 260 reports, one scale per row, dashed line = zero, vertical lines = 1 January. ",
-    "Sector charts: specs' long (blue), short (red) and net (black) contracts, then their 3y index week by week (shaded 85&ndash;100 and 0&ndash;15; starts once 156 reports exist). ",
+    "Sector charts: specs' long contracts (blue, above zero), short contracts (red, drawn below zero) and net (black), then their 3y index week by week (shaded 85&ndash;100 and 0&ndash;15). ",
+    "Hover any chart for that week's values. ",
     "Tables: Index = the same formula over 52, 156 or 260 reports for net, long and short; shaded 90 or more, 10 or less; week on week compares with the previous report. ",
     "Sources: Reports/cot_positioning_latest.csv (latest week), output/cot_history.csv (weekly series).")))
 }

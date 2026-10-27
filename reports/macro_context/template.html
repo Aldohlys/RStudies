@@ -192,6 +192,9 @@ tr[title]:hover{outline:1px dashed var(--accent);outline-offset:-1px}
 .cot-key-spec{color:#0072B2;font-weight:700}.cot-key-oth{color:#333;font-weight:700}
 .cot-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(460px,100%),1fr));gap:10px 18px;margin:6px 0}
 .cot-card-h{font-size:12px;margin-bottom:2px}.cot-chart{display:block;width:100%;height:auto}
+.cot-a-long{fill:rgba(0,114,178,.10)}.cot-a-short{fill:rgba(217,83,79,.10)}.cot-key-long{color:#0072B2;font-weight:700}.cot-key-short{color:#D9534F;font-weight:700}
+svg[data-cot]{cursor:crosshair}.cot-cursor{stroke:#888;stroke-width:.8}
+.cot-tip{position:fixed;display:none;z-index:50;pointer-events:none;background:#fff;border:1px solid #ccc;border-radius:4px;padding:5px 8px;font-size:12px;line-height:1.45;box-shadow:0 2px 6px rgba(0,0,0,.15);font-variant-numeric:tabular-nums}.cot-tip-d{color:#666}
 .principles summary{cursor:pointer}.principles ol{margin:10px 14px 10px 32px;font-size:13px;line-height:1.5}.principles li{margin-bottom:4px}
 .tabs{display:flex;gap:4px;border-bottom:2px solid var(--border);margin-bottom:16px}
 .tab-btn{background:none;border:1px solid transparent;border-bottom:none;border-radius:4px 4px 0 0;padding:6px 16px;font:inherit;font-weight:600;color:var(--dim);cursor:pointer;margin-bottom:-2px}
@@ -406,6 +409,36 @@ function showTab(name) {
   var h = location.hash.replace('#', '');
   if (h === 'methodology') h = 'legend';
   if (h === 'detail' || h === 'legend') showTab(h);
+})();
+// COT charts (section 11): hover shows that week's values, from data-cot (cot_render.R)
+(function () {
+  var tip = document.createElement('div'); tip.className = 'cot-tip'; document.body.appendChild(tip);
+  var fmt = function (v) { return v === null || v === undefined ? '&ndash;' : v.toLocaleString('en-US'); };
+  document.querySelectorAll('svg[data-cot]').forEach(function (svg) {
+    var D = JSON.parse(svg.getAttribute('data-cot'));
+    var vb = svg.viewBox.baseVal, n = D.d.length, span = D.d[n - 1] || 1;
+    var t0 = new Date(D.t0 + 'T00:00:00Z');
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'cot-cursor'); line.setAttribute('y1', 0); line.setAttribute('y2', vb.height);
+    line.style.display = 'none'; svg.appendChild(line);
+    svg.addEventListener('mousemove', function (e) {
+      var r = svg.getBoundingClientRect();
+      var day = ((e.clientX - r.left) / r.width * vb.width - D.L) / (D.R - D.L) * span;
+      var i = 0, best = Infinity;
+      for (var k = 0; k < n; k++) { var dd = Math.abs(D.d[k] - day); if (dd < best) { best = dd; i = k; } }
+      var x = D.L + D.d[i] / span * (D.R - D.L);
+      line.setAttribute('x1', x); line.setAttribute('x2', x); line.style.display = '';
+      var dt = new Date(t0.getTime() + D.d[i] * 864e5);
+      tip.innerHTML = '<div class="cot-tip-d">' + dt.toISOString().slice(0, 10) + '</div>' + D.s.map(function (s) {
+        return '<div><span style="color:' + s[1] + '">' + s[0] + '</span>: ' + fmt(s[2][i]) + '</div>';
+      }).join('');
+      tip.style.display = 'block';
+      var tx = e.clientX + 14;
+      if (tx + tip.offsetWidth > window.innerWidth - 8) tx = e.clientX - tip.offsetWidth - 14;
+      tip.style.left = tx + 'px'; tip.style.top = (e.clientY + 12) + 'px';
+    });
+    svg.addEventListener('mouseleave', function () { line.style.display = 'none'; tip.style.display = 'none'; });
+  });
 })();
 </script>
 
