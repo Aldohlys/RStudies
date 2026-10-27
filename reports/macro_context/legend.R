@@ -106,13 +106,13 @@ legend_glossary_html <- function() {
     "<div class='ck-h'>", h, "</div><dl class='lg-dl'>",
     paste(vapply(LEGEND_GLOSSARY[[h]], function(t) sprintf("<dt>%s</dt><dd>%s</dd>", t[1], t[2]), ""), collapse = ""),
     "</dl>"), ""), collapse = "")
-  sprintf("<details class='section' style='margin-bottom:16px' open><summary class='stitle'><span class='snum'>L1</span>Glossary</summary><div class='lg-body'>%s</div></details>", body)
+  sprintf("<details class='section' style='margin-bottom:16px'><summary class='stitle'><span class='snum'>L1</span>Glossary</summary><div class='lg-body'>%s</div></details>", body)
 }
 
 legend_notes_html <- function() {
   if (!length(.leg$notes)) return("")
   body <- paste(vapply(.leg$notes, function(n) sprintf("<div class='lg-note'><div class='lg-where'>%s</div><div class='lg-text'>%s</div></div>", n$where, n$html), ""), collapse = "")
-  sprintf("<details class='section' style='margin-bottom:16px' open><summary class='stitle'><span class='snum'>L2</span>Notes on the report tables</summary><div class='lg-body'>%s</div></details>", body)
+  sprintf("<details class='section' style='margin-bottom:16px'><summary class='stitle'><span class='snum'>L2</span>Notes on the report tables</summary><div class='lg-body'>%s</div></details>", body)
 }
 
 #' Whole Legend tab; call after every other fragment is rendered (notes are collected during rendering)
