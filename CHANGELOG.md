@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-10-31] - analyze: lot cap USD 400, rr_min 1
+
+### Changed
+- **`config.yml` `analyze`**: `risk_cap_lot_usd` 300 → 400 and `rr_min` 0.5 → 1, set by the user in the 2026-10-31 trading-rules review. The cap applies to BOT trades, not option hedges.
+- **`reports/analyze/defaults.R`** fallbacks and the `compute_rr_entry()` default in `reports/shared/setup_chain_rr.R` follow the same values; `report.R` legend text no longer hard-codes 300 / 0.5.
+- `reports/bot_fwd/common.py` `RISK_CAP = 300` is unchanged: it sizes the running forward test, and changing it mid-test would break comparison with earlier intake.
+
 ## [2026-10-26] - bot_daily: ZigZag bar order and broken-through zones
 
 ### Fixed

@@ -7,8 +7,8 @@
 
 default_analyze_config <- function() {
   list(
-    risk_cap_lot_usd = 300,
-    rr_min = 0.5,
+    risk_cap_lot_usd = 400,
+    rr_min = 1,
     ivp_regime = list(
       cheap_max = 30,
       rich_min  = 70

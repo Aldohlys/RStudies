@@ -53,10 +53,11 @@ default:
     # Hard per-lot risk cap on option structures. One lot = one full instance
     # (bull call spread = 2 contracts; iron condor = 4; outright = 1). Applies
     # to the structure's max_risk as a whole, not per leg.
-    risk_cap_lot_usd: 300
+    # USD 400 set by the user 2026-10-31 (rules review; BOT trades, not option hedges).
+    risk_cap_lot_usd: 400
     # Calibrated R:R floor (25th percentile of realized R:R_max from 37 BOT
-    # winners, 2026-04-27).
-    rr_min: 0.5
+    # winners, 2026-04-27). Raised to 1 by the user 2026-10-31 (rules review).
+    rr_min: 1
     # IVP regime bands (1y IBKR-native percentile)
     ivp_regime:
       cheap_max: 30   # IVP < 30 → cheap

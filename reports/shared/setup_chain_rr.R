@@ -425,7 +425,7 @@ compute_rr_entry <- function(vehicle, strike, expiry, current_price,
                              effective_target, iv_now, entry_premium,
                              spread_short_strike = NA, spot_target_high = NA,
                              risk_free = 0.045, iv_bump = 0.02, theta_buffer = 5,
-                             rr_min = 0.5, direction = "long") {
+                             rr_min = 1, direction = "long") {
   if (vehicle == "stock") {
     risk <- entry_premium
     reward <- if (direction == "long") effective_target - current_price

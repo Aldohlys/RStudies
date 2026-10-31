@@ -1,7 +1,7 @@
 # reports/analyze/report.R — neutral HTML output for /analyze.
 #
 # Emits PASS / SKIP / NO SIGNAL phase rows, vol-funnel grid with mechanical
-# labels, structures table with $300/lot cap flag. NO verdicts, conviction,
+# labels, structures table with per-lot cap flag (risk_cap_lot_usd). NO verdicts, conviction,
 # or "Best/Alternative/Avoid" framing.
 
 .css <- '
@@ -86,7 +86,7 @@ td.note{color:#555;font-size:13px}
   "oi_cap_put"           = "Strike with the largest put open interest in [-25%, +25%] of spot — magnetic support.",
   "chain_state"          = "open (top-3 OI < 40% of total), crowded (40-60%), or chain-capped (>=60%, expect price pinning).",
   "effective_target"     = "Lower of structural target and OI cap — whichever the chain says is reachable.",
-  "R:R"                  = "Reward / risk on the proposed entry (rr_min reference default 0.5).",
+  "R:R"                  = "Reward / risk on the proposed entry (rr_min reference default 1).",
   "entry_floor / entry_ceiling" = "Acceptable entry-price band that yields R:R >= rr_min.",
   "headroom_band"        = "Mechanical label: tight / moderate / wide based on entry-band width.",
   "entry_state"          = "IN BAND (current premium fits) / ABOVE / BELOW / FAILED.",
