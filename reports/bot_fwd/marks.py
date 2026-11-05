@@ -54,7 +54,7 @@ def run(conn, ib, log=print):
             c["days"] = min(max((dt.date.today() - start).days + 2, 2), 60)
             c["con"] = Contract(conId=c["conid"], exchange="SMART")
             jobs.append(c)
-    n_rows = n_fail = 0
+    n_rows = n_fail = n_empty = 0
     t0 = time.monotonic()
     for kind, whats, size in (("STK", ("TRADES", "BID", "ASK"), "1 day"),
                               ("OPT", ("BID", "ASK"), "1 hour")):
@@ -74,21 +74,34 @@ def run(conn, ib, log=print):
                 if any(v is None for v in got.values()):
                     n_fail += 1          # timed out: retried next run, last_mark unchanged
                     continue
+                # A stock answer with no bars at all, not even the lookback days
+                # before start, means the source returned nothing (paper login,
+                # 2026-11-02..11-05), not that the stock did not trade.
+                if kind == "STK" and not any(got.values()):
+                    n_empty += 1
+                    continue
                 rows = _stk_rows(c, got) if kind == "STK" else _opt_rows(c, got)
                 for r in rows.values():
                     _upsert(conn, r)
+                upto = c["end"]
                 if kind == "OPT":
                     _greeks_and_model(conn, c, c["start"], c["end"])
-                # An answered request with no bars (no quotes that day) still
-                # advances last_mark; model marks cover the gap.
-                conn.execute("UPDATE bot_fwd_contract SET last_mark = ? WHERE conid = ?",
-                             (C.ymd(c["end"]), c["conid"]))
+                    # An answered request with no bars (no quotes that day) still
+                    # advances last_mark, as model marks cover the gap - but only
+                    # through sessions the underlying has a mark for, else the
+                    # model mark could never be built for them.
+                    u_last = _underlying_last(conn, c)
+                    if u_last is not None:
+                        upto = min(upto, u_last)
+                if upto >= c["start"]:
+                    conn.execute("UPDATE bot_fwd_contract SET last_mark = ? WHERE conid = ?",
+                                 (C.ymd(upto), c["conid"]))
                 n_rows += len(rows)
             conn.commit()
             log(f"  {kind} {min(b0 + BATCH, len(group))}/{len(group)} "
                 f"({time.monotonic() - t0:.0f} s, {n_fail} timed out)")
     log(f"Marks: {len(jobs)} contracts due, {n_rows} session rows written, "
-        f"{n_fail} timed out (retried next run)")
+        f"{n_fail} timed out, {n_empty} stocks with no bars at all (both retried next run)")
 
 
 def _stk_rows(c, got):
@@ -134,6 +147,17 @@ def _underlying_conid(conn, c):
         """SELECT stk_conid FROM bot_fwd_position WHERE long_conid = ? OR short_conid = ? LIMIT 1""",
         (c["conid"], c["conid"])).fetchone()
     return r["stk_conid"] if r else None
+
+
+def _underlying_last(conn, c):
+    """Date of the underlying's last stock mark with a close, or None when the
+    option has no underlying on record."""
+    u = _underlying_conid(conn, c)
+    if u is None:
+        return None
+    r = conn.execute("SELECT MAX(date) d FROM bot_fwd_mark WHERE conid = ? AND close IS NOT NULL",
+                     (u,)).fetchone()
+    return dt.date.fromisoformat(r["d"]) if r and r["d"] else dt.date.min
 
 
 def _greeks_and_model(conn, c, start, end):

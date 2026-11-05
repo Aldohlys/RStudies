@@ -334,6 +334,14 @@ def ib_connect():
         ib = IB()
         ib.RequestTimeout = 60
         ib.connect(IB_HOST, IB_PORT, clientId=IB_CLIENT_ID, timeout=10, readonly=True)
+        # A paper login (DU accounts) answers every history request with no bars
+        # and no error, which marks would record as sessions without quotes
+        # (2026-11-02..11-05: 1,019 contracts skipped 10-27..11-04).
+        accts = ib.managedAccounts()
+        if accts and all(a.startswith("DU") for a in accts):
+            print(f"IBKR not available: TWS is on the paper login ({', '.join(accts)})")
+            ib.disconnect()
+            return None
         if not ib.qualifyContracts(Stock("SPY", "SMART", "USD")):
             ib.disconnect()
             return None
