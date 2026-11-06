@@ -583,10 +583,10 @@
     },
     "Tdata": {
       "Package": "Tdata",
-      "Version": "5.27.0",
+      "Version": "5.27.1",
       "Source": "Local",
       "RemoteType": "local",
-      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.27.0.tar.gz"
+      "RemoteUrl": "C:/Users/aldoh/Documents/RApplication/Tdata_5.27.1.tar.gz"
     },
     "Tlogger": {
       "Package": "Tlogger",
