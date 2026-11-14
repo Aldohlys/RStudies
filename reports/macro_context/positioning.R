@@ -18,27 +18,27 @@
 # This feeds compute_positioning_stress() in scenarios.R, which also warns when
 # COT_AS_OF has gone stale (a missed weekly release).
 #
-# Generated 2026-10-03 08:00 from CFTC data as of 2026-09-29.
+# Generated 2026-11-14 10:40 from CFTC data as of 2026-11-03.
 
 COT_POSITIONING <- list(
   list(asset = "Crude Oil", sector = "Energy",
-       net = "long", extreme = FALSE,
-       note = "MM net long 79.6k (long 209.0k / short 129.4k). 5y percentile 19, 1y percentile 57 (5y range -38.2k to +301.7k, n=261). WoW: -22.2k. Since 2026-09-22: -22.2k."),
+       net = "long", extreme = TRUE,
+       note = "MM net long 21.7k (long 147.4k / short 125.7k). 5y percentile 6, 1y percentile 17 (5y range -38.2k to +301.7k, n=261). WoW: -9.4k."),
   list(asset = "USD", sector = "Macro",
        net = "long", extreme = FALSE,
-       note = "Lev+AM net long 18.4k (long 36.2k / short 17.8k). 5y percentile 67, 1y percentile 85 (5y range -17.5k to +36.6k, n=261). WoW: +6.1k. Since 2026-09-22: +6.1k."),
+       note = "Lev+AM net long 20.1k (long 37.3k / short 17.2k). 5y percentile 75, 1y percentile 83 (5y range -17.5k to +36.6k, n=261). WoW: +0.3k."),
   list(asset = "Gold", sector = "PreciousMetals",
        net = "long", extreme = FALSE,
-       note = "MM net long 120.3k (long 131.7k / short 11.4k). 5y percentile 61, 1y percentile 60 (5y range -43.1k to +219.0k, n=261). WoW: -7.1k. Since 2026-09-22: -7.1k."),
+       note = "MM net long 103.6k (long 122.3k / short 18.7k). 5y percentile 46, 1y percentile 36 (5y range -43.1k to +219.0k, n=261). WoW: -1.9k."),
   list(asset = "Grains", sector = "Agriculture",
-       net = "long", extreme = TRUE,
-       note = "MM net long 605.7k (long 803.5k / short 197.8k). 5y percentile 98, 1y percentile 91 (5y range -608.7k to +676.6k, n=261). WoW: -51.6k. Since 2026-09-22: -51.6k. Legs: Corn +381.2k, Soy +246.6k, SRW wheat -22.1k; WoW Corn -22.9k, Soy -18.6k, SRW wheat -10.1k."),
+       net = "long", extreme = FALSE,
+       note = "MM net long 64.4k (long 495.8k / short 431.4k). 5y percentile 53, 1y percentile 32 (5y range -608.7k to +676.6k, n=261). WoW: -135.9k. Legs: Corn +8.8k, Soy +142.7k, SRW wheat -87.1k; WoW Corn -72.3k, Soy -51.1k, SRW wheat -12.5k."),
   list(asset = "Copper", sector = "Materials",
-       net = "long", extreme = TRUE,
-       note = "MM net long 78.1k (long 92.1k / short 14.0k). 5y percentile 98, 1y percentile 91 (5y range -43.9k to +82.5k, n=261). WoW: -4.5k. Since 2026-09-22: -4.5k.")
+       net = "long", extreme = FALSE,
+       note = "MM net long 34.9k (long 58.6k / short 23.7k). 5y percentile 66, 1y percentile 0 (5y range -43.9k to +82.5k, n=261). WoW: -5.7k.")
 )
 
-# Last updated: 2026-10-03 (COT data week ending 2026-09-29)
-COT_DATE <- "2026-10-03"
-COT_AS_OF <- "2026-09-29"   # Tuesday-close date the positions refer to
+# Last updated: 2026-11-14 (COT data week ending 2026-11-03)
+COT_DATE <- "2026-11-14"
+COT_AS_OF <- "2026-11-03"   # Tuesday-close date the positions refer to
 
