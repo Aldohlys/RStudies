@@ -105,7 +105,7 @@ build_sections <- function(vix, rates, breadth, spy, commodities, events, scenar
   if (!is.null(positioning) && isTRUE(positioning$cot_stale)) {
     n <- positioning$cot_missed_releases
     data_banner <- sprintf(
-      '<div class="stale-banner">STALE POSITIONING DATA &mdash; COT is as of %s, %d days old (%d weekly release%s missed)<span class="stale-sub">Crowding score %.2f and the net-direction labels below are computed from that file. Refresh reports/macro_context/positioning.R before trusting the positioning read.</span></div>',
+      '<div class="stale-banner">STALE POSITIONING DATA &mdash; COT is as of %s, %d days old (%d weekly release%s missed)<span class="stale-sub">Crowding score %.2f and the net-direction labels below are computed from that file. Run scripts/RefreshCOT.bat (refresh_cot.R) before trusting the positioning read.</span></div>',
       positioning$cot_as_of, round(positioning$cot_age_days), n,
       ifelse(n == 1, "", "s"), positioning$crowding_score)
   }

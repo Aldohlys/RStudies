@@ -182,6 +182,58 @@ compute_regime_scores <- function(signals) {
 
 # ── Positioning Stress ────────────────────────────────────────────────────────
 
+#' US federal holidays (observed dates) for the given years
+us_federal_holidays <- function(years) {
+  nth_wday <- function(y, m, wday, n) {   # wday: 1 = Monday ... 7 = Sunday
+    first <- as.Date(sprintf("%d-%02d-01", y, m))
+    off <- (wday - as.integer(format(first, "%u"))) %% 7
+    first + off + 7 * (n - 1)
+  }
+  last_monday <- function(y, m) {
+    last <- seq(as.Date(sprintf("%d-%02d-01", y, m)), by = "month", length.out = 2)[2] - 1
+    last - (as.integer(format(last, "%u")) - 1)
+  }
+  observed <- function(d) {               # Saturday -> Friday, Sunday -> Monday
+    wd <- as.integer(format(d, "%u"))
+    d - (wd == 6) + (wd == 7)
+  }
+  out <- lapply(years, function(y) {
+    fixed <- as.Date(sprintf("%d-%s", y, c("01-01", "06-19", "07-04", "11-11", "12-25")))
+    c(observed(fixed),
+      nth_wday(y, 1, 1, 3),  nth_wday(y, 2, 1, 3), last_monday(y, 5),
+      nth_wday(y, 9, 1, 1),  nth_wday(y, 10, 1, 2), nth_wday(y, 11, 4, 4))
+  })
+  sort(do.call(c, out))
+}
+
+#' Release date of the COT report covering Tuesday `tuesday`
+#'
+#' Normally the Friday after (T+3). The CFTC 2026 schedule moves it to the
+#' following Monday (T+6) when a federal holiday falls between the Tuesday and
+#' that Friday (Juneteenth, Independence Day, Veterans Day, Thanksgiving,
+#' Christmas, New Year); Monday holidays leave the Friday release in place.
+cot_expected_release <- function(tuesday) {
+  hol <- us_federal_holidays(unique(as.integer(format(tuesday, "%Y"))))
+  vapply(seq_along(tuesday), function(i) {
+    t <- tuesday[i]
+    as.numeric(if (any(hol >= t & hol <= t + 3)) t + 6 else t + 3)
+  }, numeric(1)) |> as.Date(origin = "1970-01-01")
+}
+
+#' Number of COT reports newer than `as_of` that the Saturday 08:00 refresh
+#' task should already have loaded by `today`
+#'
+#' A report counts as due on the first Saturday after its release: Friday
+#' releases the next day, holiday-delayed Monday releases the Saturday of that
+#' week (by which time the next Friday report supersedes it).
+cot_missed_releases <- function(as_of, today = Sys.Date()) {
+  tuesdays <- as_of + 7 * seq_len(max(0, ceiling(as.numeric(today - as_of) / 7)))
+  if (length(tuesdays) == 0) return(0L)
+  rel <- cot_expected_release(tuesdays)
+  due <- rel + (6 - as.integer(format(rel, "%u"))) %% 7
+  sum(due <= today)
+}
+
 #' Compute positioning stress from COT data and sector RS extremes
 #' @param sector_ok Named list of sector gate results (from swing_scanner)
 #' @param cot_data List from positioning.R COT_POSITIONING
@@ -213,17 +265,13 @@ compute_positioning_stress <- function(sector_ok = NULL, cot_data = NULL,
       function(c) c$asset, character(1))
   }
 
-  # COT staleness. Each report covers a Tuesday close (T), is released that
-  # Friday 15:30 ET and loaded by the Saturday 08:00 task (T+4). The next one
-  # is loaded at T+11, so a promptly-maintained file sits 4-10 days old. At 11
-  # days (Saturday run after a failed refresh) at least one has been missed.
   age_days <- NA_real_
   missed <- 0L
   if (!is.null(cot_as_of) && !is.na(cot_as_of) && nzchar(cot_as_of)) {
     d <- suppressWarnings(as.Date(cot_as_of))
     if (!is.na(d)) {
       age_days <- as.numeric(Sys.Date() - d)
-      missed <- max(0L, as.integer(floor((age_days - 4) / 7)))
+      missed <- cot_missed_releases(d)
     }
   }
 

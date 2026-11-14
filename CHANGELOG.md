@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-11-14] - macro_context: COT staleness follows the CFTC holiday schedule
+
+### Fixed
+- **`reports/macro_context/scenarios.R`**: the STALE POSITIONING banner counted a missed release once the COT file was 11 days old (`floor((age - 4) / 7)`), on the assumption that every report is released the Friday after its Tuesday. On 2026-11-14 it flagged the 2026-11-03 file as one release behind, but the 2026-11-10 report is released Monday 2026-11-16 (Veterans Day delay).
+  - New `cot_expected_release()`: Friday T+3, or Monday T+6 when a US federal holiday (new `us_federal_holidays()`, observed dates) falls between the Tuesday and that Friday. Reproduces all 52 dates of the CFTC 2026 release schedule.
+  - New `cot_missed_releases()`: a report counts as missed from the first Saturday after its release (the RefreshCOT task runs Saturdays 08:00). Normal weeks give the same count as before.
+- **`reports/macro_context/render_html.R`**: banner now names `scripts/RefreshCOT.bat` (`refresh_cot.R`) instead of `positioning.R`, which is generated.
+
 ## [2026-10-31] - analyze: lot cap USD 400, rr_min 1
 
 ### Changed
