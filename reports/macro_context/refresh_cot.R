@@ -32,7 +32,8 @@
 # week. Drawn as the section 11 charts.
 #
 # Run: Rscript RStudies/reports/macro_context/refresh_cot.R [--dry-run]
-# Scheduled Saturday 08:00 via RApplication/scripts/RefreshCOT.xml — the CFTC
+# Scheduled Saturday 08:00 via RApplication/scripts/RefreshCOT.xml. The script
+# then commits and pushes positioning.R when it changed (git_commit_positioning). The CFTC
 # releases Friday 15:30 ET (21:30 CET), so Saturday morning is clear of it.
 
 suppressPackageStartupMessages(library(data.table))
@@ -593,5 +594,44 @@ if (DRY_RUN) {
   if (!ok) { unlink(tmp); stop("refusing to overwrite positioning.R") }
   file.rename(tmp, TARGET)
   cat("Written:", TARGET, "\n")
+}
+
+# positioning.R is tracked in the RStudies repo, so each refresh is committed
+# and pushed here; otherwise the weekly rewrites pile up as one uncommitted
+# diff. Keyed on git status rather than on this run's write, so a refresh
+# whose commit failed last week is committed by the next run. Only this file
+# is committed (--only), whatever else is staged. The push is skipped when
+# the branch already held unpushed commits: those are the user's to push.
+git_commit_positioning <- function() {
+  git <- function(...) suppressWarnings(system2("git", c("-C", shQuote(SCRIPT_DIR, type = "cmd"), ...),
+                                                stdout = TRUE, stderr = TRUE))
+  status_of <- function(out) { s <- attr(out, "status"); if (is.null(s)) 0L else s }
+  dirty <- git("status", "--porcelain", "--", "positioning.R")
+  if (status_of(dirty) != 0L) return(paste("git status failed:", paste(dirty, collapse = " ")))
+  if (length(dirty) == 0L) return(NULL)
+  ahead <- git("rev-list", "--count", "@{u}..HEAD")
+  was_ahead <- status_of(ahead) != 0L || as.integer(ahead[1]) > 0L
+  msg <- sprintf("COT positioning refresh %s (CFTC data as of %s)", format(Sys.Date()), AS_OF)
+  out <- git("commit", "--only", "-m", shQuote(msg, type = "cmd"), "--", "positioning.R")
+  if (status_of(out) != 0L) return(paste("git commit failed:", paste(out, collapse = " ")))
+  cat("Committed:", msg, "\n")
+  if (was_ahead) {
+    cat("Not pushed: RStudies already had unpushed commits (or no upstream).\n")
+    return(NULL)
+  }
+  out <- git("push")
+  if (status_of(out) != 0L) return(paste("git push failed (commit kept locally):", paste(out, collapse = " ")))
+  cat("Pushed to RStudies remote.\n")
+  NULL
+}
+if (!DRY_RUN) {
+  git_err <- git_commit_positioning()
+  if (!is.null(git_err)) {
+    message(git_err)
+    reason_file <- Sys.getenv("ACTIVITY_REASON_FILE")
+    if (nzchar(reason_file)) writeLines(substr(git_err, 1, 300), reason_file)
+    # The data files are written; the non-zero exit only flags the git step in activity.log.
+    quit(save = "no", status = 2)
+  }
 }
 cat("COT refresh complete:", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "\n")

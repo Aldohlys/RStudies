@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-11-14] - refresh_cot: commit and push positioning.R
+
+### Added
+- **`reports/macro_context/refresh_cot.R::git_commit_positioning()`**: after a refresh, commits `positioning.R` (`git commit --only`, nothing else that is staged) as "COT positioning refresh <date> (CFTC data as of <Tuesday>)" and pushes it. Before, the Saturday task only rewrote the file, so six weekly refreshes (2026-10-03 to 2026-11-14) sat as one uncommitted diff.
+  - Keyed on `git status` of the file, not on this run's write: a commit that failed one week is made by the next run.
+  - No push when RStudies already had unpushed commits (or no upstream); the commit stays local.
+  - A failed git step writes the cause to `ACTIVITY_REASON_FILE` and exits 2, so activity.log shows it; the data files are already written by then.
+
 ## [2026-11-14] - macro_context: COT staleness follows the CFTC holiday schedule
 
 ### Fixed
